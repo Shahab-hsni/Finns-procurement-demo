@@ -287,6 +287,19 @@ export function SpendingPage({ theme }: SpendingPageProps) {
     Object.fromEntries(CATEGORIES.map(c => [c.id, String(c.budget)]))
   );
 
+  // Manual saving entries (Phase 4j) — admin-recorded savings achieved
+  // outside the agent flow (manual renegotiations, side deals, etc.).
+  // Merges into visibleLedger so the Decision Ledger surfaces them
+  // inline alongside the agent-recorded ones.
+  const [manualEntries, setManualEntries] = useState<LedgerEntry[]>([]);
+  const [addSavingOpen, setAddSavingOpen] = useState(false);
+  const [savingDraft, setSavingDraft] = useState({
+    amount: '',
+    supplier: '',
+    action: '',
+    invoiceRef: '',
+  });
+
   // Atlas state
   const [atlasInput, setAtlasInput] = useState('');
   const [atlasMsgs, setAtlasMsgs] = useState<AtlasMessage[]>([]);
@@ -308,10 +321,11 @@ export function SpendingPage({ theme }: SpendingPageProps) {
   }, 0);
   const surplusCapital = totalBudget - totalSpend + totalLocked;
 
-  const visibleLedger = selectedCat ? LEDGER.filter(e => e.categoryId === selectedCat) : LEDGER;
-  const agentCount = LEDGER.filter(e => e.actorType === 'agent').length;
-  const adminCount = LEDGER.filter(e => e.actorType !== 'agent').length;
-  const autonomyPct = Math.round((agentCount / LEDGER.length) * 100);
+  const fullLedger = [...manualEntries, ...LEDGER];
+  const visibleLedger = selectedCat ? fullLedger.filter(e => e.categoryId === selectedCat) : fullLedger;
+  const agentCount = fullLedger.filter(e => e.actorType === 'agent').length;
+  const adminCount = fullLedger.filter(e => e.actorType !== 'agent').length;
+  const autonomyPct = fullLedger.length === 0 ? 0 : Math.round((agentCount / fullLedger.length) * 100);
 
   useEffect(() => {
     if (atlasMsgRef.current) {
@@ -351,6 +365,54 @@ export function SpendingPage({ theme }: SpendingPageProps) {
       meta: { amount: td.projectedSavings, categoryId: selected.id },
     });
   }, [selected, td, lockedSavings]);
+
+  // Manual saving entry (Phase 4j) — records a saving achieved outside
+  // the agent flow. Prepends a row to the Decision Ledger and emits
+  // a 'savings-manual-add' action log entry.
+  const savingDraftValid =
+    !!selected &&
+    Number(savingDraft.amount) > 0 &&
+    savingDraft.supplier.trim().length > 0 &&
+    savingDraft.action.trim().length > 0;
+
+  const handleAddManualSaving = useCallback(() => {
+    if (!selected) return;
+    const amount = Number(savingDraft.amount);
+    if (!amount || amount <= 0) return;
+    if (!savingDraft.supplier.trim() || !savingDraft.action.trim()) return;
+    const now = new Date();
+    const dateLabel = now.toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+    const entry: LedgerEntry = {
+      id: `m-${Date.now()}`,
+      actorType: 'admin',
+      actorLabel: 'Admin',
+      action: savingDraft.action.trim(),
+      saving: amount,
+      supplier: savingDraft.supplier.trim(),
+      date: dateLabel,
+      invoiceRef: savingDraft.invoiceRef.trim() || `MAN-${now.getTime().toString().slice(-6)}`,
+      categoryId: selected.id,
+    };
+    setManualEntries(prev => [entry, ...prev]);
+    logUserAction({
+      kind: 'savings-manual-add',
+      entity: { type: 'ledger', id: entry.id },
+      summary: `Logged $${amount.toLocaleString()} manual saving · ${selected.name} · ${entry.supplier}`,
+      category: selected.name as FinnsCategory,
+      details: entry.action,
+      meta: {
+        amount,
+        supplier: entry.supplier,
+        invoiceRef: entry.invoiceRef,
+        categoryId: selected.id,
+      },
+    });
+    toast.success(`Logged $${amount.toLocaleString()} saving`, {
+      description: `Added to ${selected.name} ledger · ${entry.supplier}`,
+    });
+    setSavingDraft({ amount: '', supplier: '', action: '', invoiceRef: '' });
+    setAddSavingOpen(false);
+  }, [selected, savingDraft]);
 
   const handleAtlasSubmit = useCallback(() => {
     const q = atlasInput.trim();
@@ -768,8 +830,95 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                   <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${isDark ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
                     <User className="h-3 w-3" /> Admin
                   </span>
+                  <button
+                    onClick={() => setAddSavingOpen(v => !v)}
+                    title="Record a saving achieved manually (e.g. side renegotiation, supplier discount you closed)"
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-semibold transition-colors ${
+                      addSavingOpen
+                        ? isDark ? 'bg-[#87986a]/20 border-[#87986a]/50 text-[#a3b085]'
+                                  : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                        : isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
+                                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}>
+                    <DollarSign className="h-3 w-3" />
+                    {addSavingOpen ? 'Close' : 'Add Manual Saving'}
+                  </button>
                 </div>
               </div>
+
+              {/* Manual saving entry form (Phase 4j) */}
+              {addSavingOpen && selected && (
+                <div className={`mb-3 p-4 rounded-xl border ${
+                  isDark ? 'bg-[#87986a]/5 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className={`text-xs font-bold ${t.textPrimary}`}>
+                      Log a manual saving · {selected.name}
+                    </h4>
+                    <span className={`text-[10px] ${t.textMuted}`}>
+                      You drove this · no agent involved
+                    </span>
+                  </div>
+                  <p className={`text-[10px] mb-3 ${t.textMuted}`}>
+                    Side renegotiation? Supplier discount you closed? Record it here so it shows in the category ledger and rolls into Locked Savings.
+                  </p>
+                  <div className="grid grid-cols-12 gap-2">
+                    <div className="col-span-3">
+                      <label className={`text-[9px] uppercase tracking-wide font-bold ${t.textMuted}`}>Amount saved ($)</label>
+                      <input type="number" min={1} value={savingDraft.amount}
+                        onChange={e => setSavingDraft(d => ({ ...d, amount: e.target.value }))}
+                        placeholder="240"
+                        className={`mt-1 w-full text-xs px-2 py-1.5 rounded border ${
+                          isDark ? 'bg-[#1a1a1a] border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400'
+                        }`} />
+                    </div>
+                    <div className="col-span-4">
+                      <label className={`text-[9px] uppercase tracking-wide font-bold ${t.textMuted}`}>Supplier</label>
+                      <input value={savingDraft.supplier}
+                        onChange={e => setSavingDraft(d => ({ ...d, supplier: e.target.value }))}
+                        placeholder="e.g. Bali Fresh Farms"
+                        className={`mt-1 w-full text-xs px-2 py-1.5 rounded border ${
+                          isDark ? 'bg-[#1a1a1a] border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400'
+                        }`} />
+                    </div>
+                    <div className="col-span-5">
+                      <label className={`text-[9px] uppercase tracking-wide font-bold ${t.textMuted}`}>Invoice ref (optional)</label>
+                      <input value={savingDraft.invoiceRef}
+                        onChange={e => setSavingDraft(d => ({ ...d, invoiceRef: e.target.value }))}
+                        placeholder="INV-2026-XXXX"
+                        className={`mt-1 w-full text-xs px-2 py-1.5 rounded border ${
+                          isDark ? 'bg-[#1a1a1a] border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400'
+                        }`} />
+                    </div>
+                    <div className="col-span-12">
+                      <label className={`text-[9px] uppercase tracking-wide font-bold ${t.textMuted}`}>What you did</label>
+                      <textarea value={savingDraft.action}
+                        onChange={e => setSavingDraft(d => ({ ...d, action: e.target.value }))}
+                        rows={2}
+                        placeholder="e.g. Closed Q3 bulk on heritage tomatoes — 8% discount locked over 3 deliveries."
+                        className={`mt-1 w-full text-xs px-2 py-1.5 rounded border resize-none ${
+                          isDark ? 'bg-[#1a1a1a] border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400'
+                        }`} />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 mt-3">
+                    <button onClick={() => { setAddSavingOpen(false); setSavingDraft({ amount: '', supplier: '', action: '', invoiceRef: '' }); }}
+                      className={`text-[10px] px-2.5 py-1.5 rounded border ${
+                        isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                      }`}>
+                      Cancel
+                    </button>
+                    <button onClick={handleAddManualSaving} disabled={!savingDraftValid}
+                      className={`text-[10px] px-3 py-1.5 rounded font-bold transition-colors ${
+                        savingDraftValid
+                          ? 'bg-[#87986a] text-white hover:bg-[#6b7a54]'
+                          : isDark ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      }`}>
+                      Log saving
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className={`${t.cardPanel} overflow-hidden`}>
                 <table className="w-full">
                   <thead>

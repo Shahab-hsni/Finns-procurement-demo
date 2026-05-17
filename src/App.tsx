@@ -10,13 +10,12 @@ import { WorkflowsPage } from "./components/workflows/WorkflowsPage";
 import { UserFlowDemoPage } from "./components/demo/UserFlowDemoPage";
 import { FlowChartPage } from "./components/demo/FlowChartPage";
 import { GlobalFooter } from "./components/GlobalFooter";
-import { Moon, Sun, Bell, PowerOff, Lightbulb, Zap } from "lucide-react";
+import { Moon, Sun, Bell } from "lucide-react";
 import { Toaster, toast } from "sonner@2.0.3";
-import {
-  type AutonomyMode, AUTONOMY_LABEL, AUTONOMY_TAGLINE,
-  getAutonomyMode, setAutonomyMode, useAutonomyMode,
-} from "./lib/autonomy";
-import { logUserAction } from "./lib/actionLog";
+// Phase 6: autonomy model simplified — see lib/autonomy.ts. The header
+// no longer hosts a pill; per-entity labor switches are the canonical
+// surfaces (Orders/Inventory/Suppliers), with a system-wide pause on
+// the A&G Agents tab.
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -229,8 +228,11 @@ export default function App() {
               </button>
             )}
 
-            {/* 3-level autonomy pill */}
-            <AutonomyToggle isDark={isDark} />
+            {/* Phase 6: header autonomy pill removed. Per-entity autonomy
+                is set on each PO / SKU / vendor (the labor switch on
+                Orders, Inventory, Suppliers — and the picker on Step 1
+                of the New Request wizard). System-wide pause lives on
+                Activity & Governance → Agents tab. */}
 
             <button className={`relative p-2 rounded-full ${iconBtn} transition-colors`}>
               <Bell className="h-4 w-4" />
@@ -265,75 +267,6 @@ export default function App() {
   );
 }
 
-// ── Autonomy Toggle (3-level pill in the header) ──────────────────
-//   Off · Assistant · Autonomous
-//
-// Atlas (chat copilot) is unaffected by this control -- it's always on.
-// A-01..A-05 are paused on Off, suggest-only on Assistant, free to act
-// on Autonomous (current default).
-const AUTONOMY_OPTIONS: { id: AutonomyMode; icon: typeof PowerOff; label: string }[] = [
-  { id: 'off',    icon: PowerOff,  label: 'Off' },
-  { id: 'assist', icon: Lightbulb, label: 'Assist' },
-  { id: 'auto',   icon: Zap,       label: 'Auto' },
-];
-
-function AutonomyToggle({ isDark }: { isDark: boolean }) {
-  const mode = useAutonomyMode();
-  const handle = (next: AutonomyMode) => {
-    if (next === mode) return;
-    const prior = mode;
-    setAutonomyMode(next);
-    logUserAction({
-      kind: 'autonomy-mode-change',
-      entity: { type: 'platform', id: 'autonomy' },
-      summary: `Autonomy set to ${AUTONOMY_LABEL[next]}`,
-      meta: { prior, next },
-    });
-    // Surface a small toast so the mode change is unmissable.
-    // Sensing (alerts, watch lists, par checks, ETA tracking) is always
-    // on -- only the action layer is gated.
-    if (next === 'off') {
-      toast.warning(`Autonomy: ${AUTONOMY_LABEL[next]}`, {
-        description: AUTONOMY_TAGLINE[next] + ' Alerts and watch-lists keep rendering -- agents just stop touching things.',
-      });
-    } else if (next === 'assist') {
-      toast.info(`Autonomy: ${AUTONOMY_LABEL[next]}`, {
-        description: AUTONOMY_TAGLINE[next] + ' Recommendations surface with Approve / Defer / Decline.',
-      });
-    } else {
-      toast.success(`Autonomy: ${AUTONOMY_LABEL[next]}`, {
-        description: AUTONOMY_TAGLINE[next],
-      });
-    }
-  };
-
-  return (
-    <div
-      title={AUTONOMY_TAGLINE[mode]}
-      className={`mr-1 inline-flex items-center gap-0.5 rounded-full p-0.5 border ${
-        isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-gray-50 border-gray-200'
-      }`}>
-      {AUTONOMY_OPTIONS.map(({ id, icon: Icon, label }) => {
-        const active = id === mode;
-        const activeBg = id === 'off'
-          ? 'bg-red-500/85 text-white'
-          : id === 'assist'
-          ? 'bg-amber-500/85 text-white'
-          : 'bg-[#87986a] text-white';
-        const inactive = isDark
-          ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200';
-        return (
-          <button key={id}
-            onClick={() => handle(id)}
-            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold transition-colors ${
-              active ? activeBg : inactive
-            }`}>
-            <Icon className="h-3 w-3" />
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+// Phase 6 — AutonomyToggle pill removed.
+// Per-entity autonomy is set on each PO / SKU / vendor; system-wide
+// pause lives on Activity & Governance → Agents tab.

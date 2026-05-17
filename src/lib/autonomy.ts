@@ -1,102 +1,178 @@
 /**
- * Finn's — Autonomy Mode
+ * Finn's — Autonomy Model (Phase 6 simplification)
  *
- * Three global modes that govern how the OPERATING AGENTS act across
- * the platform.
+ * Two layers, replacing the older 3-tier global model:
  *
- *   Atlas is NOT an operating agent and is NEVER gated by this mode.
- *   Atlas reads page context, summarizes data, and answers questions
- *   in chat. It does not generate recommendations or execute actions
- *   on its own.
+ *   1. Per-entity autonomy ('manual' | 'auto') — set on each PO, SKU,
+ *      vendor. The wizard captures this at creation time (Step 1 picker
+ *      on New Request). Existing per-entity labor switches on Orders,
+ *      Inventory, and Suppliers are the authoritative knobs.
  *
- *   A-01..A-05 (Sourcing / Restock / Vendor Comms / Spend Watchdog /
- *   Logistics) are the operating agents. Their behaviour is:
- *     • Observing is always on (sensing layer: par checks, ETA
- *       tracking, compliance-doc expiry, vendor SLA dips, etc.).
- *     • Recommending + acting is gated by mode.
+ *   2. Global pause (boolean) — a kill-switch that overrides every
+ *      per-entity setting. When `agentsPaused === true`, agents stop
+ *      acting platform-wide regardless of any entity flagged as 'auto'.
+ *      Set from Activity & Governance → Agents tab. Use case: audit
+ *      period, cost pause, vacation handoff. Rare admin action; not
+ *      surfaced in the header.
  *
- *   off    — Agents observe but don't act. Every action requires you.
- *            Alerts and watch-lists keep rendering. Atlas chat + Atlas
- *            data summaries remain available -- only agent-authored
- *            recommendations + receipts are suppressed.
- *   assist — Agents observe + suggest. You approve every action.
- *            Recommendations surface with "Approve · Defer · Decline"
- *            CTAs instead of auto-execute.
- *   auto   — Agents observe + act within policy. You review exceptions.
- *            Default. Agents auto-restock, auto-route POs, auto-send
- *            vendor confirmations within the spend-cap / vendor-trust /
- *            duplicate-detect guardrails.
+ * What changed from the older Off / Assist / Auto model:
+ *   • 'off' migrated to 'manual'  (Off was never really "off everything"
+ *      — sensing always ran. The real meaning was "user is driving".)
+ *   • 'assist' migrated to 'manual'  (Assist was Manual + always-on
+ *      smart features. Smart features are always on now — autocomplete,
+ *      ranking, summaries are UX, not agent actions — so Assist
+ *      collapses into Manual cleanly.)
+ *   • The "no agent activity anywhere" intent of the legacy Off mode
+ *      is now the agentsPaused boolean.
  *
- * Per-entity overrides (per-PO Labor Switch, per-SKU labor mode, per-
- * vendor labor mode, per-agent suspend) layer on top of the global
- * mode.
+ * Atlas — unchanged. Atlas is NEVER gated by either layer.
+ *
+ * Smart features (autocomplete, category detection, vendor relevance
+ * ranking, Atlas data summaries) are ALSO never gated. They are UX,
+ * not agent actions.
+ *
+ * What IS gated by Auto vs Manual on the per-entity layer:
+ *   • A-01 / A-02 / etc. taking action without user approval
+ *   • Auto-pre-pick of vendors in the wizard
+ *   • Auto-execution of POs below the spend cap
+ *   • Auto-restock when par breached
  */
 
 import { useEffect, useState } from 'react';
 
-export type AutonomyMode = 'off' | 'assist' | 'auto';
+export type AutonomyMode = 'manual' | 'auto';
 
 export const AUTONOMY_LABEL: Record<AutonomyMode, string> = {
-  off:    'Off',
-  assist: 'Assistant',
-  auto:   'Autonomous',
+  manual: 'Manual',
+  auto:   'Auto',
 };
 
 export const AUTONOMY_TAGLINE: Record<AutonomyMode, string> = {
-  off:    'Agents observe but don\'t act. You handle every action.',
-  assist: 'Agents observe + suggest. You approve every action.',
-  auto:   'Agents observe + act within policy. You review exceptions.',
+  manual: 'You drive every action on this entity. Agents observe + surface insights only.',
+  auto:   'Agents act within policy. You review exceptions.',
 };
 
-const STORAGE_KEY = 'finns-autonomy-mode';
-const EVENT_NAME  = 'finns-autonomy-changed';
+// localStorage keys + custom events
+const MODE_KEY      = 'finns-autonomy-mode';
+const PAUSE_KEY     = 'finns-agents-paused';
+const MODE_EVENT    = 'finns-autonomy-changed';
+const PAUSE_EVENT   = 'finns-agents-paused-changed';
 
-export function getAutonomyMode(): AutonomyMode {
+// ── Migration ─────────────────────────────────────────────────
+// Any value persisted under the old 3-tier scheme ('off' / 'assist')
+// reads as the new 'manual'. 'auto' carries through unchanged. This
+// keeps users with stale localStorage state alive without forcing a
+// reset.
+function readModeRaw(): AutonomyMode {
   if (typeof window === 'undefined') return 'auto';
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  return (raw === 'off' || raw === 'assist' || raw === 'auto') ? raw : 'auto';
+  const raw = window.localStorage.getItem(MODE_KEY);
+  if (raw === 'auto') return 'auto';
+  // Anything else (manual / off / assist / null / corrupted) maps to manual.
+  // 'manual' itself also lands here.
+  return raw === 'manual' ? 'manual' : (raw === 'off' || raw === 'assist' ? 'manual' : 'auto');
 }
 
-export function setAutonomyMode(mode: AutonomyMode): void {
+export function getDefaultAutonomyMode(): AutonomyMode {
+  return readModeRaw();
+}
+
+export function setDefaultAutonomyMode(mode: AutonomyMode): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, mode);
-  window.dispatchEvent(new CustomEvent<AutonomyMode>(EVENT_NAME, { detail: mode }));
+  window.localStorage.setItem(MODE_KEY, mode);
+  window.dispatchEvent(new CustomEvent<AutonomyMode>(MODE_EVENT, { detail: mode }));
 }
 
-/** Subscribe to mode changes. Returns the current mode. */
+/**
+ * The DEFAULT autonomy mode applied to newly-created entities (POs
+ * via the wizard, SKUs via inventory add, vendors via onboarding).
+ * Per-entity overrides take precedence after creation. This returns
+ * 'auto' by default — Finn's treats AI as the feature that's on
+ * unless flipped to Manual on a specific entity.
+ */
 export function useAutonomyMode(): AutonomyMode {
-  const [mode, setMode] = useState<AutonomyMode>(() => getAutonomyMode());
+  const [mode, setMode] = useState<AutonomyMode>(() => getDefaultAutonomyMode());
   useEffect(() => {
     const handler = (e: Event) => setMode((e as CustomEvent<AutonomyMode>).detail);
-    window.addEventListener(EVENT_NAME, handler);
-    // Also re-read on storage events (multi-tab sync, though Finn's is single-tab in practice).
+    window.addEventListener(MODE_EVENT, handler);
     const storageHandler = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setMode(getAutonomyMode());
+      if (e.key === MODE_KEY) setMode(getDefaultAutonomyMode());
     };
     window.addEventListener('storage', storageHandler);
     return () => {
-      window.removeEventListener(EVENT_NAME, handler);
+      window.removeEventListener(MODE_EVENT, handler);
       window.removeEventListener('storage', storageHandler);
     };
   }, []);
   return mode;
 }
 
-/** Default labor mode for new entities (PO / SKU / Supplier). */
-export function defaultLaborMode(mode: AutonomyMode): 'agent' | 'manual' {
-  return mode === 'auto' ? 'agent' : 'manual';
+// ── Global pause (kill switch) ─────────────────────────────────
+
+export function getAgentsPaused(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem(PAUSE_KEY) === '1';
 }
 
-/** True if agents may take actions autonomously. False in off + assist. */
-export function agentsMayAct(mode: AutonomyMode): boolean {
-  return mode === 'auto';
+export function setAgentsPaused(paused: boolean): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PAUSE_KEY, paused ? '1' : '0');
+  window.dispatchEvent(new CustomEvent<boolean>(PAUSE_EVENT, { detail: paused }));
 }
 
-/** True if agents may surface suggestions / recommendations (always true). */
-export function agentsMaySuggest(mode: AutonomyMode): boolean {
-  return mode !== 'off' ? true : false;
-  // Note: even in 'off', sensing still runs (alerts, watch lists). What's
-  // suppressed is agent-authored *recommendations* ("I suggest restocking
-  // from PT Bali Seafood"). Raw threshold flags ("Tuna at 1.9 days cover")
-  // are sensing, not suggestion — always shown.
+export function useAgentsPaused(): boolean {
+  const [paused, setPaused] = useState<boolean>(() => getAgentsPaused());
+  useEffect(() => {
+    const handler = (e: Event) => setPaused((e as CustomEvent<boolean>).detail);
+    window.addEventListener(PAUSE_EVENT, handler);
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === PAUSE_KEY) setPaused(getAgentsPaused());
+    };
+    window.addEventListener('storage', storageHandler);
+    return () => {
+      window.removeEventListener(PAUSE_EVENT, handler);
+      window.removeEventListener('storage', storageHandler);
+    };
+  }, []);
+  return paused;
 }
+
+// ── Convenience helpers ────────────────────────────────────────
+
+/**
+ * Initial labor mode for a freshly-created entity. Driven by the
+ * system default (returns the same value as getDefaultAutonomyMode).
+ * If the wizard exposes a per-entity picker (as the New Request
+ * wizard does on Step 1), pass that value through directly — don't
+ * call this helper.
+ */
+export function defaultLaborMode(): AutonomyMode {
+  return getDefaultAutonomyMode();
+}
+
+/**
+ * Can agents act on this entity right now?
+ * True iff (entity mode === 'auto') AND global pause is off.
+ * If the global pause is on, agents are frozen even on 'auto' entities.
+ */
+export function agentsMayAct(entityMode: AutonomyMode, paused?: boolean): boolean {
+  const effectivePaused = paused ?? getAgentsPaused();
+  if (effectivePaused) return false;
+  return entityMode === 'auto';
+}
+
+/**
+ * Should agents surface recommendations on this entity?
+ * Recommendations are insight-only — they never trigger action — so
+ * they remain visible on Manual entities. The only thing that hides
+ * them is the global pause.
+ */
+export function agentsMaySuggest(paused?: boolean): boolean {
+  const effectivePaused = paused ?? getAgentsPaused();
+  return !effectivePaused;
+}
+
+// ── Legacy aliases — DO NOT use in new code ────────────────────
+// Kept temporarily so the rest of the codebase compiles during the
+// Phase 6 migration. Remove these once every call site is updated.
+export const getAutonomyMode = getDefaultAutonomyMode;
+export const setAutonomyMode = setDefaultAutonomyMode;

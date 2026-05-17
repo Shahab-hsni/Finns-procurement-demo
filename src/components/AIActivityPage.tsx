@@ -14,7 +14,7 @@ import type { AutonomyLevel } from '../lib/types';
 import { theme as themeTokens } from '../lib/theme';
 import { toast } from 'sonner@2.0.3';
 import { useActionLog, type ActorType, type ActionLogEntry, logUserAction } from '../lib/actionLog';
-import { useAutonomyMode } from '../lib/autonomy';
+import { useAutonomyMode, useAgentsPaused, setAgentsPaused } from '../lib/autonomy';
 import { AgentCTA } from './AgentCTA';
 import { finnsAgents, finnsPolicyRules, finnsDisputes } from '../lib/mockData';
 import { RuleComposerModal } from './RuleComposerModal';
@@ -629,6 +629,28 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
   type LeftTab = 'activity' | 'agents' | 'policy' | 'disputes';
   const [leftTab, setLeftTab] = useState<LeftTab>('activity');
   const [suspendedAgentSet, setSuspendedAgentSet] = useState<Set<string>>(new Set());
+
+  // ── System-wide pause (Phase 6c) ─────────────────────────────────
+  // Lives under Agents tab; flips agentsPaused which gates every Auto
+  // entity platform-wide. Manual entities are unaffected; Atlas + insights stay live.
+  const agentsPaused = useAgentsPaused();
+  const handlePauseToggle = () => {
+    const next = !agentsPaused;
+    setAgentsPaused(next);
+    logUserAction({
+      kind: 'autonomy-mode-change',
+      entity: { type: 'platform', id: 'autonomy' },
+      summary: next ? 'Paused all agents (system-wide)' : 'Resumed all agents (system-wide)',
+      details: next
+        ? 'Per-entity Auto entities are frozen until resumed. Per-entity Manual entities are unaffected. Atlas chat + insight surfaces stay live.'
+        : 'Auto entities are free to act again within policy.',
+      meta: { paused: next },
+    });
+    toast[next ? 'warning' : 'success'](
+      next ? 'All agents paused' : 'Agents resumed',
+      { description: next ? 'System-wide kill switch active. Auto entities frozen.' : 'Auto entities are running again within policy.' },
+    );
+  };
   const openDisputeCount = useMemo(
     () => finnsDisputes.filter(d => d.status === 'open' || d.status === 'escalated').length,
     [],
@@ -1091,13 +1113,71 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
 
   // ── Agents tab body — 6-agent roster status (Phase 4d) ───────────
   const agentsTabBody = (
-    <div className="p-4 space-y-3">
-      <div>
-        <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Agent Roster</h2>
-        <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
-          The 5 operating agents. Atlas (chat copilot) isn't gated and isn't shown here.
-        </p>
-      </div>
+      <div className="p-4 space-y-3">
+        <div>
+          <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Agent Roster</h2>
+          <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
+            The 5 operating agents. Atlas (chat copilot) isn't gated and isn't shown here.
+          </p>
+        </div>
+
+        {/* 6c — System-wide pause */}
+        <div className={`p-3 rounded-lg border ${
+          agentsPaused
+            ? isDark ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'
+            : isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            <div className={`shrink-0 w-2 h-2 rounded-full ${agentsPaused ? 'bg-red-500' : 'bg-green-500'}`} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-[11px] font-semibold ${t.textPrimary}`}>
+                {agentsPaused ? 'All agents paused' : 'Agents active'}
+              </p>
+              <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
+                {agentsPaused
+                  ? 'Kill switch on — every Auto entity is frozen. Per-entity Manual unaffected. Atlas + insights stay live.'
+                  : 'Per-entity autonomy applies: Auto entities act within policy; Manual entities wait for you.'}
+              </p>
+            </div>
+            <button onClick={handlePauseToggle}
+              className={`shrink-0 text-[10px] font-bold px-2.5 py-1 rounded border transition-colors ${
+                agentsPaused
+                  ? 'bg-[#87986a] border-[#87986a] text-white hover:bg-[#6b7a54]'
+                  : isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/10' : 'border-red-300/70 text-red-600 hover:bg-red-50'
+              }`}>
+              {agentsPaused ? <><PlayCircle className="h-3 w-3 inline -mt-0.5 mr-0.5" /> Resume all</> : <><PauseCircle className="h-3 w-3 inline -mt-0.5 mr-0.5" /> Pause all</>}
+            </button>
+          </div>
+        </div>
+
+        {/* 6c — System-wide pause */}
+        <div className={`p-3 rounded-lg border ${
+          agentsPaused
+            ? isDark ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'
+            : isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            <div className={`shrink-0 w-2 h-2 rounded-full ${agentsPaused ? 'bg-red-500' : 'bg-green-500'}`} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-[11px] font-semibold ${t.textPrimary}`}>
+                {agentsPaused ? 'All agents paused' : 'Agents active'}
+              </p>
+              <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
+                {agentsPaused
+                  ? 'Kill switch on — every Auto entity is frozen. Per-entity Manual unaffected. Atlas + insights stay live.'
+                  : 'Per-entity autonomy applies: Auto entities act within policy; Manual entities wait for you.'}
+              </p>
+            </div>
+            <button onClick={handlePauseToggle}
+              className={`shrink-0 text-[10px] font-bold px-2.5 py-1 rounded border transition-colors ${
+                agentsPaused
+                  ? 'bg-[#87986a] border-[#87986a] text-white hover:bg-[#6b7a54]'
+                  : isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/10' : 'border-red-300/70 text-red-600 hover:bg-red-50'
+              }`}>
+              {agentsPaused ? <><PlayCircle className="h-3 w-3 inline -mt-0.5 mr-0.5" /> Resume all</> : <><PauseCircle className="h-3 w-3 inline -mt-0.5 mr-0.5" /> Pause all</>}
+            </button>
+          </div>
+        </div>
       <div className="space-y-2">
         {finnsAgents.map(a => {
           const suspended = suspendedAgentSet.has(a.id);

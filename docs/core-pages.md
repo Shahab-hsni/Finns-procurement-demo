@@ -2004,6 +2004,64 @@ On mount and on every `hashchange`, Activity & Governance inspects `window.locat
 
 ---
 
+## 7.13 Mode-Awareness · Manual Baseline Audit
+
+Activity & Governance is the most architecturally important page for the manual baseline. Without it, the manual workflow has no canonical "audit trail of my own actions" surface, which means *every other page's* mode-awareness work is missing its destination. See `PLATFORM-MAP.md § 3a` for the global model.
+
+### Sensing + manual mechanics (always on)
+
+- **Activity Feed** — unified center timeline. Always shown; every event renders with category / venue / event-type chips + relative timestamp.
+- **Activity filters** — confidence band / event type / venue / category / clear. Pure data filtering.
+- **Capital Efficiency** card (top, sage-tinted) — historical "working capital preserved today" + breakdown. Backward-looking; always shown.
+- **Undo Window Policy** section — Hard 60-min / Ledger-close / Per-class radio. Manual config.
+- **Approve Today's Ledger** button — manual lock action, always available.
+- **Reasoning Chain** (right panel, on event select) — historical reasoning record. Always displays for events that already exist.
+- **Inline ✎ Edit data point** — pure manual override.
+- **Rollback button** + **Rollback & Intervene modal** — manual action.
+- **Policy Creator modal** — template picker + rule config. Manual entry.
+- **Atlas right panel** — header, page-context subtitle, data summaries, chat input. Never gated.
+
+### Atlas-curated data layer (always on)
+
+- **Capital Efficiency** card — historical Rp value + direct savings + auto-orders count.
+- **Reasoning Chain display** — the chain recorded *at the time the event happened*. If the event was an agent decision (under past Auto/Assist), the chain shows agent reasoning. If a manual override, it shows user reason. **What's gated is the production of NEW agent reasoning, not the display of past records.**
+- **"Why was this done?"** narrative — read-only display.
+
+### Mode-aware CTAs (action layer)
+
+| Surface | Auto | Assist | Off |
+|---------|------|--------|-----|
+| **Activity Feed contents** (new events) | Agents generate events rapidly | Same — agents propose, events land `outcome: 'pending'` until human confirms | Only **manual events** land: your approvals, rollbacks, policy creates, overrides. Agent **observation** events (par breach, ETA slip, compliance expiry) still land — sensing — but agent **action** events don't. |
+| **Event confidence score** | Agent 0-100 | Same | Manual events get `confidence: 100` (or `null` — design choice needed) |
+| **Suggested rule** card (Policy tab, when built) | "You've overridden A-04 4× — recommend Spend Cap rule…" — A-01 editorial | Same | **Hidden** — no agent recommendation |
+| **Atlas Recommendation card** on dispute view | "Of 3 similar disputes, 2 were approved + hardened" | Same | **Hidden** — agent editorial |
+| **Suspend Agent** button | Suspends agent globally | Same | **Hidden / no-op** — agents already aren't acting |
+| **Resume Agent** button | Returns agent to active | Same | **Hidden / no-op** |
+| **Rollback Modal "Fix & Re-run"** | Reverts + re-runs agent | Same | **Hidden / disabled** — no agent to re-run; only "Manual Takeover" applies |
+| **Approve Today's Ledger** | Locks day's events | Same | Same — works regardless of mode |
+| **Policy Creator → Create Rule** | Adds rule; agents enforce at next event | Same | Adds rule to active list; functions as record-of-intent the user manually applies (no agent enforcement) |
+
+### Real gaps (open backlog)
+
+1. **No tabbed left panel** (Activity / Agents / Policy / Disputes) as docs spec at § 7.2. Currently only the Activity feed renders. **Without this**: agent suspend/resume only reachable per-event (can't suspend an agent who hasn't acted yet); policy rules have no list view; disputes have no panel. **Biggest structural gap on the page** — Phase 4d.
+2. **Activity Feed in Off mode is sparse but should still be useful.** Today the feed is dominated by agent events; in Off mode it'd be near-empty. **Missing: manual events log.** Every approve / restock / override / rule-create / dispute action should land in the feed with `actorType: 'admin'` + actor name. **The canonical "Recent Activity" log that every other page (Overview, Inventory, Suppliers, Spending) should consume.**
+3. **Reasoning Chain assumes agent attribution** for every event. Agent identity card has color-coded accent + agent icon + agent ID + confidence. For manual events, render a **User identity card**: your name, role badge, no confidence score (or "100% — you decided").
+4. **Suspend Agent has no roster view.** Reachable only by clicking an event that agent generated. If A-04 hasn't acted recently, no path to suspend it preventively. Needs the Agents tab from Phase 4d.
+5. **No "Renaming agents" surface anywhere.** Agent IDs / names hardcoded in `lib/mockData.ts`. Prototype scope: allow inline rename on the Agents tab. (Cosmetic.)
+6. **Suggested Rule + Atlas Recommendation cards** — A-01 editorial; need to hide in Off mode. Pending Phase 4d build but spec'd here.
+7. **Audit log of Off-mode user actions is the primary surface** but doesn't exist as a focused view. Today's feed mixes everything. **Missing: actor filter chip** (You / Atlas / Agents / All / System events).
+
+### Proposed fix shape
+
+- **Unified Action Log architecture**: single store, `actorType: 'agent' | 'admin' | 'system'`, fed by every page's mutating action. Activity Feed reads this store. **Every other page's "Recent activity" / "Action Log" surface consumes the same store with appropriate filters.** Foundation for the manual-baseline audit story.
+- **Tabbed left panel** (Phase 4d): Activity / Agents / Policy / Disputes segmented control. Each tab reshapes center + right panel per RIGHT-PANEL-MAP § 7.
+- **Agents tab** renders all 6 (Atlas + A-01..A-05) as cards: name (inline editable, prototype scope), role, performance band, suspend/resume, tasks-completed-today count.
+- **Mode-aware reasoning chain renderer**: when `event.actorType === 'admin'`, render User identity card; when `'agent'`, render Agent identity card. Same component, different actor shape.
+- **Suggested Rule + Atlas Recommendation cards** in Policy tab: hide via `useAutonomyMode() === 'off'` check.
+- **Activity Feed filter chip**: add "Actor" filter (You / Atlas / Agents / All / System events). Joins existing filters by confidence + event type + venue + category.
+
+---
+
 # 8. Workflows Page
 
 Light reference page. 3 playbooks rendered as 5-stage flow paths. **No tuning. No simulation. No hard-locks.** This page exists to answer "what does Rush actually do that Standard doesn't?" — not to configure anything.

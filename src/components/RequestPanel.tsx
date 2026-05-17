@@ -135,20 +135,27 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   }>({});
   const detectedFromName = useMemo(() => detectItem(newItemName), [newItemName]);
   useEffect(() => {
+    // 5c — Off mode disables auto-fill. The chip still hides, the
+    // form stays manual. Assist + Auto both auto-fill the same way
+    // because the difference between them is in how vendors are
+    // suggested downstream (Step 2), not how items are categorised.
+    if (autonomyMode === 'off') return;
     if (!detectedFromName) return;
     if (!overridden.category) setNewItemCategory(detectedFromName.category);
     if (!overridden.unit && detectedFromName.unit) setNewItemUnit(detectedFromName.unit);
     if (!overridden.venues && detectedFromName.venues && detectedFromName.venues.length > 0) {
       setNewItemVenues(detectedFromName.venues);
     }
-  }, [detectedFromName, overridden]);
+  }, [detectedFromName, overridden, autonomyMode]);
   const [playbook, setPlaybook] = useState<PlaybookId>('WF-STD');
 
   // Step 2 — Sourcing (5a)
   // Two paths: 'pick' (default) lets the user choose vendors directly
   // from the directory; 'rfq' opens the RFQ Composer inline and shows
   // a live waiting view until the user awards a winner.
-  const [selectedVendors, setSelectedVendors] = useState<string[]>([finnsSuppliers[1]?.id ?? '']);
+  // 5c — initial selection is now empty; Auto mode pre-picks the
+  // top suggested vendor below. Off mode leaves it empty.
+  const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
   type SourcingPath = 'pick' | 'rfq';
   const [sourcingPath, setSourcingPath] = useState<SourcingPath>('pick');
   const [wizardRfqId, setWizardRfqId]   = useState<string | null>(null);
@@ -168,6 +175,20 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   const wizardRfq = wizardRfqId
     ? rfqRecords.find(r => r.id === wizardRfqId) ?? null
     : null;
+
+  // 5c — Auto-mode pre-pick: when entering Step 2 with the 'pick' path
+  // and no vendor chosen yet, auto-select the top-suggested vendor
+  // based on the items already in the wizard. The user can still
+  // override by clicking another row. Assist + Off leave selection
+  // empty so the user always makes the call.
+  useEffect(() => {
+    if (autonomyMode !== 'auto') return;
+    if (step !== 2 || sourcingPath !== 'pick' || wizardRfqId) return;
+    if (selectedVendors.length > 0) return;
+    if (items.length === 0) return;
+    const [topId] = suggestVendorsForItems(items.map(it => it.name), 1);
+    if (topId) setSelectedVendors([topId]);
+  }, [autonomyMode, step, sourcingPath, wizardRfqId, items, selectedVendors.length]);
 
   // Step 3 — Delivery
   const [targetVenues, setTargetVenues] = useState<VenueTag[]>(['BC', 'RC']);
@@ -885,13 +906,29 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             )}
           </div>
 
-          {/* Off-mode hint — points the user at Step 2's RFQ path. */}
-          {autonomyMode === 'off' && step < 5 && (
-            <div className={`mt-3 p-2.5 rounded-lg border text-[11px] flex items-center gap-2 ${
-              isDark ? 'bg-amber-500/8 border-amber-500/25 text-amber-300/90' : 'bg-amber-50 border-amber-200 text-amber-700'
+          {/* Mode-aware banner (5c). One row, mode-tinted, always visible
+              while in the wizard so the user knows what the page will do
+              for them at each step. */}
+          {step < 5 && (
+            <div className={`mt-3 p-2.5 rounded-lg border text-[11px] flex items-center gap-2 flex-wrap ${
+              autonomyMode === 'off'
+                ? isDark ? 'bg-amber-500/8 border-amber-500/25 text-amber-300/90' : 'bg-amber-50 border-amber-200 text-amber-700'
+                : autonomyMode === 'assist'
+                  ? isDark ? 'bg-blue-500/8 border-blue-500/25 text-blue-300/90' : 'bg-blue-50 border-blue-200 text-blue-700'
+                  : isDark ? 'bg-[#87986a]/10 border-[#87986a]/30 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#dbe3ce] text-[#6b7a54]'
             }`}>
-              <span className="font-bold">Agents are off — </span>
-              <span>at Step 2 use the <strong>Compare quotes (RFQ)</strong> path to source manually.</span>
+              <span className="font-bold uppercase tracking-wide text-[9px]">
+                {autonomyMode === 'off' ? 'Off mode' : autonomyMode === 'assist' ? 'Assist mode' : 'Auto mode'}
+              </span>
+              <span>·</span>
+              <span>
+                {autonomyMode === 'off' &&
+                  'No category auto-fill, no vendor ranking, no pre-selection. Use Step 2\'s "Compare quotes (RFQ)" path to source manually.'}
+                {autonomyMode === 'assist' &&
+                  'A-01 suggests as you type — category + unit + venues from the item name, vendors ranked by relevance. Nothing pre-selected; you approve every step.'}
+                {autonomyMode === 'auto' &&
+                  'A-01 auto-fills item categories, pre-picks the top-matched vendor on Step 2, and surfaces the RFQ path when there is no clear winner. Override anything to keep control.'}
+              </span>
             </div>
           )}
 
@@ -1032,8 +1069,8 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       </div>
                     </div>
 
-                    {/* Smart-detect hint */}
-                    {detectedFromName && newItemName.trim().length > 0 && (
+                    {/* Smart-detect hint — Assist + Auto only (5c) */}
+                    {autonomyMode !== 'off' && detectedFromName && newItemName.trim().length > 0 && (
                       <div className={`mt-2 inline-flex items-center gap-2 px-2 py-1 rounded-md text-[10px] ${
                         isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
                       }`}>
@@ -1044,7 +1081,9 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         {detectedFromName.venues && detectedFromName.venues.length > 0 && (
                           <><span className="opacity-50">·</span><span>typically {detectedFromName.venues.join(' / ')}</span></>
                         )}
-                        <span className={`opacity-60 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>· auto-filled (edit to override)</span>
+                        <span className={`opacity-60 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          · {autonomyMode === 'auto' ? 'auto-filled' : 'suggestion'} (edit to override)
+                        </span>
                       </div>
                     )}
 
@@ -1137,18 +1176,24 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
 
                 {/* ── Path A: Pick directly ───────────────────────────── */}
                 {!wizardRfqId && sourcingPath === 'pick' && (() => {
-                  // 5b — rank vendors by relevance to the items in Step 1.
-                  // Suggested vendors (overlap > 0) render first; the rest
-                  // come after, still composite-sorted.
-                  const suggestedIds = suggestVendorsForItems(items.map(it => it.name), 10);
+                  // 5b/5c — In Assist + Auto, rank vendors by relevance to
+                  // the items in Step 1 (Match chip on suggestions). In
+                  // Off mode, render the directory in raw alphabetical
+                  // order — no agent attribution, no Match chips.
+                  const ranked = autonomyMode === 'off';
+                  const suggestedIds = !ranked
+                    ? suggestVendorsForItems(items.map(it => it.name), 10)
+                    : [];
                   const suggestedSet = new Set(suggestedIds);
                   const suggested = suggestedIds
                     .map(id => finnsSuppliers.find(v => v.id === id)!)
                     .filter(Boolean);
-                  const rest = finnsSuppliers
-                    .filter(v => !suggestedSet.has(v.id))
-                    .sort((a, b) => b.metrics.composite - a.metrics.composite);
-                  const ordered = [...suggested, ...rest];
+                  const rest = ranked
+                    ? finnsSuppliers.slice().sort((a, b) => a.name.localeCompare(b.name))
+                    : finnsSuppliers
+                        .filter(v => !suggestedSet.has(v.id))
+                        .sort((a, b) => b.metrics.composite - a.metrics.composite);
+                  const ordered = ranked ? rest : [...suggested, ...rest];
                   return (
                   <div className={cardClass}>
                     <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Approved Directory</h2>

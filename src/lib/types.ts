@@ -191,26 +191,19 @@ export interface ServiceIndicator {
 }
 
 // ── Intelligence Panel ────────────────────────────────────────
-// IntelligenceContext keeps deprecated values (nerve-center / transformation /
-// global-ops / infrastructure) so IntelligencePanel.tsx still compiles. Those
-// routes are deleted from App.tsx so the branches are unreachable. Phase 3j
-// strips them and narrows this union.
+// Narrowed to the 8 Finn's pages. 'governance' is a legacy alias for the
+// merged Activity & Governance page (the canonical context is 'ai-activity'
+// but governance still passes through here for any legacy callers).
 export type IntelligenceContext =
-  // Core fundamentals
   | 'overview'
   | 'orders'
   | 'inventory'
   | 'spending'
   | 'suppliers'
   | 'ai-activity'
-  | 'request'
-  // Agents hub
-  | 'nerve-center'        // DEPRECATED — Phase 3j removes
+  | 'governance'        // legacy alias for ai-activity (merged page)
   | 'workflows'
-  | 'transformation'      // DEPRECATED — Phase 3j removes
-  | 'global-ops'          // DEPRECATED — Phase 3j removes
-  | 'governance'
-  | 'infrastructure';     // DEPRECATED — Phase 3j removes
+  | 'request';
 
 // ─────────────────────────────────────────────────────────────
 // ── Finn's Canonical Types — read these first ────────────────

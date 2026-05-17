@@ -210,12 +210,8 @@ const GREETINGS: Record<IntelligenceContext, string> = {
   'suppliers':      "I have performance data on all your suppliers. Ask me about reliability scores, quality trends, or sourcing alternatives.",
   'ai-activity':    "I can explain any automated action, show you why a decision was made, or help you adjust autonomy settings.",
   'request':        "Hi! I'm your procurement assistant. I can help you with request suggestions, vendor recommendations, budget optimization, and more.",
-  'nerve-center':   "All 40 agents online. Stage 5 (Price Optimization) is bottlenecking at 240 ops/min — I've queued a DAG rebalance. REA #003 reports a seafood demand spike; I've increased SEN #002 polling to 5-min intervals.",
-  'workflows':      "124 Standard orders active — on track. Emergency workflow triggered 3× this week, 2× above baseline. Blanket PO is your highest-ROI path at $42.1K saved. I can tune signal thresholds or re-wire stage logic.",
-  'transformation': "⚠ Alert: GreenHarvest Farms is not keeping their promises — they delivered 2 days late and below quality standards. I've already found a reliable replacement (AlphaFoods International). See the action above to switch your next orders. I also found $42K in new savings you haven't captured yet. What would you like to look at first?",
-  'global-ops':     "I have visibility across 5 countries and 5 industries. Ask about compliance, currency exposure, or regional performance.",
-  'governance':     "I'm your Policy Architect. I've detected 3 recurring budget cap overrides for PT Maju this month — that's a pattern worth codifying as a rule exception. There's also $8,400 in financial leakage from 2 un-hardened rules. Want to update Rule #14 now?",
-  'infrastructure': "I'm monitoring platform health, hardening status, and build progress. Ask about system reforms or production readiness.",
+  'workflows':      "Three playbooks active: Standard, Rush, Recurring. This is a read-only reference — pick a card on the left to see the 5-stage flow path and which agent owns each stage.",
+  'governance':     "I'm your Policy Architect. I've detected 3 recurring budget cap overrides for one vendor this month — that's a pattern worth codifying as a rule exception. Want to surface the rule diff?",
 };
 
 interface QuickAction {
@@ -227,35 +223,17 @@ interface QuickAction {
 }
 
 const QUICK_ACTIONS: Record<IntelligenceContext, (isDark: boolean) => QuickAction[]> = {
-  'nerve-center': (isDark) => [
-    { icon: Activity,       label: 'Diagnostics',    description: 'Full system check',   color: isDark ? 'text-green-400'  : 'text-green-600'  },
-    { icon: Gauge,          label: 'Cool Down',      description: 'Downshift autonomy',  color: isDark ? 'text-orange-400' : 'text-orange-600' },
-    { icon: AlertTriangle,  label: 'Anomalies',      description: '14 active alerts',    color: isDark ? 'text-red-400'    : 'text-red-600'    },
-    { icon: Cpu,            label: 'Scale Agents',   description: 'Adjust capacity',     color: isDark ? 'text-purple-400' : 'text-purple-600' },
-  ],
   'workflows': (isDark) => [
-    { icon: Activity,      label: 'Simulate Signal', description: 'Test demand spike',  color: isDark ? 'text-purple-400' : 'text-purple-600', onClick: () => window.dispatchEvent(new CustomEvent('buyamia-workflow-simulate')) },
-    { icon: AlertTriangle, label: 'Emergency',       description: '3× this week',       color: isDark ? 'text-red-400'    : 'text-red-600'    },
-    { icon: Target,        label: 'Tune Logic',      description: 'Adjust thresholds',  color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
-    { icon: TrendingUp,    label: 'ROI Report',      description: 'Best-return paths',  color: isDark ? 'text-[#a3b085]'  : 'text-[#87986a]' },
-  ],
-  'transformation': (isDark) => [
-    { icon: TrendingUp,   label: 'ROI Summary',   description: 'How much did AI save you?',     color: isDark ? 'text-green-400'  : 'text-green-600'  },
-    { icon: DollarSign,   label: 'Find Savings',  description: 'Where can you save more?',      color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
-    { icon: Eye,          label: 'Check Suppliers', description: 'Who is underperforming?',     color: isDark ? 'text-purple-400' : 'text-purple-600' },
-    { icon: BarChart3,    label: 'Compare Months', description: 'Are things getting better?',   color: isDark ? 'text-orange-400' : 'text-orange-600' },
-  ],
-  'global-ops': (isDark) => [
-    { icon: Globe,        label: 'Compliance',  description: 'Check regulations',  color: isDark ? 'text-green-400'  : 'text-green-600'  },
-    { icon: DollarSign,   label: 'FX Exposure', description: 'Currency risk',      color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
-    { icon: Users,        label: 'Suppliers',   description: 'Regional directory', color: isDark ? 'text-purple-400' : 'text-purple-600' },
-    { icon: TrendingUp,   label: 'Growth Map',  description: 'Regional trends',    color: isDark ? 'text-orange-400' : 'text-orange-600' },
+    { icon: ScrollText,    label: 'Standard',  description: 'WF-STD playbook',  color: isDark ? 'text-[#a3b085]'  : 'text-[#87986a]'  },
+    { icon: Zap,           label: 'Rush',      description: 'WF-RSH playbook',  color: isDark ? 'text-amber-400'  : 'text-amber-600'  },
+    { icon: FileText,      label: 'Recurring', description: 'WF-REC playbook',  color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
+    { icon: TrendingUp,    label: 'ROI',       description: 'Savings by playbook', color: isDark ? 'text-purple-400' : 'text-purple-600' },
   ],
   'governance': (isDark) => [
-    { icon: Shield,        label: 'Policy Check', description: 'Audit rules',    color: isDark ? 'text-green-400'  : 'text-green-600'  },
-    { icon: FileText,      label: 'Decision Log', description: 'Review ledger',  color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
-    { icon: AlertTriangle, label: 'Disputes',     description: 'Open cases',     color: isDark ? 'text-orange-400' : 'text-orange-600' },
-    { icon: Settings,      label: 'Thresholds',   description: 'Tune controls',  color: isDark ? 'text-purple-400' : 'text-purple-600' },
+    { icon: Shield,        label: 'Policy Rules', description: 'Active rules',  color: isDark ? 'text-green-400'  : 'text-green-600'  },
+    { icon: FileText,      label: 'Activity Feed', description: 'Recent events', color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
+    { icon: AlertTriangle, label: 'Disputes',     description: 'Open cases',    color: isDark ? 'text-orange-400' : 'text-orange-600' },
+    { icon: Settings,      label: 'Agents',       description: 'A-01 to A-05',  color: isDark ? 'text-purple-400' : 'text-purple-600' },
   ],
   'request': (isDark) => [
     { icon: BarChart3,  label: 'Price Analysis', description: 'Compare pricing',   color: isDark ? 'text-purple-400' : 'text-purple-600' },
@@ -299,12 +277,6 @@ const QUICK_ACTIONS: Record<IntelligenceContext, (isDark: boolean) => QuickActio
     { icon: Eye,        label: 'Audit',    description: 'Verify decisions', color: isDark ? 'text-green-400'  : 'text-green-600'  },
     { icon: TrendingUp, label: 'Stats',    description: 'Performance',      color: isDark ? 'text-[#a3b085]'  : 'text-[#87986a]' },
   ],
-  'infrastructure': (isDark) => [
-    { icon: Activity, label: 'Health Check', description: 'System status',  color: isDark ? 'text-green-400'  : 'text-green-600'  },
-    { icon: Cpu,      label: 'Hardening',    description: 'Progress check', color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
-    { icon: Clock,    label: 'Timeline',     description: 'Build phases',   color: isDark ? 'text-purple-400' : 'text-purple-600' },
-    { icon: Shield,   label: 'Security',     description: 'Audit status',   color: isDark ? 'text-orange-400' : 'text-orange-600' },
-  ],
 };
 
 interface Suggestion {
@@ -313,19 +285,15 @@ interface Suggestion {
 }
 
 const SUGGESTIONS: Record<IntelligenceContext, Suggestion[]> = {
-  'nerve-center':   [{ icon: Sparkles, text: "Why is Stage 5 bottlenecking?" }, { icon: Sparkles, text: "Which agent classes are degraded?" }, { icon: Sparkles, text: "Recommend a Cool Down threshold for me" }],
-  'workflows':      [{ icon: Sparkles, text: "Why is Emergency triggering 3× this week?" }, { icon: Sparkles, text: "Which workflow has the best ROI?" }, { icon: Sparkles, text: "How do I reduce Rush workflow latency?" }],
-  'transformation': [{ icon: Sparkles, text: "Why is GreenHarvest delivering late?" }, { icon: Sparkles, text: "How do I increase the savings the AI captures?" }, { icon: Sparkles, text: "What would it take to reach 80% automation?" }],
-  'global-ops':     [{ icon: Sparkles, text: "Which country has compliance issues?" }, { icon: Sparkles, text: "Compare regional supplier density" }, { icon: Sparkles, text: "What's our FX exposure this month?" }],
-  'governance':     [{ icon: Sparkles, text: "Should I update Rule #14 for a 10% PT Maju variance?" }, { icon: Sparkles, text: "Which rules are being overridden most often?" }, { icon: Sparkles, text: "How much leakage would hardening 3 rules prevent?" }],
-  'request':        [{ icon: Sparkles, text: "What should I name my request?" }, { icon: Sparkles, text: "How do I describe what I need?" }, { icon: Sparkles, text: "What makes a good request name?" }],
-  'overview':       [{ icon: Sparkles, text: "Run a make-vs-buy simulation on PO-2847" }, { icon: Sparkles, text: "What's blocking my Level 4 autonomy upgrade?" }, { icon: Sparkles, text: "Compare this PO to last 5 similar orders" }],
+  'workflows':      [{ icon: Sparkles, text: "What does Rush do that Standard doesn't?" }, { icon: Sparkles, text: "Which playbook has the best savings ratio?" }, { icon: Sparkles, text: "Show me recent POs on each playbook" }],
+  'governance':     [{ icon: Sparkles, text: "Which agent is overridden most often?" }, { icon: Sparkles, text: "How many spend-cap rules fired this week?" }, { icon: Sparkles, text: "What's the open dispute backlog?" }],
+  'request':        [{ icon: Sparkles, text: "What should I name my request?" }, { icon: Sparkles, text: "Which vendor handles this category best?" }, { icon: Sparkles, text: "Why is this playbook being recommended?" }],
+  'overview':       [{ icon: Sparkles, text: "Which PO needs my attention most urgently?" }, { icon: Sparkles, text: "What value is arriving today?" }, { icon: Sparkles, text: "Any cost-saving opportunities I'm missing?" }],
   'orders':         [{ icon: Sparkles, text: "Which orders are arriving this week?" }, { icon: Sparkles, text: "Show me auto-ordered items" }, { icon: Sparkles, text: "Any delivery delays to flag?" }],
   'inventory':      [{ icon: Sparkles, text: "What's running low right now?" }, { icon: Sparkles, text: "Which items were auto-reordered?" }, { icon: Sparkles, text: "Predict next week's stock needs" }],
-  'spending':       [{ icon: Sparkles, text: "Where are we overspending?" }, { icon: Sparkles, text: "Compare this month to last month" }, { icon: Sparkles, text: "Show savings by category" }],
+  'spending':       [{ icon: Sparkles, text: "Where are we overspending?" }, { icon: Sparkles, text: "Compare this month to last month" }, { icon: Sparkles, text: "Show savings by category and venue" }],
   'suppliers':      [{ icon: Sparkles, text: "Who's our most reliable supplier?" }, { icon: Sparkles, text: "Any suppliers underperforming?" }, { icon: Sparkles, text: "Find cheaper alternatives for protein" }],
-  'ai-activity':    [{ icon: Sparkles, text: "Why did the AI reject that quote?" }, { icon: Sparkles, text: "How much has the AI saved me?" }, { icon: Sparkles, text: "What's needed for next autonomy level?" }],
-  'infrastructure': [{ icon: Sparkles, text: "What's the current hardening status?" }, { icon: Sparkles, text: "Which reforms are completed?" }, { icon: Sparkles, text: "Show the build timeline" }],
+  'ai-activity':    [{ icon: Sparkles, text: "Why did the AI reject that quote?" }, { icon: Sparkles, text: "How much has the AI saved me?" }, { icon: Sparkles, text: "What's needed for higher autonomy on Seafood?" }],
 };
 
 interface Insight {
@@ -339,25 +307,10 @@ interface Insight {
 }
 
 const INSIGHTS: Record<IntelligenceContext, (isDark: boolean) => Insight[]> = {
-  'nerve-center': (isDark) => [
-    { icon: Bot,           title: 'Agent #11 (REA-003) — Demand Spike',  description: "Agent #11 (REA-003 · Forecast) is processing a seafood demand spike. I've increased Agent #2 (SEN-002) polling to 5-min intervals.", badge: 'SRE',        badgeColor: isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'     : 'bg-blue-50 text-blue-700 border-blue-200'     },
-    { icon: AlertTriangle, title: 'Agent #12 (REA-004) — Bottleneck',    description: 'Stage 5 bottleneck: REA-004 is the root cause — BeanHouse API at +340ms. Restarting will clear 12 queued negotiations.',             badge: 'Diagnostic', badgeColor: isDark ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 'bg-orange-50 text-orange-700 border-orange-200' },
-    { icon: Activity,      title: 'Agent #39 (MET-007) — Auto-Recovery', description: 'MET-007 auto-recovered SEN-006 from a 45s timeout. Root cause: weather feed API rate limit. Next retry in 8 min.',                  badge: 'Auto-Healed', badgeColor: isDark ? 'bg-green-500/10 text-green-400 border-green-500/20'   : 'bg-green-50 text-green-700 border-green-200'   },
-  ],
   'workflows': (isDark) => [
     { icon: TrendingUp,    title: 'Standard 94% — Blanket PO leaking 5%', description: 'Blanket PO is leaking ~5% in un-captured discounts at Stage 5. Re-wiring Price Optimization recovers est. $2.1K/month.',                badge: 'ROI Switch', badgeColor: isDark ? 'bg-[#87986a]/15 text-[#a3b085] border-[#87986a]/20' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#dbe3ce]', recommendedAction: '⚡ Re-wire S5 Now'       },
     { icon: AlertTriangle, title: 'Emergency Spike — 3× Baseline',        description: 'Emergency triggered 3× this week vs. 1× baseline. Shifting Inventory Threshold signal 2 days earlier catches stockouts pre-escalation.',  badge: 'Action',    badgeColor: isDark ? 'bg-red-500/10 text-red-400 border-red-500/20'           : 'bg-red-50 text-red-700 border-red-200',         recommendedAction: '📅 Adjust DS-02 Timing'  },
     { icon: Clock,         title: 'Rush Latency +9h at Stage 5',          description: 'Rush orders avg 38h. Stage 5 adds 9h. Set bypass for Rush orders <$5K with pre-approved vendors to hit the 24h SLA.',                     badge: 'Latency',   badgeColor: isDark ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'  : 'bg-orange-50 text-orange-700 border-orange-200', recommendedAction: '⚡ Set Bypass Rule'       },
-  ],
-  'transformation': (isDark) => [
-    { icon: DollarSign,    title: '$42K Savings — Act in 48h',    description: 'Several vendor discount windows are closing in the next 48 hours. If the AI locks in these orders now, you save $42,000 that would otherwise be lost.',            badge: 'New',    badgeColor: isDark ? 'bg-green-500/10 text-green-400 border-green-500/20'   : 'bg-green-50 text-green-700 border-green-200',   recommendedAction: '🚀 Capture Savings Now', actionEvent: 'buyamia-transform-execute-capture' },
-    { icon: TrendingUp,    title: 'More Orders Running Automatically', description: 'The system now handles 78% of your orders without anyone needing to do anything. That\'s up from last month — less manual work for your team.',               badge: 'Good',   badgeColor: isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'     : 'bg-blue-50 text-blue-700 border-blue-200'     },
-    { icon: AlertTriangle, title: 'GreenHarvest is Underperforming', description: 'GreenHarvest Farms was 2 days late on their last delivery and product quality was below what they promised. Click Investigate to see what went wrong.',           badge: 'Alert',  badgeColor: isDark ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-amber-50 text-amber-700 border-amber-200',   recommendedAction: '🕵️ See What Went Wrong', actionEvent: 'buyamia-transform-investigate' },
-  ],
-  'global-ops': (isDark) => [
-    { icon: Globe,         title: 'Compliance', description: 'Vietnam regulations updated — review needed', badge: 'Action', badgeColor: isDark ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 'bg-orange-50 text-orange-700 border-orange-200' },
-    { icon: TrendingUp,    title: 'Growth',     description: 'Thailand GMV up 18% month-over-month',        badge: 'Trend',  badgeColor: isDark ? 'bg-green-500/10 text-green-400 border-green-500/20'   : 'bg-green-50 text-green-700 border-green-200'   },
-    { icon: DollarSign,    title: 'FX Alert',   description: 'IDR weakened 2.3% — hedging recommended',     badge: 'Alert',  badgeColor: isDark ? 'bg-red-500/10 text-red-400 border-red-500/20'         : 'bg-red-50 text-red-700 border-red-200'         },
   ],
   'governance': (isDark) => [
     { icon: Shield,        title: 'Override Flagged', description: 'Manual override on DEC-006 exceeds budget cap. Agent GOV-002 blocked the purchase; a manager reversed it. Review the governance trail to see if a new policy rule is warranted.', badge: 'Review', badgeColor: isDark ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 'bg-orange-50 text-orange-700 border-orange-200', recommendedAction: '🛡️ Review Governance', actionEvent: 'buyamia-governance-review-override' },
@@ -399,11 +352,6 @@ const INSIGHTS: Record<IntelligenceContext, (isDark: boolean) => Insight[]> = {
     { icon: DollarSign,  title: 'Daily Savings',     description: '$3,075 saved today across 47 actions',           badge: 'Today',    badgeColor: isDark ? 'bg-green-500/10 text-green-400 border-green-500/20'   : 'bg-green-50 text-green-700 border-green-200'   },
     { icon: CheckCircle, title: 'Trust Building',    description: 'AI accuracy at 96.2% — up from 94.8% last week', badge: 'Trend',    badgeColor: isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'     : 'bg-blue-50 text-blue-700 border-blue-200'     },
   ],
-  'infrastructure': (isDark) => [
-    { icon: Activity, title: 'Hardening Update', description: '8 of 10 production requirements completed',  badge: '80%',    badgeColor: isDark ? 'bg-green-500/10 text-green-400 border-green-500/20'   : 'bg-green-50 text-green-700 border-green-200'   },
-    { icon: Cpu,      title: 'Reform Progress',  description: 'Event Bus reform in phase 2 of 3',           badge: 'Active', badgeColor: isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'     : 'bg-blue-50 text-blue-700 border-blue-200'     },
-    { icon: Clock,    title: 'Build Phase',       description: 'Phase 3 deployment scheduled for next week', badge: 'Soon',   badgeColor: isDark ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-purple-50 text-purple-700 border-purple-200' },
-  ],
 };
 
 const SUBTITLES: Record<IntelligenceContext, string> = {
@@ -414,12 +362,8 @@ const SUBTITLES: Record<IntelligenceContext, string> = {
   'suppliers':      'Vendor intelligence advisor',
   'ai-activity':    'Autonomy transparency copilot',
   'request':        'Your smart procurement copilot',
-  'nerve-center':   'Atlas · Site Reliability Engineer',
-  'workflows':      'Atlas · Workflow Architect',
-  'transformation': 'Ask anything about your purchasing data',
-  'global-ops':     'Regional operations copilot',
+  'workflows':      'Workflow reference',
   'governance':     'Atlas · Policy Architect',
-  'infrastructure': 'Platform health monitor',
 };
 
 // ── Governance-specific data ──────────────────────────────────
@@ -547,18 +491,6 @@ export function IntelligencePanel({
     return () => window.removeEventListener('buyamia-governance-cp-changed', handler);
   }, [context]);
 
-  // Infrastructure: lockdown + agent scale events
-  useEffect(() => {
-    if (context !== 'infrastructure') return;
-    const lockHandler  = (e: Event) => setInfraLockdown((e as CustomEvent<boolean>).detail);
-    const scaleHandler = () => setAgentScaled(true);
-    window.addEventListener('buyamia-infra-lockdown', lockHandler);
-    window.addEventListener('buyamia-infra-agent-scaled', scaleHandler);
-    return () => {
-      window.removeEventListener('buyamia-infra-lockdown', lockHandler);
-      window.removeEventListener('buyamia-infra-agent-scaled', scaleHandler);
-    };
-  }, [context]);
 
   const quickActions = QUICK_ACTIONS[context](isDark);
   const suggestions = SUGGESTIONS[context];
@@ -616,7 +548,7 @@ export function IntelligencePanel({
 
       {/* ── Header ── */}
       <div
-        id={context === 'transformation' ? 'tm-intel-header' : context === 'governance' ? 'gov-intel-header' : context === 'infrastructure' ? 'infra-intel-header' : context === 'workflows' ? 'wf-intel-header' : context === 'nerve-center' ? 'nc-intel-header' : undefined}
+        id={context === 'governance' ? 'gov-intel-header' : context === 'workflows' ? 'wf-intel-header' : undefined}
         className={`shrink-0 p-4 border-b transition-colors ${
           simMode
             ? isDark ? 'border-[#87986a]/30 bg-[#87986a]/5' : 'border-[#dbe3ce] bg-[#f4f6f0]/60'
@@ -680,14 +612,6 @@ export function IntelligencePanel({
           </div>
         )}
       </div>
-
-      {/* ── Infrastructure Lockdown Banner ── */}
-      {context === 'infrastructure' && infraLockdown && (
-        <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-red-500">
-          <AlertOctagon className="h-4 w-4 text-white shrink-0 animate-pulse" />
-          <span className="text-white text-[11px] font-bold tracking-wide">🔴 SECURITY LOCKDOWN — Tamper event detected</span>
-        </div>
-      )}
 
       {/* ── Scrollable: Quick Access + Insights ── */}
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -824,64 +748,6 @@ export function IntelligencePanel({
                 </div>
               </>
             )
-
-          ) : context === 'transformation' ? (
-            /* ── Transformation: Breach Alert + Quick Grid ── */
-            <div className="space-y-3">
-              {/* GreenHarvest Breach — Atlas Strategic Advisor card */}
-              <div className={`p-3 rounded-lg border ${
-                isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50/80 border-amber-200'
-              }`}>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <AlertTriangle className={`h-3.5 w-3.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
-                  <span className={`text-[10px] font-bold tracking-wider ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                    ATLAS RECOMMENDS — SUPPLIER ISSUE DETECTED
-                  </span>
-                </div>
-                <p className={`text-[10px] mb-2.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                  GreenHarvest Farms promised to deliver in 2 days but took 4.1 days, and their product quality (88%) fell below what they guaranteed (96%). I've found AlphaFoods International as a reliable replacement — they have a 94/100 trust score. The extra cost is less than 2%.
-                </p>
-                {pivotAuthorized ? (
-                  <div className={`text-[11px] font-semibold text-center py-1.5 rounded ${
-                    isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
-                  }`}>
-                    ✓ Done — AlphaFoods will handle your next 3 Lamb Rack orders
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('buyamia-transform-authorize-pivot'));
-                      setPivotAuthorized(true);
-                    }}
-                    className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white"
-                  >
-                    ✅ Switch to AlphaFoods for next 3 Lamb Rack orders
-                  </button>
-                )}
-              </div>
-
-              {/* Quick access 2×2 */}
-              <div className="grid grid-cols-2 gap-2">
-                {quickActions.map((action, index) => {
-                  const Icon = action.icon;
-                  return (
-                    <button
-                      key={index}
-                      onClick={action.onClick}
-                      className={`p-3 rounded-lg border text-left transition-colors ${
-                        isDark
-                          ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800 hover:border-gray-700'
-                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                      }`}
-                    >
-                      <Icon className={`h-4 w-4 mb-2 ${action.color}`} />
-                      <div className={`text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>{action.label}</div>
-                      <div className={`text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{action.description}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
           ) : context === 'governance' ? (
             /* ── Governance: Policy Architect Workspace ── */
@@ -1187,97 +1053,6 @@ export function IntelligencePanel({
                   </div>
                 </>
               )}
-
-            </div>
-
-          ) : context === 'infrastructure' ? (
-            /* ── Infrastructure: Platform Health & Hardening ── */
-            <div className="space-y-3">
-
-              {/* Graph Memory latency diagnosis */}
-              <div className={`p-3 rounded-lg border ${
-                agentScaled
-                  ? isDark ? 'bg-green-500/8 border-green-500/20' : 'bg-green-50 border-green-200'
-                  : isDark ? 'bg-amber-500/8 border-amber-500/25' : 'bg-amber-50/80 border-amber-200'
-              }`}>
-                <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${
-                  agentScaled ? (isDark ? 'text-green-400' : 'text-green-700') : (isDark ? 'text-amber-400' : 'text-amber-700')
-                }`}>
-                  {agentScaled ? '✓ LATENCY RESOLVED' : '⚠ LATENCY ROOT CAUSE — ATLAS DIAGNOSIS'}
-                </div>
-                {agentScaled ? (
-                  <div className={`flex items-center gap-2 py-1 ${isDark ? 'text-green-400' : 'text-green-600'}`}>
-                    <CheckCircle className="h-3.5 w-3.5 shrink-0" />
-                    <span className="text-[11px] font-semibold">MET #004 scaled — Graph Memory latency normalized to 8ms</span>
-                  </div>
-                ) : (
-                  <>
-                    <p className={`text-[10px] mb-2.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      <span className="font-semibold">Graph Memory Store</span> is experiencing a <span className="font-semibold">145ms delay</span> due to bulk data ingestion from 3 concurrent PO cycles. MET #004 (Memory Manager) is the responsible agent. Scaling it will normalize latency to ~8ms.
-                    </p>
-                    <button
-                      onClick={() => {
-                        setAgentScaled(true);
-                        window.dispatchEvent(new CustomEvent('buyamia-infra-scale-from-panel'));
-                      }}
-                      className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-amber-500 hover:bg-amber-600 text-white"
-                    >
-                      ✅ Scale MET #004 — Memory Manager
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* Audit log health */}
-              <div className={`p-3 rounded-lg border ${
-                infraLockdown
-                  ? isDark ? 'bg-red-500/10 border-red-500/40' : 'bg-red-50 border-red-300'
-                  : isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200'
-              }`}>
-                <div className={`text-[10px] font-semibold tracking-wider mb-2 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                  AUDIT LOG STATUS
-                </div>
-                {infraLockdown ? (
-                  <div className="flex items-center gap-2">
-                    <AlertOctagon className="h-3.5 w-3.5 text-red-400 shrink-0 animate-pulse" />
-                    <span className={`text-[10px] font-semibold ${isDark ? 'text-red-400' : 'text-red-700'}`}>
-                      TAMPER DETECTED — GOV agents locked. Manual review required.
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Grade</span>
-                      <span className={`text-sm font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>A</span>
-                    </div>
-                    <div className="flex items-center justify-between mb-2 text-[10px]">
-                      <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>12,847 actions verified</span>
-                      <span className={`font-semibold ${isDark ? 'text-green-400' : 'text-green-600'}`}>0 tampered</span>
-                    </div>
-                    <div className={`flex items-center gap-1.5 text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
-                      <CheckCircle className={`h-3 w-3 ${isDark ? 'text-green-400' : 'text-green-600'}`} />
-                      Sealed by GOV-001 · GOV-003 · GOV-004
-                    </div>
-                  </>
-                )}
-                <button className={`mt-2.5 w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-[11px] font-semibold transition-colors border ${
-                  isDark ? 'border-gray-700 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-gray-200 text-[#6b7a54] hover:bg-[#f4f6f0]'
-                }`}>
-                  <FileCheck className="h-3 w-3" />
-                  View Full Audit Log →
-                </button>
-              </div>
-
-              {/* Atlas: Site Architect suggestion */}
-              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-                <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>✨ ATLAS SUGGESTS</div>
-                <p className={`text-[10px] mb-2.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Phase 3 completes at W14. Phase 4 (Global Expansion, 32 agents) is ready to queue. Authorizing now secures the compute allocation and avoids a 2-week delay in the W15 ramp.
-                </p>
-                <button className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white">
-                  🚀 Pre-authorize Phase 4 — Global Expansion
-                </button>
-              </div>
 
             </div>
 

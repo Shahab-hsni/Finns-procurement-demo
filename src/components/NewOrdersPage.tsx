@@ -1013,7 +1013,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       // QC failure → notify SuppliersPage trust panel
       if (stageIdx === 5 && stageDraft['qc_outcome'] === 'fail') {
         const order = ORDERS.find(o => o.id === orderId);
-        window.dispatchEvent(new CustomEvent('buyamia-qc-failure', {
+        window.dispatchEvent(new CustomEvent('finns-qc-failure', {
           detail: { orderId, supplier: order?.supplier ?? '', stage: 'Quality Check' },
         }));
       }

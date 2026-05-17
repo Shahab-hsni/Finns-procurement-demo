@@ -77,7 +77,7 @@ interface ChatMessage {
 }
 
 interface AssignedAgent {
-  id: number;          // e.g., 6 → "Agent #06"
+  id: number;          // e.g., 6 → "A-01"
   role: string;        // e.g., "Pricing", "Compliance"
   activeTasks: number; // open AI tasks (negotiations, re-orders, audits)
 }
@@ -121,7 +121,7 @@ interface Supplier {
   assignedAgent: AssignedAgent;
 }
 
-// ── Regional benchmarks (Agent #21) ───────────────────────────────
+// ── Regional benchmarks (A-01) ───────────────────────────────
 
 const REGIONAL_BENCH: Record<string, { leadAvg: number; qualityAvg: number }> = {
   Indonesia:   { leadAvg: 2.5, qualityAvg: 88 },
@@ -142,7 +142,7 @@ const SUPPLIERS: Supplier[] = [
     leadDays: 2, lastOrder: '20 Apr', savingsYTD: 12400, journeyStage: 11,
     accountManager: 'Budi Santoso', waPhone: '628123456789',
     assignedAgent: { id: 6, role: 'Pricing', activeTasks: 2 },
-    agentNotes: 'Within your approved directory, Agent #06 detected a 6.2% price gap vs the vetted Protein cohort. Q3 renegotiation window opens in 42 days — consider proactive terms.',
+    agentNotes: 'Within your approved directory, A-01 detected a 6.2% price gap vs the vetted Protein cohort. Q3 renegotiation window opens in 42 days — consider proactive terms.',
     address: 'Jl. Gatot Subroto No. 14, Kuningan, Jakarta Selatan 12930, Indonesia',
     nib: '9120009821394',
     npwp: '01.234.567.8-901.000',
@@ -158,7 +158,7 @@ const SUPPLIERS: Supplier[] = [
     ],
     recentOrders: [
       { date: '20 Apr', item: 'Lamb shoulder 500kg', value: 4200, status: 'in-transit', metrics: ['delivery'] },
-      { date: '17 Apr', item: 'Chuck roll 300kg (Agent #6 negotiated)', value: 2800, status: 'delivered', metrics: ['price'] },
+      { date: '17 Apr', item: 'Chuck roll 300kg (A-01 negotiated)', value: 2800, status: 'delivered', metrics: ['price'] },
       { date: '14 Apr', item: 'Jasmine rice 1t', value: 1100, status: 'delivered', metrics: ['delivery', 'price'] },
       { date: '10 Apr', item: 'Beef brisket 200kg', value: 1900, status: 'delivered', metrics: ['quality'] },
     ],
@@ -171,7 +171,7 @@ const SUPPLIERS: Supplier[] = [
     leadDays: 3, lastOrder: '19 Apr', savingsYTD: 8200, journeyStage: 10,
     accountManager: 'Somchai Prasert', waPhone: '66812345678',
     assignedAgent: { id: 18, role: 'Group Buying', activeTasks: 1 },
-    agentNotes: 'Within your approved directory, this is the highest quality score in the vetted Seafood cohort. Agent #18 pooled 6 internal operators — tier-3 discount locked through Q3.',
+    agentNotes: 'Within your approved directory, this is the highest quality score in the vetted Seafood cohort. A-04 pooled 6 internal operators — tier-3 discount locked through Q3.',
     address: '88 Sukhumvit Road, Khlong Toei, Bangkok 10110, Thailand',
     nib: 'TH-0105559018742',
     npwp: '0-1055-59018-74-2',
@@ -225,7 +225,7 @@ const SUPPLIERS: Supplier[] = [
     leadDays: 4, lastOrder: '18 Apr', savingsYTD: 2100, journeyStage: 11,
     accountManager: 'Nguyen Van Thanh', waPhone: '84912345678',
     assignedAgent: { id: 3, role: 'Compliance', activeTasks: 4 },
-    agentNotes: 'Declining quality trend over 4 months. 3 compliance incidents this quarter. Within your approved directory, Agent #03 has pre-qualified 2 vetted Produce alternatives — replacement available without external sourcing.',
+    agentNotes: 'Declining quality trend over 4 months. 3 compliance incidents this quarter. Within your approved directory, A-02 has pre-qualified 2 vetted Produce alternatives — replacement available without external sourcing.',
     actionReason: 'Score dropped 3pts · 3 compliance incidents',
     address: '24 Le Loi Street, District 1, Ho Chi Minh City 70000, Vietnam',
     nib: 'VN-0301234567',
@@ -253,7 +253,7 @@ const SUPPLIERS: Supplier[] = [
     leadDays: 2, lastOrder: '15 Apr', savingsYTD: 1400, journeyStage: 11,
     accountManager: 'Rizky Pratama', waPhone: '628567890123',
     assignedAgent: { id: 6, role: 'Pricing', activeTasks: 2 },
-    agentNotes: 'Contract expires in 18 days. 2 SLA breaches this quarter. Within your approved directory, Agent #06 is sourcing a replacement from the vetted Seafood cohort.',
+    agentNotes: 'Contract expires in 18 days. 2 SLA breaches this quarter. Within your approved directory, A-01 is sourcing a replacement from the vetted Seafood cohort.',
     actionReason: 'Contract expires in 18 days · 2 SLA breaches',
     address: 'Pelabuhan Muara Baru Blok A-12, Jakarta Utara 14440, Indonesia',
     nib: '9120014556783',
@@ -277,7 +277,7 @@ const SUPPLIERS: Supplier[] = [
     leadDays: 3, lastOrder: '17 Apr', savingsYTD: 5600, journeyStage: 10,
     accountManager: 'Maria Santos', waPhone: '639171234567',
     assignedAgent: { id: 29, role: 'Sustainability', activeTasks: 1 },
-    agentNotes: 'Within your approved directory, this vendor shows the strongest upward trend in vetted Produce. Agent #29 certified as low-emission supplier. One quote rejected Apr 15 (delivery threshold).',
+    agentNotes: 'Within your approved directory, this vendor shows the strongest upward trend in vetted Produce. A-01 certified as low-emission supplier. One quote rejected Apr 15 (delivery threshold).',
     address: '1501 Ortigas Avenue, Pasig, Metro Manila 1605, Philippines',
     nib: 'PH-SEC-CS201812345',
     npwp: '009-321-654-000',
@@ -485,8 +485,19 @@ function statusMeta(status: VendorStatus, isDark: boolean) {
 }
 
 // ── Agent identity helper ─────────────────────────────────────────
+// Translates legacy Buyamia numeric agent IDs to the 6-agent Finn's
+// roster (A-01..A-05). Defaults to A-01 (Sourcing) for any unknown
+// legacy id — Suppliers mostly works against the Sourcing Agent.
+const LEGACY_AGENT_MAP: Record<number, string> = {
+  1: 'A-04', 3: 'A-02', 5: 'A-01', 6: 'A-01', 7: 'A-05',
+  8: 'A-02', 9: 'A-05', 10: 'A-04', 13: 'A-03', 14: 'A-04',
+  18: 'A-04', 21: 'A-01', 25: 'A-02', 28: 'A-04', 33: 'A-04',
+};
+function agentBadge(a: AssignedAgent) {
+  return LEGACY_AGENT_MAP[a.id] ?? 'A-01';
+}
 function agentLabel(a: AssignedAgent) {
-  return `Agent #${String(a.id).padStart(2, '0')} · ${a.role}`;
+  return `${agentBadge(a)} · ${a.role}`;
 }
 
 // ── Labor Switch (Manual Takeover) ────────────────────────────────
@@ -507,7 +518,7 @@ function LaborSwitch({
     return (
       <button
         onClick={(e) => { e.stopPropagation(); onChange(agentActive ? 'manual' : 'agent'); }}
-        title={agentActive ? `Agent #${String(agent.id).padStart(2, '0')} executing — click to take over manually` : 'Manual takeover active — click to release back to Agent'}
+        title={agentActive ? `${agentBadge(agent)} executing — click to take over manually` : 'Manual takeover active — click to release back to Agent'}
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border transition-colors whitespace-nowrap ${
           agentActive
             ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
@@ -530,10 +541,10 @@ function LaborSwitch({
         }`}
         title={agentActive
           ? `Executing · ${agent.activeTasks} open task${agent.activeTasks === 1 ? '' : 's'}`
-          : `Resume Agent #${String(agent.id).padStart(2, '0')} (${agent.role})`}
+          : `Resume ${agentBadge(agent)} (${agent.role})`}
       >
         <Bot className="h-3 w-3" />
-        Agent #{String(agent.id).padStart(2, '0')}
+        {agentBadge(agent)}
         {agentActive && (
           <span className={`text-[8px] font-bold px-1 py-px rounded-full ${isDark ? 'bg-white/15 text-white' : 'bg-white/30 text-white'}`}>
             {agent.activeTasks}
@@ -724,8 +735,8 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
         setQcFailureAlerts(prev => [...prev, { orderId, supplier, ts: Date.now() }]);
       }
     };
-    window.addEventListener('buyamia-qc-failure', handler);
-    return () => window.removeEventListener('buyamia-qc-failure', handler);
+    window.addEventListener('finns-qc-failure', handler);
+    return () => window.removeEventListener('finns-qc-failure', handler);
   }, []);
 
   const filtered = useMemo(() =>
@@ -1203,7 +1214,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Vendor Audit</h2>
-            <p className={`text-[10px] ${t.textMuted}`}>{auditFiltered.length} of {SUPPLIERS.length} vendors · Agent #10 · Agent #21</p>
+            <p className={`text-[10px] ${t.textMuted}`}>{auditFiltered.length} of {SUPPLIERS.length} vendors · A-04 · A-01</p>
           </div>
           <div className="flex items-center gap-1">
             <div className={`flex items-center rounded-lg border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -2038,7 +2049,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
           </div>
           <p className={`text-[10px] leading-relaxed ${t.textSecondary}`}>
             {peekIsManual
-              ? `Agent #${String(selected.assignedAgent.id).padStart(2, '0')} suspended. ${selected.assignedAgent.activeTasks} task${selected.assignedAgent.activeTasks === 1 ? '' : 's'} parked for manual sign-off.`
+              ? `${agentBadge(selected.assignedAgent)} suspended. ${selected.assignedAgent.activeTasks} task${selected.assignedAgent.activeTasks === 1 ? '' : 's'} parked for manual sign-off.`
               : selected.agentNotes}
           </p>
         </div>
@@ -2241,7 +2252,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                     ? `High-value partner. Saved via early-bird discounts and group-buy pooling this year.`
                     : activeSupplier.savingsYTD > 3000
                     ? `Reliable partner with moderate savings. Consider volume commitment for larger upside.`
-                    : `Low-savings partner. Agent #6 has 3 alternatives pre-qualified if optimization is desired.`}
+                    : `Low-savings partner. A-01 has 3 alternatives pre-qualified if optimization is desired.`}
                 </p>
                 <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#87986a]/15">
                   <span className={`text-[10px] ${t.textMuted}`}>Partner grade:</span>
@@ -2263,7 +2274,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                   <Activity className={`h-4 w-4 ${t.sageIcon}`} />
                   <div>
                     <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Market Benchmarking</h3>
-                    <p className={`text-[10px] ${t.textMuted}`}>Agent #21 · Regional Intelligence</p>
+                    <p className={`text-[10px] ${t.textMuted}`}>A-01 · Regional Intelligence</p>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -3102,7 +3113,7 @@ function renderRelationshipWorkspace(
                   <code className={`text-[11px] font-mono font-semibold ${t.textPrimary}`}>{selected.npwp}</code>
                 </div>
                 <div className={`mt-2 inline-flex items-center gap-1 text-[9px] font-medium text-green-400`}>
-                  <CheckCircle className="h-2.5 w-2.5" /> Agent #5 verified
+                  <CheckCircle className="h-2.5 w-2.5" /> A-01 verified
                 </div>
               </div>
             </div>
@@ -3348,7 +3359,7 @@ function renderRelationshipWorkspace(
         </div>
         <p className={`text-[11px] leading-relaxed mb-3 ${t.textSecondary}`}>
           {isManual
-            ? `Agent #${String(selected.assignedAgent.id).padStart(2, '0')} (${selected.assignedAgent.role}) is in Standby. ${selected.assignedAgent.activeTasks} task${selected.assignedAgent.activeTasks === 1 ? ' is' : 's are'} parked here as draft${selected.assignedAgent.activeTasks === 1 ? '' : 's'} for you to complete or cancel manually.`
+            ? `${agentBadge(selected.assignedAgent)} (${selected.assignedAgent.role}) is in Standby. ${selected.assignedAgent.activeTasks} task${selected.assignedAgent.activeTasks === 1 ? ' is' : 's are'} parked here as draft${selected.assignedAgent.activeTasks === 1 ? '' : 's'} for you to complete or cancel manually.`
             : selected.agentNotes}
         </p>
         {isManual ? (

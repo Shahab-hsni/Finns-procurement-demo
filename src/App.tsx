@@ -10,8 +10,12 @@ import { WorkflowsPage } from "./components/workflows/WorkflowsPage";
 import { UserFlowDemoPage } from "./components/demo/UserFlowDemoPage";
 import { FlowChartPage } from "./components/demo/FlowChartPage";
 import { GlobalFooter } from "./components/GlobalFooter";
-import { Moon, Sun, Bell } from "lucide-react";
-import { Toaster } from "sonner@2.0.3";
+import { Moon, Sun, Bell, PowerOff, Lightbulb, Zap } from "lucide-react";
+import { Toaster, toast } from "sonner@2.0.3";
+import {
+  type AutonomyMode, AUTONOMY_LABEL, AUTONOMY_TAGLINE,
+  getAutonomyMode, setAutonomyMode, useAutonomyMode,
+} from "./lib/autonomy";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -223,6 +227,10 @@ export default function App() {
                 Draft in progress · Step {draftMeta.step}/5
               </button>
             )}
+
+            {/* 3-level autonomy pill */}
+            <AutonomyToggle isDark={isDark} />
+
             <button className={`relative p-2 rounded-full ${iconBtn} transition-colors`}>
               <Bell className="h-4 w-4" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
@@ -253,5 +261,69 @@ export default function App() {
         />
       </div>
     </ErrorBoundary>
+  );
+}
+
+// ── Autonomy Toggle (3-level pill in the header) ──────────────────
+//   Off · Assistant · Autonomous
+//
+// Atlas (chat copilot) is unaffected by this control -- it's always on.
+// A-01..A-05 are paused on Off, suggest-only on Assistant, free to act
+// on Autonomous (current default).
+const AUTONOMY_OPTIONS: { id: AutonomyMode; icon: typeof PowerOff; label: string }[] = [
+  { id: 'off',    icon: PowerOff,  label: 'Off' },
+  { id: 'assist', icon: Lightbulb, label: 'Assist' },
+  { id: 'auto',   icon: Zap,       label: 'Auto' },
+];
+
+function AutonomyToggle({ isDark }: { isDark: boolean }) {
+  const mode = useAutonomyMode();
+  const handle = (next: AutonomyMode) => {
+    if (next === mode) return;
+    setAutonomyMode(next);
+    // Surface a small toast so the mode change is unmissable.
+    if (next === 'off') {
+      toast.warning(`Autonomy: ${AUTONOMY_LABEL[next]}`, {
+        description: AUTONOMY_TAGLINE[next] + ' Existing in-flight POs continue under their per-PO labor mode.',
+      });
+    } else if (next === 'assist') {
+      toast.info(`Autonomy: ${AUTONOMY_LABEL[next]}`, {
+        description: AUTONOMY_TAGLINE[next] + ' New requests default to manual; agents will surface suggestions.',
+      });
+    } else {
+      toast.success(`Autonomy: ${AUTONOMY_LABEL[next]}`, {
+        description: AUTONOMY_TAGLINE[next],
+      });
+    }
+  };
+
+  return (
+    <div
+      title={AUTONOMY_TAGLINE[mode]}
+      className={`mr-1 inline-flex items-center gap-0.5 rounded-full p-0.5 border ${
+        isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-gray-50 border-gray-200'
+      }`}>
+      {AUTONOMY_OPTIONS.map(({ id, icon: Icon, label }) => {
+        const active = id === mode;
+        const activeBg = id === 'off'
+          ? 'bg-red-500/85 text-white'
+          : id === 'assist'
+          ? 'bg-amber-500/85 text-white'
+          : 'bg-[#87986a] text-white';
+        const inactive = isDark
+          ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200';
+        return (
+          <button key={id}
+            onClick={() => handle(id)}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold transition-colors ${
+              active ? activeBg : inactive
+            }`}>
+            <Icon className="h-3 w-3" />
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }

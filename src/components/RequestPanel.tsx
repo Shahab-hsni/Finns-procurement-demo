@@ -15,6 +15,7 @@ import { finnsSuppliers, finnsPlaybooks, finnsVenues } from "../lib/mockData";
 import type {
   VenueTag, FinnsCategory, PlaybookId, FinnsAgentId,
 } from "../lib/types";
+import { AgentCTA } from "./AgentCTA";
 
 interface RequestPanelProps {
   theme?: 'dark' | 'light';
@@ -442,13 +443,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
 
           {step === 1 && (
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-              <div className="flex items-center gap-1.5 mb-1">
-                <ShieldCheck className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
-                <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Strategic Intent</span>
-              </div>
-              <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                Describe <strong>why</strong> — not just <strong>what</strong>. The clearer your intent, the better A-01 (Sourcing) can recommend vendors and playbooks downstream. Items can have multiple venue tags — that's how A-05 (Logistics) knows where to route the drop.
-              </p>
+              <AgentCTA
+                isDark={isDark}
+                variant="inline"
+                agentLabel="A-01 · Sourcing Agent"
+                reasoning="Describe why — not just what. The clearer your intent, the better A-01 (Sourcing) can recommend vendors and playbooks downstream. Items can have multiple venue tags — that's how A-05 (Logistics) knows where to route the drop."
+                offModeMessage="Describe why — not just what. List each line item with its category, quantity, and venue tags so receiving knows where each drop goes."
+              />
               <div className={`mt-2 pt-2 border-t flex items-center justify-between ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Spending pulse</span>
                 <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(itemsTotalIdr)} of Rp 12jt monthly</span>
@@ -786,7 +787,14 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
               <>
                 <div className={cardClass}>
                   <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Choose Vendors</h2>
-                  <p className={hintClass}>A-01 (Sourcing) ranks the directory by composite, on-time, and cold-chain SLA. Pick one or more — the first selected becomes the primary.</p>
+                  <AgentCTA
+                    isDark={isDark}
+                    variant="inline"
+                    className="mb-2"
+                    agentLabel="A-01 · Sourcing Agent"
+                    reasoning="A-01 (Sourcing) ranks the directory by composite, on-time, and cold-chain SLA. Pick one or more — the first selected becomes the primary."
+                    offModeMessage="Pick one or more vendors from your approved directory. The first selected becomes the primary. Sort by composite, on-time, or cold-chain SLA using the metrics on each row."
+                  />
                   <div className="mt-4 space-y-2">
                     {finnsSuppliers.map(v => {
                       const selected = selectedVendors.includes(v.id);

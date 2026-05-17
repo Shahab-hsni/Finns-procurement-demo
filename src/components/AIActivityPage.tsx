@@ -13,6 +13,8 @@ import { AUTONOMY_LABELS } from '../lib/types';
 import type { AutonomyLevel } from '../lib/types';
 import { theme as themeTokens } from '../lib/theme';
 import { toast } from 'sonner@2.0.3';
+import { useActionLog, type ActorType, type ActionLogEntry } from '../lib/actionLog';
+import { useAutonomyMode } from '../lib/autonomy';
 
 interface AIActivityPageProps {
   theme: 'dark' | 'light';
@@ -462,6 +464,127 @@ function ActivityAtlasChat({ isDark, t }: { isDark: boolean; t: any }) {
   );
 }
 
+// ── Action Log Panel (Phase 4f.3 consumer) ───────────────────────
+// Reads from the unified action log via useActionLog. Renders a
+// compact row list with an actor-filter chip group. Mode-aware:
+// Off mode defaults to "Your actions"; Assist/Auto show "All".
+
+interface ActionLogPanelProps {
+  isDark: boolean;
+  t: ReturnType<typeof themeTokens>;
+  autonomyMode: 'off' | 'assist' | 'auto';
+  actorFilter: 'all' | ActorType;
+  setActorFilter: (next: 'all' | ActorType) => void;
+  entries: ActionLogEntry[];
+}
+
+const ACTOR_CHIPS: { id: 'all' | ActorType; label: string }[] = [
+  { id: 'all',    label: 'All' },
+  { id: 'admin',  label: 'You' },
+  { id: 'agent',  label: 'Agents' },
+  { id: 'system', label: 'System' },
+];
+
+function formatRelativeTime(iso: string): string {
+  const now = Date.now();
+  const at = new Date(iso).getTime();
+  const ms = now - at;
+  const min = Math.round(ms / 60000);
+  if (min < 1)        return 'just now';
+  if (min < 60)       return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24)        return `${hr}h ago`;
+  const d = Math.round(hr / 24);
+  if (d < 7)          return `${d}d ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function ActionLogPanel({ isDark, t, autonomyMode, actorFilter, setActorFilter, entries }: ActionLogPanelProps) {
+  const offEmpty = autonomyMode === 'off' && actorFilter === 'agent' && entries.length === 0;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-baseline gap-2">
+          <h3 className={`text-sm font-semibold ${t.textPrimary}`}>Action Log</h3>
+          <span className={`text-[10px] ${t.textMuted}`}>everything you, agents, and the system have done</span>
+        </div>
+        <span className={`text-[10px] ${t.textMuted}`}>{entries.length} shown</span>
+      </div>
+
+      {/* Actor filter chips */}
+      <div className="flex items-center gap-1 mb-3">
+        {ACTOR_CHIPS.map(chip => {
+          const active = actorFilter === chip.id;
+          return (
+            <button
+              key={chip.id}
+              onClick={() => setActorFilter(chip.id)}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
+                active
+                  ? isDark ? 'bg-[#87986a]/20 text-[#a3b085] border border-[#87986a]/50' : 'bg-[#f4f6f0] text-[#6b7a54] border border-[#87986a]/40'
+                  : isDark ? 'text-gray-500 border border-gray-800 hover:text-gray-300 hover:border-gray-700' : 'text-gray-500 border border-gray-200 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {chip.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Off-mode hint when no agent activity */}
+      {offEmpty && (
+        <div className={`text-[10px] mb-2 px-2.5 py-1.5 rounded-md ${isDark ? 'bg-amber-500/8 text-amber-300/80' : 'bg-amber-50 text-amber-700'}`}>
+          Autonomy is <strong>Off</strong> — agents observe but don't act, so this list will stay empty until you switch to Assist or Auto.
+        </div>
+      )}
+
+      {/* Entries */}
+      {entries.length === 0 && !offEmpty ? (
+        <div className={`text-[11px] py-4 text-center ${t.textMuted}`}>
+          No actions match this filter yet.
+        </div>
+      ) : (
+        <div className={`rounded-xl border divide-y ${isDark ? 'bg-[#1a1a1a] border-gray-800 divide-gray-800' : 'bg-white border-gray-200 divide-gray-100'}`}>
+          {entries.map(e => {
+            const actorDotColor =
+              e.actorType === 'admin'  ? (isDark ? 'bg-[#a3b085]' : 'bg-[#6b7a54]') :
+              e.actorType === 'agent'  ? (isDark ? 'bg-indigo-400' : 'bg-indigo-500') :
+                                          (isDark ? 'bg-slate-400' : 'bg-slate-500');
+            const outcomeTone =
+              e.outcome === 'failed'      ? (isDark ? 'text-red-400'   : 'text-red-600')   :
+              e.outcome === 'overridden'  ? (isDark ? 'text-amber-300' : 'text-amber-700') :
+              e.outcome === 'pending'     ? (isDark ? 'text-blue-300'  : 'text-blue-700')  :
+                                              t.textMuted;
+            return (
+              <div key={e.id} className="flex items-start gap-3 px-3 py-2.5">
+                <div className="flex flex-col items-center pt-1 shrink-0">
+                  <span className={`h-2 w-2 rounded-full ${actorDotColor}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-[11px] font-semibold ${t.textPrimary}`}>{e.actorLabel}</span>
+                    <span className={`text-[9px] ${t.textMuted}`}>{formatRelativeTime(e.at)}</span>
+                    {e.outcome !== 'success' && (
+                      <span className={`text-[9px] uppercase tracking-wide font-bold ${outcomeTone}`}>{e.outcome}</span>
+                    )}
+                    {e.venue && (
+                      <span className={`ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>{e.venue}</span>
+                    )}
+                  </div>
+                  <p className={`text-[11px] mt-0.5 leading-snug ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{e.summary}</p>
+                  {e.details && (
+                    <p className={`text-[10px] mt-0.5 leading-snug ${t.textMuted}`}>{e.details}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────
 
 export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
@@ -485,6 +608,18 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
   const [undoMode, setUndoMode] = useState<UndoMode>('per-class');
   const [ledgerApproved, setLedgerApproved] = useState<boolean>(false);
   const [highlightEventId, setHighlightEventId] = useState<string | null>(null);
+
+  // ── Action Log feed (Phase 4f.3) ─────────────────────────────────
+  // Reads from the unified action log. Actor chip has a mode-aware
+  // default: Off → 'admin' (your actions), Assist/Auto → 'all'.
+  const autonomyMode = useAutonomyMode();
+  const [actorFilter, setActorFilter] = useState<'all' | ActorType>(
+    autonomyMode === 'off' ? 'admin' : 'all',
+  );
+  const actionLogEntries = useActionLog({
+    actorType: actorFilter,
+    limit: 20,
+  });
 
   // Deep-link hash reader — #evt=eventId selects that event in the right panel.
   // Falls back to an amber toast when the event id is not in the seeded ledger
@@ -1023,6 +1158,16 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
           </div>
         </div>
       </div>
+
+      {/* ── Action Log (Phase 4f.3 consumer) ─────────────────────── */}
+      <ActionLogPanel
+        isDark={isDark}
+        t={t}
+        autonomyMode={autonomyMode}
+        actorFilter={actorFilter}
+        setActorFilter={setActorFilter}
+        entries={actionLogEntries}
+      />
 
       {/* Activity Timeline */}
       <div>

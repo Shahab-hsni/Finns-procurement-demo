@@ -14,6 +14,7 @@ import { Input } from './ui/input';
 import { ThreePanelLayout } from './layout/ThreePanelLayout';
 import { theme as themeTokens } from '../lib/theme';
 import type { FinnsAgentId, FinnsAgentRole, VenueTag } from '../lib/types';
+import { AgentCTA } from './AgentCTA';
 
 interface OverviewPageProps {
   theme: 'dark' | 'light';
@@ -1065,13 +1066,24 @@ export function OverviewPage({ theme }: OverviewPageProps) {
               </div>
             </div>
 
-            {/* Agent reasoning */}
-            <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#f4f6f0] border-[#e5e5e0]'}`}>
-              <div className="flex items-start gap-2">
-                <Bot className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
-                <p className={`text-[10px] leading-relaxed ${t.textSecondary}`}>{selectedEvent.agentReasoning}</p>
-              </div>
-            </div>
+            {/* Agent reasoning (mode-aware via AgentCTA) */}
+            <AgentCTA
+              isDark={isDark}
+              variant="inline"
+              className={`p-3.5 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#f4f6f0] border-[#e5e5e0]'}`}
+              agentLabel={(() => {
+                const id: FinnsAgentId =
+                  selectedEvent.type === 'delivery'   ? 'A-05' :
+                  selectedEvent.type === 'payment'    ? 'A-04' :
+                  selectedEvent.type === 'compliance' ? 'A-03' :
+                  selectedEvent.type === 'restock'    ? 'A-02' :
+                  /* meeting */                         'A-01';
+                return `${id} · ${AGENT_META[id].role}`;
+              })()}
+              reasoning={selectedEvent.agentReasoning}
+              offModeMessage={`Use the date, supplier, and stage above to decide what to do. Agent narrative is hidden in Off mode — drive this from the calendar and the order workspace.`}
+              autoExecutionNote={`The owning agent will keep this on track within policy. You only see this card because it needs your attention.`}
+            />
           </div>
         )}
       </div>

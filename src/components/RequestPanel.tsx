@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
 import { toast } from "sonner";
-import { finnsSuppliers, finnsPlaybooks, finnsVenues } from "../lib/mockData";
+import { finnsSuppliers, finnsPlaybooks, finnsVenues, finnsPolicyRules } from "../lib/mockData";
 import type {
   VenueTag, FinnsCategory, PlaybookId, FinnsAgentId,
 } from "../lib/types";
@@ -22,7 +22,7 @@ import { RFQTrackerModal } from "./RFQTrackerModal";
 import { useAutonomyMode } from "../lib/autonomy";
 import { useRFQs, awardRFQ, cancelRFQ, type RFQQuote } from "../lib/rfqStore";
 import { createPO, updatePO, type RuntimePO } from "../lib/poStore";
-import { logUserAction } from "../lib/actionLog";
+import { logUserAction, readActionLog } from "../lib/actionLog";
 import { detectItem, suggestVendorsForItems } from "../lib/itemIntel";
 import { readEntityNote, useEntityNote } from "../lib/entityNotes";
 
@@ -248,6 +248,72 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     const [topId] = suggestVendorsForItems(items.map(it => it.name), 1);
     if (topId) setSelectedVendors([topId]);
   }, [autonomyMode, step, sourcingPath, wizardRfqId, items, selectedVendors.length]);
+
+  // ── 5e · Right-panel insights ────────────────────────────────────
+  // Category mix for Step 1 — counts items by detected category.
+  const categoryMix = useMemo(() => {
+    const counts: Record<string, number> = {};
+    items.forEach(it => { counts[it.category] = (counts[it.category] ?? 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [items]);
+
+  // Similar past POs — matches by category overlap. Reads the action
+  // log for entries whose category appears in our current item set.
+  const similarPastPOs = useMemo(() => {
+    if (items.length === 0) return [] as ReturnType<typeof readActionLog>;
+    const cats = new Set(items.map(it => it.category));
+    return readActionLog({ kind: ['po-create', 'po-approve'], limit: 30 })
+      .filter(e => e.category && cats.has(e.category as FinnsCategory))
+      .slice(0, 3);
+  }, [items]);
+
+  // Policy preview for Step 4 — runs the seeded active rules against
+  // the wizard's amount + vendor + category. Stubbed simulation of
+  // what A-04 (Spend Watchdog) would do at Stage 3.
+  const policyPreview = useMemo(() => {
+    const amount = awardedQuote?.totalIdr
+      ?? items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
+    const checks: { rule: string; status: 'pass' | 'review' | 'warn'; detail: string }[] = [];
+    finnsPolicyRules.forEach(rule => {
+      if (!rule.active) return;
+      if (rule.template === 'spend-cap') {
+        const threshold = (rule.config.threshold as number) ?? 0;
+        const currency = (rule.config.currency as string) ?? 'IDR';
+        if (amount > threshold) {
+          const ratio = amount / threshold;
+          checks.push({
+            rule: `${rule.id} · ${rule.name}`,
+            status: ratio > 1.5 ? 'warn' : 'review',
+            detail: `Amount Rp ${(amount / 1_000_000).toFixed(1)}M is above the ${(threshold / 1_000_000).toFixed(0)}M ${currency} cap.`,
+          });
+        } else {
+          checks.push({
+            rule: `${rule.id} · ${rule.name}`,
+            status: 'pass',
+            detail: `Under the ${(threshold / 1_000_000).toFixed(0)}M ${currency} cap.`,
+          });
+        }
+      }
+      if (rule.template === 'vendor-trust-floor') {
+        const floor = (rule.config.threshold as number) ?? 0;
+        const v = finnsSuppliers.find(s => s.id === selectedVendors[0]);
+        if (v && v.metrics.composite < floor) {
+          checks.push({
+            rule: `${rule.id} · ${rule.name}`,
+            status: 'warn',
+            detail: `${v.name} composite ${v.metrics.composite} is below the ${floor} floor.`,
+          });
+        } else if (v) {
+          checks.push({
+            rule: `${rule.id} · ${rule.name}`,
+            status: 'pass',
+            detail: `${v.name} composite ${v.metrics.composite} clears the ${floor} floor.`,
+          });
+        }
+      }
+    });
+    return { amount, checks };
+  }, [items, awardedQuote, selectedVendors]);
 
   // Step 3 — Delivery
   const [targetVenues, setTargetVenues] = useState<VenueTag[]>(['BC', 'RC']);
@@ -772,19 +838,76 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
         <div className="p-4 space-y-3">
 
           {step === 1 && (
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-              <AgentCTA
-                isDark={isDark}
-                variant="inline"
-                agentLabel="A-01 · Sourcing Agent"
-                reasoning="Describe why — not just what. The clearer your intent, the better A-01 (Sourcing) can recommend vendors and playbooks downstream. Items can have multiple venue tags — that's how A-05 (Logistics) knows where to route the drop."
-                offModeMessage="Describe why — not just what. List each line item with its category, quantity, and venue tags so receiving knows where each drop goes."
-              />
-              <div className={`mt-2 pt-2 border-t flex items-center justify-between ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Spending pulse</span>
-                <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(itemsTotalIdr)} of Rp 12jt monthly</span>
+            <>
+              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                <AgentCTA
+                  isDark={isDark}
+                  variant="inline"
+                  agentLabel="A-01 · Sourcing Agent"
+                  reasoning="Describe why — not just what. The clearer your intent, the better A-01 (Sourcing) can recommend vendors and playbooks downstream. Items can have multiple venue tags — that's how A-05 (Logistics) knows where to route the drop."
+                  offModeMessage="Describe why — not just what. List each line item with its category, quantity, and venue tags so receiving knows where each drop goes."
+                />
+                <div className={`mt-2 pt-2 border-t flex items-center justify-between ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Spending pulse</span>
+                  <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(itemsTotalIdr)} of Rp 12jt monthly</span>
+                </div>
               </div>
-            </div>
+
+              {/* 5e — Category mix */}
+              {items.length > 0 && (
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Package className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
+                    <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Category mix</span>
+                    <span className={`ml-auto text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{items.length} line{items.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {categoryMix.map(([cat, count]) => {
+                      const pct = (count / items.length) * 100;
+                      return (
+                        <div key={cat}>
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className={`text-[10px] ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{cat}</span>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{count}</span>
+                          </div>
+                          <div className={`h-1 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                            <div className="h-1 rounded-full bg-[#87986a]" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 5e — Similar past POs (only Assist + Auto) */}
+              {autonomyMode !== 'off' && similarPastPOs.length > 0 && (
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <ScrollText className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
+                    <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Similar past POs</span>
+                  </div>
+                  <p className={`text-[9px] mb-2 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                    A-01 found {similarPastPOs.length} recent {similarPastPOs.length === 1 ? 'PO' : 'POs'} with overlapping categories.
+                  </p>
+                  <div className="space-y-1.5">
+                    {similarPastPOs.map(e => (
+                      <div key={e.id} className={`p-2 rounded ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {e.category && (
+                            <span className={`text-[9px] font-semibold px-1 py-0 rounded ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>{e.category}</span>
+                          )}
+                          {e.entity?.id && (
+                            <span className={`text-[10px] font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{e.entity.id}</span>
+                          )}
+                        </div>
+                        <p className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{e.summary}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {step === 2 && primaryVendor && (
@@ -842,27 +965,63 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
           )}
 
           {step === 4 && (
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
-              <div className="flex items-center gap-1.5 mb-2">
-                <CheckCircle className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
-                <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Audit Summary</span>
+            <>
+              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <CheckCircle className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
+                  <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Audit Summary</span>
+                </div>
+                <div className="space-y-1.5 text-[10px]">
+                  {[
+                    ['Items', `${items.length} line${items.length === 1 ? '' : 's'}`],
+                    ['Subtotal', fmtIdrShort(itemsTotalIdr)],
+                    ['Playbook', `${playbook} · ${finnsPlaybooks.find(p => p.id === playbook)?.name}`],
+                    ['Vendor', primaryVendor?.name ?? '(none selected)'],
+                    ['Venues', targetVenues.join(', ') || '(none)'],
+                    ['Recurring', recurring ? recurringFrequency : 'no'],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex items-center justify-between">
+                      <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>{k}</span>
+                      <span className={`font-semibold ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{v}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1.5 text-[10px]">
-                {[
-                  ['Items', `${items.length} line${items.length === 1 ? '' : 's'}`],
-                  ['Subtotal', fmtIdrShort(itemsTotalIdr)],
-                  ['Playbook', `${playbook} · ${finnsPlaybooks.find(p => p.id === playbook)?.name}`],
-                  ['Vendor', primaryVendor?.name ?? '(none selected)'],
-                  ['Venues', targetVenues.join(', ') || '(none)'],
-                  ['Recurring', recurring ? recurringFrequency : 'no'],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between">
-                    <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>{k}</span>
-                    <span className={`font-semibold ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{v}</span>
+
+              {/* 5e — Policy preview · what would A-04 do? */}
+              {policyPreview.checks.length > 0 && (
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <ShieldCheck className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
+                    <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Policy preview</span>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <p className={`text-[9px] mb-2 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                    A-04 (Spend Watchdog) runs these checks at Stage 3 (PO Approved). Anything below at "warn" or "review" gets surfaced for your sign-off.
+                  </p>
+                  <div className="space-y-1.5">
+                    {policyPreview.checks.map((c, idx) => {
+                      const tone =
+                        c.status === 'pass' ? (isDark ? 'text-green-400' : 'text-green-700')
+                        : c.status === 'review' ? (isDark ? 'text-amber-300' : 'text-amber-700')
+                                                : (isDark ? 'text-red-400' : 'text-red-600');
+                      const Icon = c.status === 'pass' ? CheckCircle : AlertTriangle;
+                      return (
+                        <div key={idx} className={`p-2 rounded ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}>
+                          <div className="flex items-center gap-1.5">
+                            <Icon className={`h-3 w-3 shrink-0 ${tone}`} />
+                            <span className={`text-[10px] font-semibold ${tone}`}>
+                              {c.status.toUpperCase()}
+                            </span>
+                            <span className={`text-[10px] truncate ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{c.rule}</span>
+                          </div>
+                          <p className={`text-[9px] mt-0.5 leading-tight ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{c.detail}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {step === 5 && (

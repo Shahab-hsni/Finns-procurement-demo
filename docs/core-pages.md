@@ -5,6 +5,8 @@
 >
 > This is the canonical implementation spec. For the high-level platform map (topology, edges, hash contract, glossary), read `PLATFORM-MAP.md` first. For the right-panel rules, read `RIGHT-PANEL-MAP.md`.
 
+> ⚠ **Phase 6 note — autonomy model changed.** Per-page "Mode-Awareness · Manual Baseline Audit" subsections written during Phase 4 (and referenced from `RIGHT-PANEL-MAP.md`) describe a 3-tier global `Off · Assist · Auto` model that no longer exists. The current model is **per-entity `manual` | `auto`** + a system-wide pause on Activity & Governance → Agents tab. Smart features (autocomplete, vendor ranking, similar-past-POs, Atlas chat) are always on; only agent *actions* are gated. Read those audit subsections with that translation: "Off mode" ≈ "Manual entity OR system paused"; "Assist" collapses into Manual; "Auto" is unchanged. The manual-baseline rule still applies — every flow must be completable on a Manual entity. See `PLATFORM-MAP.md § 3a` for the canonical model.
+
 ---
 
 ## Table of Contents

@@ -2,8 +2,10 @@
 
 > Source-of-truth list of every place this prototype shows behavior that a real Finn's procurement operation would not survive. Use this as a spec for future production work.
 
-**Status: 2026-05-16**
+**Status: 2026-05-18**
 **Total flags: 95 across the 8 pages (re-audited against the Finn's 8-page model)**
+
+> ⚠ **Phase 6 note — autonomy model changed.** The "Mode-Awareness · Manual Baseline Audit" subsections written during Phase 4 reference the old 3-tier `Off · Assist · Auto` global pill. That pill no longer exists — Phase 6 replaced it with a **per-entity** `manual` | `auto` flag + a **system-wide `agentsPaused`** kill switch (on Activity & Governance → Agents tab). Any reference below to "Off mode" should now read as "Manual entity OR system paused"; "Assist" collapses into Manual; "Auto" remains the unchanged Auto. The manual-baseline rule still stands: every flow must be completable on a Manual entity with no agent acting. See `PLATFORM-MAP.md § 3a` for the canonical 2-tier model.
 
 ---
 

@@ -16,7 +16,7 @@ These rules apply to **every** right panel in the platform. If you propose a des
 4. **Reactive to the center.** The right panel's content morphs based on what is selected/active in the center panel — not based on left-panel selection alone. Center is the trigger; right is the reaction. *(Exception: Activity & Governance, where the left panel's tab choice reshapes both center and right.)*
 5. **Header subtitle adapts.** Every right panel has an Atlas/agent header whose subtitle reflects context (e.g. "Agent model · PO-XXXX", "Comparative Delta · A vs B", "Step 2 · Vendors").
 6. **No standalone navigation.** The right panel never owns primary page navigation. Cross-page links from the right panel always carry hash context and are AI-suggested (e.g. "Open in Activity", "View Source").
-7. **Atlas is never gated by Autonomy mode; A-01..A-05 recommendations are.** Atlas's header, page-context subtitle, data summaries (vendor metrics, spending pulse, logistics risk map, supply weather, etc.), and chat input are **always rendered** in all 3 modes. What gets suppressed in `Off` mode is content authored by the operating agents — recommendations ("A-02 suggests restocking 12kg"), receipts of autonomous actions ("Autonomous Actions Today: 6"), and the "auto-execute" CTAs ("Auto-restock queued · cancel in 4m"). Sensing surfaces (raw threshold flags like "Tuna at 1.9 days cover", market signal observations) stay on because they're observations, not recommendations.
+7. **Atlas is never gated. Smart features are never gated. Agent *actions* are.** Atlas's header, page-context subtitle, data summaries (vendor metrics, spending pulse, logistics risk map, supply weather, etc.), and chat input are **always rendered**. Smart features (autocomplete / category detection on item entry, vendor relevance ranking, similar-past-POs insights, AgentCTA reasoning cards) are also always rendered — they're UX, not agent actions. What's gated by per-entity Manual / Auto + the system-wide pause is **agent action**: auto-pre-pick of vendor, auto-execute below cap, auto-restock on par breach, auto-issue the PO to the vendor channel. On a Manual entity, A-01..A-05 still surface reasoning (chip reads "Insight" instead of "Auto"), but never act without sign-off.
 
 ---
 
@@ -425,26 +425,27 @@ Examples:
 
 ### Autonomy mode awareness in the right panel
 
-(Per Rule 7. See `PLATFORM-MAP.md § 3a` for the sensing-vs-acting model.)
+(Per Rule 7. See `PLATFORM-MAP.md § 3a` for the per-entity + system-pause model.)
 
-**Always rendered regardless of mode** (Atlas + sensing layer):
+**Always rendered regardless of per-entity mode** (Atlas + smart features):
 - Atlas header + page-context subtitle on every page.
 - Atlas data summaries: Spending Pulse (New Request), Venue Consumption Split (Orders), Venue Mix (Spending), Vendor Reliability metrics (Suppliers + New Request), Market Benchmarking (Suppliers), Forecast Confidence (Spending), Capital Efficiency (Activity & Governance), Market Signal observation (Inventory), Logistics Risk Map (New Request).
+- Smart features visible regardless of mode: category mix, similar past POs (insight), vendor relevance ranking, AgentCTA "Insight" reasoning cards.
 - Atlas chat input at the bottom.
 - Reasoning Chain display for historical events (Activity & Governance) — the chain stored at the time the event happened, regardless of current mode.
 
-**Hidden / changed in `Off` mode** (A-01..A-05 editorial layer):
-- "Suggested action" cards (Recurring Vendor card on New Request Step 2; Suggested Rule card on Activity & Governance Policy tab; Atlas Recommendation card on Dispute view).
-- Editorial narrative — "A-NN recommends…" / "A-01 has drafted the opening offer…" — replaced with raw fact rendering.
-- Agent identity badges + confidence scores on the right-panel reasoning chain for events that happened in Off mode (replaced with a User identity card).
-- "Suspend / Resume Agent" controls (no agent is acting; nothing to suspend).
-- The "Mission Brief Active" card on New Request Step 4 (replaced with manual continuation guidance).
-- The "Live Agent Activity" rotating pulse + "Autonomous Actions Today" feed on Overview.
+**Manual-entity behaviour (entity carries `laborMode = 'manual'`)**:
+- AgentCTA reasoning chip reads **"Insight"** instead of "Auto" — same reasoning text, framed as reference material, not as a recommendation to approve.
+- No defer / decline tri-row (Phase 6 collapsed those — they were always toast-stubbed anyway).
+- Auto-pre-pick of vendor in the wizard does not run.
+- Submit button copy on Step 4 reads "Authorize · Route to Orders" (no agent hand-off).
 
-**Per-page mode-awareness audit lives in `core-pages.md`** under the **"Mode-Awareness · Manual Baseline Audit"** subsection of each page section:
-- § 1.13 Orders · § 2.7 Overview · § 3.11 Inventory · § 4.7 New Request · § 5.16 Suppliers · § 6.9 Spending · § 7.13 Activity & Governance · § 8.8 Workflows.
+**System pause (`agentsPaused === true`)**:
+- All Auto entities behave as if Manual until resumed.
+- Activity & Governance Agents tab shows the red "All agents paused" status card.
+- Atlas + insight surfaces stay live.
 
-Each subsection captures: sensing surfaces (always on), Atlas-curated data layer (always on), mode-aware CTA table (Auto / Assist / Off), real gaps with proposed fix shapes.
+**Per-page mode-awareness audit lives in `core-pages.md`** under each page's section. The legacy 3-tier "Off / Assist / Auto" audit subsections (added during the 5c experiment) are stale — they reference a mode model that no longer exists. The 2-tier reality is: smart features always on, agent action gated per-entity.
 
 ### Center-morph from right-panel action (rare pattern)
 

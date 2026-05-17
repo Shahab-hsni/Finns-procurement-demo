@@ -11,7 +11,7 @@
 1. [Platform Topology](#1-platform-topology)
 2. [Personas](#2-personas)
 3. [The Agent Roster](#3-the-agent-roster)
-3a. [Autonomy Modes (sensing vs acting)](#3a-autonomy-modes-sensing-vs-acting)
+3a. [Autonomy Model (per-entity + system pause)](#3a-autonomy-model-phase-6--per-entity--system-pause)
 4. [Venue Tagging](#4-venue-tagging)
 5. [Edge Taxonomy — How Pages Talk to Each Other](#5-edge-taxonomy--how-pages-talk-to-each-other)
 6. [Hash-Context Contract](#6-hash-context-contract)
@@ -87,61 +87,67 @@ Hash format for deep links: `#agent-01` … `#agent-05` (zero-padded). Atlas has
 
 ---
 
-## 3a. Autonomy Modes (sensing vs acting)
+## 3a. Autonomy Model (Phase 6 — per-entity + system pause)
 
-Finn's runs on a **3-level Autonomy switch** in the global header pill (top-right of the app shell): **Off · Assist · Auto**. The mode is global, persists in `localStorage` (key: `finns-autonomy-mode`), and is broadcast via the `finns-autonomy-changed` CustomEvent so pages can react.
+Finn's autonomy lives at **two levels**:
+
+1. **Per-entity autonomy** — every PO, SKU, and vendor carries its own `manual` | `auto` flag (the labor switch on Orders / Inventory / Suppliers). The New Request wizard sets it on **Step 1** for a new PO; the per-entity switch is the truth after creation. Default for new entities is `auto` — Finn's treats AI as the feature that's on unless flipped.
+2. **System-wide pause** — `agentsPaused: boolean` (localStorage key: `finns-agents-paused`). When `true`, every Auto entity is frozen platform-wide regardless of its labor switch. Manual entities are unaffected. Lives on **Activity & Governance → Agents tab** ("Pause all agents" toggle). Rare admin action: audit period, cost pause, vacation handoff.
+
+Persistence:
+- Default mode: `localStorage` key `finns-autonomy-mode`, event `finns-autonomy-changed` (seeds the wizard's per-PO picker).
+- Pause: `localStorage` key `finns-agents-paused`, event `finns-agents-paused-changed`.
+
+No global header pill — that 3-tier Off/Assist/Auto control was removed in Phase 6 because:
+- "Off" duplicated what Manual on every entity already meant, and the kill-switch use case is rare enough to deserve a different home.
+- "Assist" was Manual + always-on smart features, and smart features are always on now — collapsing Assist into Manual was the natural simplification.
 
 ### The principle
 
-**Sensing is always on. Acting is gated.**
+**Smart features are always on. Agent actions are gated by per-entity setting + system pause.**
 
-- **Sensing layer** (never gated, never goes dark):
-  - Threshold checks: par breaches, low-stock alerts, days-of-cover countdowns
-  - State observation: in-transit ETAs, cold-chain monitoring, compliance-doc expiry, vendor SLA dips
-  - Data calculations: spend trends, forecasts, savings ledgers
-  - Watch-lists, "Requires Review" queues, "Needs Action" flags
-  - Atlas's chat + page-context data summaries
+- **Smart features** (always on; UX, not agent action):
+  - Autocomplete / smart-detect on item entry (category, unit, venues from keyword)
+  - Vendor relevance ranking (item-category overlap + composite)
+  - Similar-past-POs insights
+  - Atlas chat + page-context summaries
+  - Threshold checks, watch-lists, "Needs Action" queues, compliance expiry, SLA dips
+  - Recommendation cards on AgentCTA (chip reads "Insight" on Manual, "Auto" on Auto)
 
-- **Action layer** (gated by mode):
-  - Auto-creating POs (Restock Agent)
-  - Auto-accepting quotes (Sourcing Agent)
-  - Auto-sending vendor messages (Vendor Comms Agent)
-  - Auto-approving POs against policy (Spend Watchdog)
-  - Auto-advancing journey stages (Logistics)
-  - Agent-authored recommendations ("A-02 suggests restocking 12kg")
+- **Agent actions** (gated by per-entity Manual / Auto AND not paused):
+  - Auto-pre-pick of vendor in the wizard
+  - Auto-approving POs under spend cap (A-04)
+  - Auto-restock when par breached (A-02)
+  - Auto-issuing the PO PDF to a vendor via WhatsApp/email
+  - Auto-advancing journey stages (A-05)
 
-### The 3 modes
+### Per-entity values
 
-| Mode | Sensing | Recommendations | Actions |
-|------|---------|-----------------|---------|
-| **Off**    | ✅ on | ❌ suppressed | ❌ suppressed |
-| **Assist** | ✅ on | ✅ shown with Approve · Defer · Decline CTAs | ❌ requires human confirm for every action |
-| **Auto** (default) | ✅ on | ✅ shown | ✅ executed within policy rules |
+| Value | Behaviour |
+|-------|-----------|
+| **manual** | User drives every stage. Agents observe + surface insights (reasoning cards, suggestions, ranked vendors), but never act without sign-off. |
+| **auto** | Agents take action within policy rules (spend cap, vendor trust floor, fraud hold). User reviews exceptions. |
+
+### System pause behaviour
+
+When `agentsPaused === true`:
+- All Auto entities behave as if Manual.
+- The Activity & Governance Agents tab shows a red "All agents paused" card with a green "Resume all" button.
+- Per-entity Manual entities are unaffected (they already require user action).
+- Atlas chat + insight surfaces stay live.
 
 ### Atlas exemption
 
-Atlas is **never gated**. In all 3 modes Atlas:
+Atlas is **never gated**. Regardless of per-entity setting or system pause, Atlas:
 - Reads the current page context
 - Pulls relevant data summaries (vendor metrics, spending pulse, logistics risk map, etc.)
 - Responds to chat queries
-- Surfaces what A-01..A-05 *have observed* (always available — that's the sensing layer)
 
-What Atlas **does not** do regardless of mode: generate its own recommendations or take actions. Atlas is read-only by design.
-
-### Per-entity overrides
-
-The global Autonomy mode is the default. Per-entity controls override it where present:
-
-| Override | Scope | Effect |
-|----------|-------|--------|
-| Per-PO **Labor Switch** (Orders) | Single PO | `Agent` vs `Manual`. Overrides global Auto to make this one PO manual (and vice-versa in Off/Assist). |
-| Per-SKU **labor mode** (Inventory) | Single SKU | Same shape as Labor Switch for restock-related actions. |
-| Per-vendor **labor mode** (Suppliers) | Single supplier | Same shape for sourcing actions. |
-| Per-agent **Suspend / Resume** (Activity & Governance) | One of A-01..A-05 | Pauses that specific agent globally. Survives mode flips. |
+Atlas is read-only by design — never recommends action, never executes.
 
 ### Manual baseline rule
 
-Every flow on every page must be completable in **Off** mode. If a user cannot finish a procurement-related task without an agent taking an action, that's a missing manual surface (a gap, not a design choice). See `core-pages.md` per-page **Mode-Awareness** subsections for the current audit.
+Every flow on every page must be completable on a **Manual** entity (and with `agentsPaused === true`). If a user cannot finish a procurement-related task without an agent taking an action, that's a missing manual surface (a gap, not a design choice). See `core-pages.md` per-page sections for the current audit.
 
 ---
 

@@ -13,7 +13,7 @@ import { AUTONOMY_LABELS } from '../lib/types';
 import type { AutonomyLevel } from '../lib/types';
 import { theme as themeTokens } from '../lib/theme';
 import { toast } from 'sonner@2.0.3';
-import { useActionLog, type ActorType, type ActionLogEntry } from '../lib/actionLog';
+import { useActionLog, type ActorType, type ActionLogEntry, logUserAction } from '../lib/actionLog';
 import { useAutonomyMode } from '../lib/autonomy';
 import { AgentCTA } from './AgentCTA';
 import { finnsAgents, finnsPolicyRules, finnsDisputes } from '../lib/mockData';
@@ -1131,7 +1131,18 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
           </p>
         </div>
         <button
-          onClick={() => toast.info('New rule', { description: 'Production: opens a Rule Composer — template, scope, threshold, applies-to, active toggle, audit row. Lands in a follow-up phase.' })}
+          onClick={() => {
+            const draftId = `RUL-DRAFT-${Date.now().toString().slice(-4)}`;
+            logUserAction({
+              kind: 'rule-create',
+              entity: { type: 'rule', id: draftId },
+              summary: `Started a new policy rule (${draftId})`,
+              details: 'Rule Composer UI is stubbed — this action records the intent. Full composer modal lands in a follow-up phase.',
+              outcome: 'pending',
+              meta: { stubbed: true },
+            });
+            toast.info('New rule started', { description: 'Production: opens a Rule Composer — template, scope, threshold, applies-to, active toggle, audit row. Lands in a follow-up phase. The intent is logged.' });
+          }}
           className={`text-[10px] font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
             isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
           }`}>
@@ -1171,12 +1182,31 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
             </p>
             <div className="mt-2 flex items-center gap-2">
               <button
-                onClick={() => toast.info(`Edit ${rule.id}`, { description: 'Production: opens the rule composer pre-filled. Lands in a follow-up phase.' })}
+                onClick={() => {
+                  logUserAction({
+                    kind: 'rule-edit',
+                    entity: { type: 'rule', id: rule.id },
+                    summary: `Edited ${rule.id} · ${rule.name}`,
+                    details: 'Rule Composer modal is stubbed — this action records the intent.',
+                    outcome: 'pending',
+                    meta: { stubbed: true, template: rule.template, scope: rule.scope },
+                  });
+                  toast.info(`Edit ${rule.id}`, { description: 'Production: opens the rule composer pre-filled. Logged the intent for audit.' });
+                }}
                 className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
                 <Pencil className="h-2.5 w-2.5" /> Edit
               </button>
               <button
-                onClick={() => toast.info(`${rule.active ? 'Disabled' : 'Enabled'} ${rule.id}`, { description: 'Live toggle would flip the rule and fire a rule-toggle action log entry. Stubbed for now.' })}
+                onClick={() => {
+                  const nextActive = !rule.active;
+                  logUserAction({
+                    kind: 'rule-toggle',
+                    entity: { type: 'rule', id: rule.id },
+                    summary: `${nextActive ? 'Enabled' : 'Disabled'} ${rule.id} · ${rule.name}`,
+                    meta: { active: nextActive, prior: rule.active },
+                  });
+                  toast.info(`${rule.active ? 'Disabled' : 'Enabled'} ${rule.id}`, { description: 'The seeded rule list is read-only — only the audit row is real today.' });
+                }}
                 className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
                 {rule.active ? <PauseCircle className="h-2.5 w-2.5" /> : <PlayCircle className="h-2.5 w-2.5" />}
                 {rule.active ? 'Disable' : 'Enable'}
@@ -1237,17 +1267,46 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                 </p>
                 <div className="mt-2 flex items-center gap-2">
                   <button
-                    onClick={() => toast.success(`Approved ${d.id}`, { description: `Override accepted. Logged to action log.` })}
+                    onClick={() => {
+                      logUserAction({
+                        kind: 'dispute-approve',
+                        entity: { type: 'dispute', id: d.id },
+                        summary: `Approved dispute ${d.id} · ${d.refPoId} · ${d.reason.slice(0, 60)}${d.reason.length > 60 ? '…' : ''}`,
+                        details: `Raised by ${d.raisedBy}. Priority ${d.priority}.`,
+                        meta: { poId: d.refPoId, raisedBy: d.raisedBy, priority: d.priority },
+                      });
+                      toast.success(`Approved ${d.id}`, { description: 'Override accepted. Logged to action log.' });
+                    }}
                     className={`text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border ${isDark ? 'border-green-500/40 text-green-400 hover:bg-green-500/10' : 'border-green-300/70 text-green-600 hover:bg-green-50'}`}>
                     <Check className="h-2.5 w-2.5" /> Approve
                   </button>
                   <button
-                    onClick={() => toast.warning(`Rejected ${d.id}`, { description: `Override denied. Logged to action log.` })}
+                    onClick={() => {
+                      logUserAction({
+                        kind: 'dispute-reject',
+                        entity: { type: 'dispute', id: d.id },
+                        summary: `Rejected dispute ${d.id} · ${d.refPoId}`,
+                        details: `Raised by ${d.raisedBy}. Priority ${d.priority}.`,
+                        outcome: 'overridden',
+                        meta: { poId: d.refPoId, raisedBy: d.raisedBy, priority: d.priority },
+                      });
+                      toast.warning(`Rejected ${d.id}`, { description: 'Override denied. Logged to action log.' });
+                    }}
                     className={`text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border ${isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/10' : 'border-red-300/70 text-red-600 hover:bg-red-50'}`}>
                     <X className="h-2.5 w-2.5" /> Reject
                   </button>
                   <button
-                    onClick={() => toast.info(`Escalated ${d.id}`, { description: 'Routed to F&B Director for sign-off.' })}
+                    onClick={() => {
+                      logUserAction({
+                        kind: 'dispute-escalate',
+                        entity: { type: 'dispute', id: d.id },
+                        summary: `Escalated dispute ${d.id} · ${d.refPoId} to F&B Director`,
+                        details: `Raised by ${d.raisedBy}. Awaiting Director sign-off.`,
+                        outcome: 'pending',
+                        meta: { poId: d.refPoId, raisedBy: d.raisedBy, priority: d.priority },
+                      });
+                      toast.info(`Escalated ${d.id}`, { description: 'Routed to F&B Director for sign-off.' });
+                    }}
                     className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
                     Escalate
                   </button>

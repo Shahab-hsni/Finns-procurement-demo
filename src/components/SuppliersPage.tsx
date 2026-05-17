@@ -21,6 +21,7 @@ import { AgentCTA } from './AgentCTA';
 import { VendorOnboardingModal } from './VendorOnboardingModal';
 import { RenegotiationModal } from './RenegotiationModal';
 import { ManualNotes } from './ManualNotes';
+import { logUserAction } from '../lib/actionLog';
 
 interface SuppliersPageProps {
   theme: 'dark' | 'light';
@@ -918,10 +919,11 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
     if (!selected || !messageDraft.trim()) return;
     const now = new Date();
     const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const text = messageDraft.trim();
     const msg: ChatMessage = {
       id: `ms-${Date.now()}`,
       from: 'admin',
-      text: messageDraft.trim(),
+      text,
       time,
     };
     setSessionMessages(prev => ({
@@ -929,7 +931,14 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
       [selected.id]: [...(prev[selected.id] ?? []), msg],
     }));
     setMessageDraft('');
-  }, [selected, messageDraft]);
+    logUserAction({
+      kind: 'vendor-message',
+      entity: { type: 'supplier', id: selected.id },
+      summary: `Messaged ${selected.name} via ${messagingChannel === 'whatsapp' ? 'WhatsApp' : 'Telegram'} · ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`,
+      details: text,
+      meta: { channel: messagingChannel, vendor: selected.name },
+    });
+  }, [selected, messageDraft, messagingChannel]);
 
   const handleOpenMap = useCallback(() => {
     if (!selected) return;
@@ -2591,7 +2600,27 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
       </div>
       <div className={`shrink-0 p-3 border-t ${panelBorder}`}>
         <button
-          onClick={() => { if (!broadcastDraft.trim()) return; setBroadcastDraft(''); setBroadcastOpen(false); }}
+          onClick={() => {
+            const text = broadcastDraft.trim();
+            if (!text) return;
+            const recipients = broadcastTargets.map(s => s.name).slice(0, 5);
+            const tail = broadcastTargets.length > 5 ? ` +${broadcastTargets.length - 5} more` : '';
+            logUserAction({
+              kind: 'vendor-broadcast',
+              summary: `Broadcast to ${broadcastTargets.length} vendor${broadcastTargets.length === 1 ? '' : 's'} via ${messagingChannel === 'whatsapp' ? 'WhatsApp' : 'Telegram'} · ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`,
+              details: text,
+              meta: {
+                channel: messagingChannel,
+                recipientIds: broadcastTargets.map(s => s.id),
+                recipientNames: recipients.join(', ') + tail,
+              },
+            });
+            toast.success(`Broadcast sent to ${broadcastTargets.length} vendor${broadcastTargets.length === 1 ? '' : 's'}`, {
+              description: `Routed via ${messagingChannel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}.`,
+            });
+            setBroadcastDraft('');
+            setBroadcastOpen(false);
+          }}
           disabled={!broadcastDraft.trim()}
           className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[11px] font-semibold transition-all ${broadcastDraft.trim() ? 'bg-[#87986a] text-white hover:bg-[#6b7a54]' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'}`}
         >

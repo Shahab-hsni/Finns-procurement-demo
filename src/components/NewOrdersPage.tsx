@@ -2603,7 +2603,21 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     <ThumbsUp className="h-4 w-4" /> Approve &amp; Execute
                   </button>
                   <div className="flex justify-center">
-                    <button className={`inline-flex items-center gap-1.5 text-xs transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}>
+                    <button
+                      onClick={() => {
+                        logUserAction({
+                          kind: 'po-decline',
+                          entity: { type: 'po', id: selectedOrder.id },
+                          summary: `Declined ${selectedOrder.id} · ${selectedOrder.supplier}`,
+                          details: selectedOrder.humanDescription,
+                          outcome: 'overridden',
+                          meta: { amount: selectedOrder.amount, supplier: selectedOrder.supplier },
+                        });
+                        toast.warning(`Declined ${selectedOrder.id}`, {
+                          description: 'Agent recommendation rejected — it will not re-suggest without new data.',
+                        });
+                      }}
+                      className={`inline-flex items-center gap-1.5 text-xs transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}>
                       <ThumbsDown className="h-3 w-3" /> Decline
                     </button>
                   </div>
@@ -3059,7 +3073,21 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           </p>
         </div>
         <button
-          onClick={() => setBridgeTarget(null)}
+          onClick={() => {
+            const text = bridgeTarget.message.trim();
+            if (!text) return;
+            logUserAction({
+              kind: 'po-message-supplier',
+              entity: { type: 'po', id: bridgeTarget.orderId },
+              summary: `Messaged ${bridgeTarget.supplier} re: ${bridgeTarget.orderId} via ${bridgeTarget.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'} · ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`,
+              details: text,
+              meta: { channel: bridgeTarget.channel, supplier: bridgeTarget.supplier },
+            });
+            toast.success(`Sent via ${bridgeTarget.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}`, {
+              description: `${bridgeTarget.supplier} · routed through the Finn's Gateway.`,
+            });
+            setBridgeTarget(null);
+          }}
           disabled={!bridgeTarget.message.trim()}
           className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-white ${
             bridgeTarget.channel === 'whatsapp' ? 'bg-[#25D366] hover:bg-[#1ea952]' : 'bg-[#0088cc] hover:bg-[#0077bb]'

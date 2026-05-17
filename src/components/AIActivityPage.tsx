@@ -17,6 +17,8 @@ import { useActionLog, type ActorType, type ActionLogEntry, logUserAction } from
 import { useAutonomyMode } from '../lib/autonomy';
 import { AgentCTA } from './AgentCTA';
 import { finnsAgents, finnsPolicyRules, finnsDisputes } from '../lib/mockData';
+import { RuleComposerModal } from './RuleComposerModal';
+import type { PolicyRule } from '../lib/types';
 
 interface AIActivityPageProps {
   theme: 'dark' | 'light';
@@ -632,6 +634,41 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
     [],
   );
 
+  // ── Rule Composer state (Phase 4m) ───────────────────────────────
+  const [composerOpen, setComposerOpen]   = useState(false);
+  const [editingRule, setEditingRule]     = useState<PolicyRule | null>(null);
+  const [customRules, setCustomRules]     = useState<PolicyRule[]>([]);
+  const [deletedSeededIds, setDeletedSeededIds] = useState<Set<string>>(new Set());
+  const [seededOverrides, setSeededOverrides]   = useState<Record<string, Partial<PolicyRule>>>({});
+
+  // Composite rule list — custom-on-top, then seeded with any overrides
+  // (toggles / edits) applied, minus any seeded ids the user has deleted.
+  const visiblePolicyRules: PolicyRule[] = useMemo(() => {
+    const seededVisible = finnsPolicyRules
+      .filter(r => !deletedSeededIds.has(r.id))
+      .map(r => seededOverrides[r.id] ? { ...r, ...seededOverrides[r.id] } as PolicyRule : r);
+    return [...customRules, ...seededVisible];
+  }, [customRules, deletedSeededIds, seededOverrides]);
+
+  const openComposerCreate = () => { setEditingRule(null); setComposerOpen(true); };
+  const openComposerEdit   = (r: PolicyRule) => { setEditingRule(r); setComposerOpen(true); };
+  const handleRuleCreate = (r: PolicyRule) => setCustomRules(prev => [r, ...prev]);
+  const handleRuleUpdate = (r: PolicyRule) => {
+    if (customRules.some(c => c.id === r.id)) {
+      setCustomRules(prev => prev.map(c => c.id === r.id ? r : c));
+    } else {
+      // Editing a seeded rule — record an override instead of mutating.
+      setSeededOverrides(prev => ({ ...prev, [r.id]: r }));
+    }
+  };
+  const handleRuleDelete = (id: string) => {
+    if (customRules.some(c => c.id === id)) {
+      setCustomRules(prev => prev.filter(c => c.id !== id));
+    } else {
+      setDeletedSeededIds(prev => new Set(prev).add(id));
+    }
+  };
+
   // Deep-link hash reader — #evt=eventId selects that event in the right panel.
   // Falls back to an amber toast when the event id is not in the seeded ledger
   // (some upstream callers — e.g. the Orders Decision Attribution Trail —
@@ -1120,7 +1157,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
     </div>
   );
 
-  // ── Policy tab body — rule list (Phase 4d) ───────────────────────
+  // ── Policy tab body — rule list (Phase 4d / 4m) ──────────────────
   const policyTabBody = (
     <div className="p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -1131,18 +1168,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
           </p>
         </div>
         <button
-          onClick={() => {
-            const draftId = `RUL-DRAFT-${Date.now().toString().slice(-4)}`;
-            logUserAction({
-              kind: 'rule-create',
-              entity: { type: 'rule', id: draftId },
-              summary: `Started a new policy rule (${draftId})`,
-              details: 'Rule Composer UI is stubbed — this action records the intent. Full composer modal lands in a follow-up phase.',
-              outcome: 'pending',
-              meta: { stubbed: true },
-            });
-            toast.info('New rule started', { description: 'Production: opens a Rule Composer — template, scope, threshold, applies-to, active toggle, audit row. Lands in a follow-up phase. The intent is logged.' });
-          }}
+          onClick={openComposerCreate}
           className={`text-[10px] font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
             isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
           }`}>
@@ -1150,7 +1176,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
         </button>
       </div>
       <div className="space-y-2">
-        {finnsPolicyRules.map(rule => (
+        {visiblePolicyRules.map(rule => (
           <div key={rule.id}
                className={`p-2.5 rounded-lg border ${
                  rule.active
@@ -1182,30 +1208,26 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
             </p>
             <div className="mt-2 flex items-center gap-2">
               <button
-                onClick={() => {
-                  logUserAction({
-                    kind: 'rule-edit',
-                    entity: { type: 'rule', id: rule.id },
-                    summary: `Edited ${rule.id} · ${rule.name}`,
-                    details: 'Rule Composer modal is stubbed — this action records the intent.',
-                    outcome: 'pending',
-                    meta: { stubbed: true, template: rule.template, scope: rule.scope },
-                  });
-                  toast.info(`Edit ${rule.id}`, { description: 'Production: opens the rule composer pre-filled. Logged the intent for audit.' });
-                }}
+                onClick={() => openComposerEdit(rule)}
                 className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
                 <Pencil className="h-2.5 w-2.5" /> Edit
               </button>
               <button
                 onClick={() => {
                   const nextActive = !rule.active;
+                  // Apply the toggle to local state so the chip flips immediately.
+                  if (customRules.some(c => c.id === rule.id)) {
+                    setCustomRules(prev => prev.map(c => c.id === rule.id ? { ...c, active: nextActive } : c));
+                  } else {
+                    setSeededOverrides(prev => ({ ...prev, [rule.id]: { ...(prev[rule.id] ?? {}), active: nextActive } }));
+                  }
                   logUserAction({
                     kind: 'rule-toggle',
                     entity: { type: 'rule', id: rule.id },
                     summary: `${nextActive ? 'Enabled' : 'Disabled'} ${rule.id} · ${rule.name}`,
                     meta: { active: nextActive, prior: rule.active },
                   });
-                  toast.info(`${rule.active ? 'Disabled' : 'Enabled'} ${rule.id}`, { description: 'The seeded rule list is read-only — only the audit row is real today.' });
+                  toast.success(`${nextActive ? 'Enabled' : 'Disabled'} ${rule.id}`, { description: rule.name });
                 }}
                 className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
                 {rule.active ? <PauseCircle className="h-2.5 w-2.5" /> : <PlayCircle className="h-2.5 w-2.5" />}
@@ -1323,7 +1345,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
   const TAB_DEFS: { id: LeftTab; label: string; icon: typeof Gauge; count?: number }[] = [
     { id: 'activity', label: 'Activity', icon: Gauge },
     { id: 'agents',   label: 'Agents',   icon: Bot,    count: finnsAgents.length },
-    { id: 'policy',   label: 'Policy',   icon: Shield, count: finnsPolicyRules.length },
+    { id: 'policy',   label: 'Policy',   icon: Shield, count: visiblePolicyRules.length },
     { id: 'disputes', label: 'Disputes', icon: Scale,  count: openDisputeCount },
   ];
 
@@ -2086,6 +2108,16 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
         right={rightPanel}
       />
       {rollbackModal}
+      {/* Rule Composer (Phase 4m) */}
+      <RuleComposerModal
+        isDark={isDark}
+        isOpen={composerOpen}
+        editing={editingRule}
+        onClose={() => setComposerOpen(false)}
+        onCreate={handleRuleCreate}
+        onUpdate={handleRuleUpdate}
+        onDelete={editingRule ? handleRuleDelete : undefined}
+      />
     </>
   );
 }

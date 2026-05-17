@@ -1769,7 +1769,12 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     ← Back
                   </Button>
                   <Button onClick={handleSubmit} className={SAGE.primary(isDark)}>
-                    Authorize · Deploy Agent <ChevronRight className="h-3 w-3 ml-1" />
+                    {autonomyMode === 'off'
+                      ? 'Authorize · Route to Orders'
+                      : autonomyMode === 'assist'
+                        ? 'Authorize · Send for A-04 review'
+                        : 'Authorize · Hand off to A-04'}
+                    <ChevronRight className="h-3 w-3 ml-1" />
                   </Button>
                 </div>
               </>
@@ -1783,7 +1788,11 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 </div>
                 <h2 className={`text-base font-semibold ${labelClass}`}>PO Authorized</h2>
                 <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Running on {playbook} ({finnsPlaybooks.find(p => p.id === playbook)?.name}). {PLAYBOOK_META[playbook].agent} is on Stage 2. Routing you to Orders…
+                  {autonomyMode === 'off'
+                    ? `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). Agents are off — every downstream stage is yours to drive. Routing you to Orders…`
+                    : autonomyMode === 'assist'
+                      ? `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). ${PLAYBOOK_META[playbook].agent} will surface recommendations at each stage — you approve every one. Routing you to Orders…`
+                      : `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). ${PLAYBOOK_META[playbook].agent} picks it up at Stage 2 within policy. Routing you to Orders…`}
                 </p>
                 <div className={`mt-4 inline-flex items-center gap-1.5 text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
                   <Truck className="h-3 w-3" />

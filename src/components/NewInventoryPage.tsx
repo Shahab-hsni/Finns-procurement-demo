@@ -17,27 +17,34 @@ import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
 import { toast } from 'sonner@2.0.3';
+import type { VenueTag, FinnsAgentId } from '../lib/types';
 
 interface InventoryPageProps {
   theme: 'dark' | 'light';
   onNavigate?: (page: string) => void;
 }
 
-// ── Workforce attribution (Wayne / Fortress doctrine) ────────────────
+// ── Workforce attribution (6-agent flat roster) ──────────────────────
 type LaborMode = 'agent' | 'manual';
 type ParMode = 'ai' | 'manual';
-interface AssignedAgent { id: number; role: string; }
-function agentBadge(a: AssignedAgent) { return `Agent #${String(a.id).padStart(2, '0')}`; }
-function agentLabel(a: AssignedAgent) { return `${agentBadge(a)} · ${a.role}`; }
+interface AssignedAgent { id: FinnsAgentId; role: string; }
+function agentBadge(a: AssignedAgent) { return a.id; }
+function agentLabel(a: AssignedAgent) { return `${a.id} · ${a.role}`; }
+
+const AGENT_ROLE: Record<FinnsAgentId, string> = {
+  'A-01': 'Sourcing',
+  'A-02': 'Restock',
+  'A-03': 'Vendor Comms',
+  'A-04': 'Spend Watchdog',
+  'A-05': 'Logistics',
+};
 
 // Resolve the SKU's assigned agent. Most inventory items are managed by
-// Agent #08 (Restock); special cases come from `agentTrigger`.
+// the Restock Agent (A-02); special cases come from `agentTrigger`.
 function getAssignedAgent(item: InventoryItem): AssignedAgent {
-  const m = item.agentTrigger?.match(/Agent #(\d+)/);
-  const id = m ? parseInt(m[1], 10) : 8;
-  if (id === 3)  return { id: 3,  role: 'Demand Signal' };
-  if (id === 25) return { id: 25, role: 'POS Intelligence' };
-  return { id: 8, role: 'Restock' };
+  const m = item.agentTrigger?.match(/(A-0[1-5])/);
+  const id = (m ? (m[1] as FinnsAgentId) : 'A-02');
+  return { id, role: AGENT_ROLE[id] };
 }
 
 // ── Heartbeat Groups (Miller's Law) ──────────────────────────────────
@@ -48,6 +55,7 @@ interface InventoryItem {
   name: string;
   sku: string;
   category: string;
+  venues: VenueTag[];          // which Finn's venues consume this SKU
   unitCostRp: number;
   onHand: number;
   parLevel: number;
@@ -64,12 +72,12 @@ interface InventoryItem {
   agentReasoning?: string;
   marketSignal?: string;
   confidenceScore?: number;
+  // restockDag.stage is in the 5-stage space (0..4)
   restockDag?: { stage: number; failedStage?: number; failureReason?: string };
   velocityData: { day: string; units: number }[];
   monthlySaving?: number;
   hoursEliminated?: number;
-  // Cross-page traceability — once Phase 2 begins, the same MBL/Carrier
-  // data is visible in the Orders page under this PO id.
+  // Cross-page traceability — same PO visible in Orders under linkedOrderId.
   linkedOrderId?: string;
 }
 
@@ -79,30 +87,23 @@ interface DagStage {
   status: 'complete' | 'active' | 'pending' | 'failed';
 }
 
-// ── 12-Stage DAG Kernel ──────────────────────────────────────────────
-// Two phases:
-//   • Decision (4) — Inventory-specific reasoning (forecast, par, sourcing).
-//   • Execution (8) — labels mirror the Orders 12-Stage Kernel Journey
-//     so the Admin sees the same data on either page.
-const DECISION_PHASE_LEN = 4;
+// ── 5-Stage Restock DAG (matches the canonical platform model) ───────
+// Two phases mirror the inventory page's role: the Decision is local to
+// inventory (signal + sourcing); the Execution lives on Orders.
+//   Decision (2): Request, Quote / Vendor Confirmed
+//   Execution (3): PO Approved, In Transit, Delivered & Checked
+const DECISION_PHASE_LEN = 2;
 type RestockPhase = 'decision' | 'execution';
 interface RestockStageDef { label: string; agentStep?: string; phase: RestockPhase; }
 
 const RESTOCK_DAG_TEMPLATE: RestockStageDef[] = [
-  // Phase 1 · The Decision
-  { label: 'Demand Forecast',  agentStep: 'Agent #25 (POS Intelligence) calculated 7-day consumption velocity from live sales data', phase: 'decision' },
-  { label: 'Par Level Check',  agentStep: 'Agent #08 (Restock) detected depletion below par threshold', phase: 'decision' },
-  { label: 'Supplier Match',   agentStep: 'Agent #21 (Market Intel) cross-referenced vetted suppliers against price + reliability + cold-chain', phase: 'decision' },
-  { label: 'Price Lock',       agentStep: 'Agent #14 (Pricing) locked volume discount at -7.2%', phase: 'decision' },
+  // Phase 1 · The Decision (inventory-owned)
+  { label: 'Request',                  agentStep: 'A-02 (Restock) raised the demand signal — par breach, scheduled trigger, or human-issued.', phase: 'decision' },
+  { label: 'Quote / Vendor Confirmed', agentStep: 'A-01 (Sourcing) ran the playbook. RFQ for Standard, direct vendor for Rush, contract draw for Recurring. Quote validated vs 30-day market median.', phase: 'decision' },
   // Phase 2 · The Execution — labels match Orders → cross-page parity
-  { label: 'PO Created',         agentStep: 'Agent #01 (PO Engine) generated PO with quality hold clause', phase: 'execution' },
-  { label: 'Vendor Confirmed',   agentStep: 'Agent #05 sent and confirmed', phase: 'execution' },
-  { label: 'Payment Sent',       agentStep: 'Agent #28 processed payment', phase: 'execution' },
-  { label: 'ERP Sync',           agentStep: 'Agent #18 synced to ERP ledger', phase: 'execution' },
-  { label: 'Dispatched',         agentStep: 'Vendor ERP webhook fired DISPATCH event', phase: 'execution' },
-  { label: 'Customs Clearance',  agentStep: 'Agent #33 pre-filed import docs', phase: 'execution' },
-  { label: 'In Transit',         agentStep: 'Agent #07 (Logistics) monitoring GPS + cold-chain temperature sensors', phase: 'execution' },
-  { label: 'Delivered',          agentStep: 'Agent #09 (Quality) ran QC inspection against specs', phase: 'execution' },
+  { label: 'PO Approved',              agentStep: 'A-04 (Spend Watchdog) checked the policy stack — spend cap, vendor trust floor, duplicate detection. PO issued to vendor on pass.', phase: 'execution' },
+  { label: 'In Transit',               agentStep: 'A-05 (Logistics) confirmed dispatch and tracks ETA. Cold-chain sensors monitored for proteins, seafood, dairy.', phase: 'execution' },
+  { label: 'Delivered & Checked',      agentStep: 'Receiving venue staff QC the delivery against PO. Pass → stock updated. Fail → dispute opened on Activity & Governance.', phase: 'execution' },
 ];
 
 function makeDagStages(currentStage: number, failedStage?: number): DagStage[] {
@@ -122,22 +123,29 @@ interface ExecutionStream {
   kind: StreamKind;
   vendor: string;
   agent: AssignedAgent;
-  stage: number;        // current stage in the 12-stage layout (Phase 2 starts at idx 4)
+  stage: number;        // current stage in the 5-stage layout (Phase 2 starts at idx 2)
   eta?: string;
   etaSortKey: number;
   failedStage?: number;
 }
 
-// Static metadata for any linked active PO an SKU references via `linkedOrderId`.
+// Static metadata for any linked active PO a SKU references via `linkedOrderId`.
 // In a real system this would come from the Orders kernel; we mirror just
 // enough here to feed the Stream Switcher.
 const LINKED_PO_META: Record<string, Omit<ExecutionStream, 'id' | 'kind'>> = {
-  'PO-2855': {
-    vendor: 'AUS Meats Pty',
-    agent: { id: 7, role: 'Logistics' },
-    stage: 8,                     // In Transit on Orders
-    eta: 'Apr 11 · 2PM',
-    etaSortKey: new Date('2026-04-11T14:00').getTime(),
+  'PO-3044': {
+    vendor: 'Bintang Distribusi',
+    agent: { id: 'A-05', role: 'Logistics' },
+    stage: 3,                     // In Transit on Orders
+    eta: 'May 16 · 14:00',
+    etaSortKey: new Date('2026-05-16T14:00').getTime(),
+  },
+  'PO-3045': {
+    vendor: 'Sumber Dairy',
+    agent: { id: 'A-05', role: 'Logistics' },
+    stage: 4,                     // Delivered & Checked
+    eta: 'May 16 · 10:00',
+    etaSortKey: new Date('2026-05-16T10:00').getTime(),
   },
 };
 
@@ -161,113 +169,58 @@ function synthesizeRestockHistory(item: InventoryItem, stageIdx: number, traceSo
   const seedSource = traceSourceId ?? item.id;
   const seed = hashStr(`${seedSource}-${stageIdx}`);
   const num = (digits: number) => String(seed % 10 ** digits).padStart(digits, '0');
-  const baseEpoch = 1745200000000 + (hashStr(seedSource) % 1_000_000_000);
+  const baseEpoch = 1747353600000 + (hashStr(seedSource) % 1_000_000_000); // 2025-05-16-ish base
   const verifiedAtIso = new Date(baseEpoch + stageIdx * (1000 * 60 * 60 * (2 + (seed % 5)))).toISOString();
-  const supplier = item.supplierName ?? 'PT Maju Bersama';
-  const carriers = ['DHL Express', 'PT Express', 'NYK Line'];
+  const supplier = item.supplierName ?? 'PT Bali Seafood Lestari';
+  const carriers = ['JNE Trucking', 'Pos Indonesia', 'Sicepat Cargo'];
   const carrier = carriers[seed % carriers.length];
   const FIXTURES: Record<number, () => RestockStageHistory> = {
-    // Phase 1 · The Decision
+    // Phase 1 · The Decision (inventory-owned)
     0: () => ({
       data: {
         '7-day burn (avg)': `${item.dailyBurn} ${item.unit}/day`,
         'Velocity spike': `${15 + (seed % 35)}% above baseline`,
-        'Forecast horizon': '7 days',
+        'On-hand vs par': `${item.onHand} / ${item.parLevel} ${item.unit}`,
+        'Days remaining': `${item.daysRemaining} d`,
       },
-      trigger: `POS reservation queue projected ${Math.round(item.dailyBurn * 7)} ${item.unit} consumption · spike on weekend brunch`,
-      proof: `POS payload ID: pos-${num(8)} · Polled ${new Date(baseEpoch + 60 * 60 * 1000).toISOString()}`,
-      logic: `Burn rate spiked ${15 + (seed % 35)}% from weekend brunch pre-orders. Forecasted ${Math.round(item.dailyBurn * 7)} ${item.unit} demand over next 7 days.`,
+      trigger: `A-02 (Restock) detected ${item.name} at ${Math.round((item.onHand / Math.max(item.parLevel, 1)) * 100)}% of par with burn +${15 + (seed % 35)}% on the prior 14d baseline.`,
+      proof: `Inventory snapshot ID: INV-${num(7)} · POS feed: pos-${num(8)} · Check ran every 30 min`,
+      logic: `Restock request raised. Forecasted ${Math.round(item.dailyBurn * 7)} ${item.unit} consumption over the next 7 days at current pace.`,
       verifiedAtIso,
     }),
     1: () => ({
       data: {
-        'On-hand': `${item.onHand} ${item.unit}`,
-        'Par threshold': `${item.parLevel} ${item.unit}`,
-        'Days remaining': `${item.daysRemaining} d`,
-      },
-      trigger: `Stock at ${item.onHand} ${item.unit} fell below par of ${item.parLevel} ${item.unit}`,
-      proof: `Inventory snapshot ID: INV-${num(7)} · Check ran every 30 min`,
-      logic: `${item.name} dropped to ${Math.round((item.onHand / Math.max(item.parLevel, 1)) * 100)}% of par. Restock kernel triggered automatically.`,
-      verifiedAtIso,
-    }),
-    2: () => ({
-      data: {
-        'Suppliers evaluated': '8 (vetted directory only)',
-        'Winner': supplier,
-        'Cold-chain reliability': `${91 + (seed % 8)}%`,
-        'Price index': `-${5 + (seed % 5)}% vs baseline`,
-      },
-      trigger: `Decision triggered: par-level breach (Stage 2 cleared)`,
-      proof: `Supplier match log: sm-${num(7)} · Source: vetted directory v${(seed % 12) + 1}`,
-      logic: `Within your approved directory, ${supplier} won on cold-chain reliability and price. No external sourcing performed.`,
-      verifiedAtIso,
-    }),
-    3: () => ({
-      data: {
-        'Locked unit price': `Rp ${item.unitCostRp.toLocaleString()}`,
-        'Volume discount': `-7.2%`,
+        'Vendor': supplier,
+        'Quote vs 30d median': `-${4 + (seed % 6)}%`,
+        'Lead time': `${1 + (seed % 4)} days`,
+        'Cold-chain SLA': `${91 + (seed % 8)}%`,
         'Lock window': '48h',
       },
-      trigger: `Quote received from ${supplier} — within Agent #14 negotiation tolerance`,
+      trigger: `A-01 (Sourcing) ran the playbook for ${item.name} — quote received from ${supplier} within the negotiation tolerance.`,
       proof: `Quote doc: q-${num(7)} · Lock TTL ${new Date(baseEpoch + 48 * 60 * 60 * 1000).toISOString()}`,
-      logic: `Volume discount of -7.2% locked for 48h. Estimated savings vs spot: Rp ${(item.unitCostRp * 0.072 * Math.round(item.dailyBurn * 4)).toLocaleString()}.`,
+      logic: `${supplier} won on price + cold-chain reliability inside the approved vendor directory. No external sourcing performed.`,
       verifiedAtIso,
     }),
     // Phase 2 · The Execution (mirrors Orders)
-    4: () => ({
+    2: () => ({
       data: { po_pdf: `${item.id}_PO_v1.pdf`, vendor: supplier, items: `${Math.round(item.dailyBurn * 7)} ${item.unit}` },
-      trigger: `Price lock cleared → PO Engine drafted purchase order`,
-      proof: `PO doc: ${item.id}_PO_v1.pdf · Cap ${item.id}_CAP.pdf · ERP queue ID: erp-${num(7)}`,
+      trigger: `A-04 (Spend Watchdog) cleared the policy gates — spend cap, vendor trust floor, duplicate detection. PO issued.`,
+      proof: `PO doc: ${item.id}_PO_v1.pdf · Policy check ID: pol-${num(7)}`,
       logic: `PO drafted from the locked quote. Quality hold clause attached for first delivery.`,
       verifiedAtIso,
     }),
-    5: () => ({
-      data: { channel: 'WhatsApp', lead_time: `${3 + (seed % 5)} days` },
-      trigger: `PO sent to ${supplier} — read receipt in 18 min`,
-      proof: `WhatsApp msg ID: msg-${num(8)} · Read at ${new Date(baseEpoch + 18 * 60 * 1000).toISOString()}`,
-      logic: `${supplier} confirmed receipt and lead time matches their published SLA.`,
-      verifiedAtIso,
-    }),
-    6: () => ({
-      data: { bank_ref: `TXN-${num(6)}`, receipt: `${item.id}_wire_receipt.pdf` },
-      trigger: `Vendor confirmation received → auto-payment trigger`,
-      proof: `Bank API ref ${num(10)} · SWIFT MT103 ts ${new Date(baseEpoch + 2 * 60 * 60 * 1000).toISOString()}`,
-      logic: `Settlement routed via vendor's primary account. Reconciled against finance ledger.`,
-      verifiedAtIso,
-    }),
-    7: () => ({
-      data: { erp_ref: `ERP-2026-${num(4)}` },
-      trigger: `Payment cleared → ERP mirror`,
-      proof: `ERP write ID: WR-${num(9)} · API ts ${new Date(baseEpoch + 3 * 60 * 60 * 1000).toISOString()}`,
-      logic: `Mirrored to ERP using next free sequence in your internal numbering scheme.`,
-      verifiedAtIso,
-    }),
-    8: () => ({
-      data: { carrier, mbl: `${carrier.split(' ')[0].slice(0, 3).toUpperCase()}${num(8)}` },
-      trigger: `Vendor ERP webhook fired DISPATCH event`,
-      proof: `Carrier ack: ${carrier.toLowerCase().replace(/\s+/g, '')}-${num(7)}`,
-      logic: `${carrier} is the default carrier on this lane. MBL issued at vendor warehouse departure.`,
-      verifiedAtIso,
-    }),
-    9: () => ({
-      data: { clearance_id: `KH-2026-${num(5)}`, duty_receipt: `${item.id}_duty_receipt.pdf` },
-      trigger: `Customs declaration auto-filed by Agent #33`,
-      proof: `Clearance ID KH-2026-${num(5)} · Duty paid via finance ref ${num(9)}`,
-      logic: `Pre-filed import docs cleared on first pass — no broker intervention needed.`,
-      verifiedAtIso,
-    }),
-    10: () => ({
-      data: { tracking: `${num(3)}-${num(8)}` },
-      trigger: `Carrier API status changed to IN_TRANSIT`,
-      proof: `Tracking ${num(3)}-${num(8)} · Polled every 15 min`,
+    3: () => ({
+      data: { carrier, tracking: `${num(3)}-${num(8)}`, eta_hours: `${24 + (seed % 48)}` },
+      trigger: `A-05 (Logistics) confirmed dispatch from ${supplier}; carrier API status IN_TRANSIT.`,
+      proof: `Carrier ack: ${carrier.toLowerCase().replace(/\s+/g, '')}-${num(7)} · Tracking ${num(3)}-${num(8)}`,
       logic: `Real-time milestones active. Cold-chain temperature held within spec across the full leg.`,
       verifiedAtIso,
     }),
-    11: () => ({
-      data: { pod: `${item.id}_signed_POD.jpg`, qc_score: `${88 + (seed % 10)}/100` },
-      trigger: `Driver uploaded signed POD; QC inspection ran on receipt`,
+    4: () => ({
+      data: { pod: `${item.id}_signed_POD.jpg`, qc_score: `${88 + (seed % 10)}/100`, receiving_venue: item.venues[0] ?? 'BC' },
+      trigger: `Receiving venue staff QC'd ${item.name} on arrival at ${item.venues[0] ?? 'BC'}.`,
       proof: `POD doc: pod-${num(8)} · QC ledger entry: qc-${num(7)}`,
-      logic: `Goods received and signed for. QC passed against ${supplier} baseline. Stock auto-incremented.`,
+      logic: `Goods received and signed for. QC passed against ${supplier} baseline. Stock auto-incremented for the consuming venue(s).`,
       verifiedAtIso,
     }),
   };
@@ -285,164 +238,244 @@ function makeVelocity(base: number, variance: number): { day: string; units: num
 
 // ── Full Catalog ─────────────────────────────────────────────────────
 const ITEMS: InventoryItem[] = [
+  // Seafood
   {
-    id: 'INV-001', name: 'Lamb Rack', sku: 'PRO-LR-001', category: 'Protein',
-    unitCostRp: 185000, onHand: 5, parLevel: 18, unit: 'kg', daysRemaining: 0.8, dailyBurn: 6.2,
-    group: 'critical', trend: 'down', autoReordered: true, eta: 'Apr 11 · 2PM',
-    supplierName: 'AUS Meats Pty', supplierPhone: '+61412345678',
-    linkedOrderId: 'PO-2855',
-    agentTrigger: 'Agent #8 (Restock)',
-    agentReasoning: 'Triggered emergency restock because burn rate spiked 40% from weekend brunch pre-orders. Agent #21 (Market Intel) confirmed Dubai lamb prices are stable but Ramadan demand will peak in 3 days. Agent #25 (POS Intelligence) projects 42kg consumption over the next 7 days based on reservation data.',
-    marketSignal: 'Ramadan demand surge — lamb consumption up 35% regionally. Wholesale prices stable for 48h window.',
-    confidenceScore: 91,
-    restockDag: { stage: 9 },
-    velocityData: makeVelocity(6, 3),
-    monthlySaving: 420, hoursEliminated: 3.5,
+    id: 'INV-001', name: 'Yellowfin Tuna (sashimi grade)', sku: 'SKU-0421', category: 'Seafood',
+    venues: ['ST'],
+    unitCostRp: 380_000, onHand: 8, parLevel: 12, unit: 'kg', daysRemaining: 1.9, dailyBurn: 4.2,
+    group: 'critical', trend: 'down', autoReordered: true, eta: 'May 17 · 11:00',
+    supplierName: 'PT Bali Seafood Lestari', supplierPhone: '+62 812 3456 7890',
+    linkedOrderId: 'PO-3041',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: "Sashimi-grade tuna burn rate up 12% — Stake covers up 18% wk/wk. A-01 (Sourcing) ran an RFQ against PT Bali Seafood, Krakatoa Coldstore and Indo Oseanik. PT Bali Seafood won on lead time (1d) and cold-chain SLA (98%). Quote sits Rp 14.2M for the combined ST/BC drop — 4% under 30-day median. A-04 (Spend Watchdog) cleared everything except the spend cap; needs your nod.",
+    marketSignal: 'Bali seafood market stable. Wayan Sukma confirmed cold-chain handler available for the ST drop.',
+    confidenceScore: 92,
+    restockDag: { stage: 1 },
+    velocityData: makeVelocity(4.2, 1.5),
+    monthlySaving: 590_000, hoursEliminated: 3.5,
   },
   {
-    id: 'INV-002', name: 'Beef Tenderloin', sku: 'PRO-BT-002', category: 'Protein',
-    unitCostRp: 220000, onHand: 8, parLevel: 22, unit: 'kg', daysRemaining: 1.3, dailyBurn: 6,
-    group: 'critical', trend: 'down', autoReordered: true, eta: 'Apr 13 · 10AM',
-    supplierName: 'PT Sumber Daging', supplierPhone: '+6281234567',
-    agentTrigger: 'Agent #8 (Restock)',
-    agentReasoning: 'Below par with accelerating consumption. Agent #21 flagged a 5% price increase forecast next week — Agent #14 locked current rate. PPN (11% VAT) auto-calculated by Agent #22.',
-    marketSignal: 'Beef wholesale +5% forecast next week — locked current rate now',
-    confidenceScore: 87,
-    restockDag: { stage: 6 },
-    velocityData: makeVelocity(6, 2),
-    monthlySaving: 380, hoursEliminated: 2.8,
-  },
-  {
-    id: 'INV-003', name: 'Tiger Prawns', sku: 'SEA-TP-001', category: 'Seafood',
-    unitCostRp: 310000, onHand: 0, parLevel: 15, unit: 'kg', daysRemaining: 0, dailyBurn: 4.5,
-    group: 'critical', trend: 'down', autoReordered: true, eta: 'Apr 12 · 8AM',
-    supplierName: 'Indo Seafood Corp', supplierPhone: '+6289876543',
-    agentTrigger: 'Agent #8 (Restock)',
-    agentReasoning: 'Stock depleted. Emergency PO sent to Indo Seafood within 12 minutes of stockout detection. Cold-chain verified with Agent #9. Agent #25 (POS) confirms 4 active menu items depend on this SKU.',
-    marketSignal: 'Prawn harvest season — favorable pricing window for bulk',
-    confidenceScore: 94,
-    restockDag: { stage: 10 },
-    velocityData: makeVelocity(4.5, 2),
-    monthlySaving: 520, hoursEliminated: 4.1,
-  },
-  {
-    id: 'INV-004', name: 'Salmon Fillet', sku: 'SEA-SF-002', category: 'Seafood',
-    unitCostRp: 280000, onHand: 3, parLevel: 12, unit: 'kg', daysRemaining: 0.6, dailyBurn: 5,
-    group: 'critical', trend: 'down', autoReordered: true, eta: 'Apr 12 · 4PM',
-    supplierName: 'Nordic Fish Co', supplierPhone: '+4712345678',
-    agentTrigger: 'Agent #8 (Restock)',
-    agentReasoning: 'Critical depletion — Agent #13 (Supplier Comms) attempted to reach Nordic Fish Co but failed after 3 retries. Fallback PO routed to backup supplier Oceanic Harvest.',
-    marketSignal: 'Norwegian salmon futures up 3% — secondary supplier Oceanic Harvest matched price',
-    confidenceScore: 82,
-    restockDag: { stage: 4, failedStage: 2, failureReason: 'Agent #13 failed to reach Nordic Fish Co after 3 attempts. Auto-switched to backup supplier Oceanic Harvest. Click to take over manually.' },
-    velocityData: makeVelocity(5, 2),
-    monthlySaving: 340, hoursEliminated: 2.5,
-  },
-  {
-    id: 'INV-005', name: 'Chicken Breast', sku: 'PRO-CB-003', category: 'Protein',
-    unitCostRp: 52000, onHand: 35, parLevel: 40, unit: 'kg', daysRemaining: 1.8, dailyBurn: 19,
+    id: 'INV-002', name: 'Yellowfin Tuna (food grade)', sku: 'SKU-0422', category: 'Seafood',
+    venues: ['BC', 'RC'],
+    unitCostRp: 180_000, onHand: 22, parLevel: 30, unit: 'kg', daysRemaining: 2.9, dailyBurn: 7.5,
     group: 'watch', trend: 'down', autoReordered: false,
-    supplierName: 'PT Maju Bersama', supplierPhone: '+6281112233',
-    agentTrigger: 'Agent #8 (Restock)',
-    agentReasoning: 'Approaching par level. Holding PO because Agent #14 is negotiating a group buy with 3 nearby restaurants for a 12% volume discount. Decision expected by tonight.',
-    marketSignal: 'Group Buy opportunity — 3 restaurants pooling chicken orders for volume pricing',
-    confidenceScore: 82,
-    velocityData: makeVelocity(19, 6),
-    monthlySaving: 290, hoursEliminated: 2.0,
+    supplierName: 'PT Bali Seafood Lestari', supplierPhone: '+62 812 3456 7890',
+    linkedOrderId: 'PO-3041',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Food-grade tuna stocks for BC + RC. Combined into PO-3041 with the sashimi-grade for ST to share the cold-chain run.',
+    marketSignal: 'Same vendor as SKU-0421 — sashimi grade. Combined run.',
+    confidenceScore: 90,
+    restockDag: { stage: 1 },
+    velocityData: makeVelocity(7.5, 2),
+    monthlySaving: 240_000, hoursEliminated: 1.5,
   },
   {
-    id: 'INV-006', name: 'Fresh Tomatoes', sku: 'PRD-FT-001', category: 'Produce',
-    unitCostRp: 18000, onHand: 25, parLevel: 28, unit: 'kg', daysRemaining: 2.0, dailyBurn: 12,
-    group: 'watch', trend: 'down', autoReordered: false,
-    supplierName: 'Bali Fresh Farms', supplierPhone: '+6287654321',
-    agentTrigger: 'Agent #3 (Demand Signal)',
-    agentReasoning: 'Weekend event catering will spike tomato usage by ~60%. Agent #21 found a local farm with same-day delivery for 8% less than usual supplier.',
-    marketSignal: 'Local farm surplus detected — price 8% below wholesale. Same-day delivery available.',
-    confidenceScore: 78,
-    velocityData: makeVelocity(12, 4),
-    monthlySaving: 180, hoursEliminated: 1.5,
+    id: 'INV-003', name: 'Prawns (large, head-on)', sku: 'SKU-0423', category: 'Seafood',
+    venues: ['BC', 'ST', 'RC'],
+    unitCostRp: 220_000, onHand: 14, parLevel: 25, unit: 'kg', daysRemaining: 2.1, dailyBurn: 6.8,
+    group: 'critical', trend: 'down', autoReordered: false,
+    supplierName: 'PT Bali Seafood Lestari', supplierPhone: '+62 812 3456 7890',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Prawn stocks at 56% of par across BC/ST/RC. Weekend brunch traffic at BC drives ~60% of the burn. Restock proposal pending vendor confirmation.',
+    marketSignal: 'Bali prawn harvest favorable this fortnight. Wayan flagged a possible 5% volume break.',
+    confidenceScore: 88,
+    restockDag: { stage: 0 },
+    velocityData: makeVelocity(6.8, 2),
+    monthlySaving: 380_000, hoursEliminated: 2.4,
+  },
+  // Protein
+  {
+    id: 'INV-004', name: 'AUS Wagyu Ribeye MB7+', sku: 'SKU-0101', category: 'Protein',
+    venues: ['ST'],
+    unitCostRp: 1_900_000, onHand: 5, parLevel: 8, unit: 'kg', daysRemaining: 2.8, dailyBurn: 1.8,
+    group: 'critical', trend: 'down', autoReordered: true, eta: 'May 18 · 09:00',
+    supplierName: 'AUS Premium Meats', supplierPhone: '+61 4 1234 5678',
+    linkedOrderId: 'PO-3043',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Wagyu MB7+ par floor breach — Stake bookings up 18%. A-02 promoted to Rush playbook (WF-RSH). A-01 went direct to AUS Premium Meats (your contracted Wagyu vendor) — quote within the 12% Rush tolerance. USD-denominated, FX locked at 15,490.',
+    marketSignal: 'AUS Wagyu market +6% wk/wk. Lock now or face the next cycle uplift.',
+    confidenceScore: 88,
+    restockDag: { stage: 0 },
+    velocityData: makeVelocity(1.8, 0.5),
+    monthlySaving: 0, hoursEliminated: 1.8,
   },
   {
-    id: 'INV-007', name: 'Squid', sku: 'SEA-SQ-003', category: 'Seafood',
-    unitCostRp: 95000, onHand: 18, parLevel: 20, unit: 'kg', daysRemaining: 2.1, dailyBurn: 8.5,
+    id: 'INV-005', name: 'Pork Belly, skin-on', sku: 'SKU-0102', category: 'Protein',
+    venues: ['BC', 'RC'],
+    unitCostRp: 145_000, onHand: 28, parLevel: 35, unit: 'kg', daysRemaining: 3.3, dailyBurn: 8.4,
     group: 'watch', trend: 'flat', autoReordered: false,
-    supplierName: 'Indo Seafood Corp', supplierPhone: '+6289876543',
-    agentTrigger: 'Agent #8 (Restock)',
-    agentReasoning: 'Flat consumption trend but approaching par. Monitoring — no PO yet because supplier is restocking their warehouse.',
-    marketSignal: 'Squid supply stable — no urgency signals from market intel',
-    confidenceScore: 74,
-    velocityData: makeVelocity(8.5, 3),
+    supplierName: 'Krakatoa Coldstore', supplierPhone: '+62 821 9876 5432',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Pork belly tracking at par. No restock yet — vendor is consolidating shipments and offering a 4% break on the next combined delivery.',
+    marketSignal: 'Krakatoa next pickup window is May 19. Bundle with chicken thighs for combined freight.',
+    confidenceScore: 82,
+    velocityData: makeVelocity(8.4, 2),
+    monthlySaving: 290_000, hoursEliminated: 2.0,
   },
   {
-    id: 'INV-008', name: 'Mixed Bell Peppers', sku: 'PRD-BP-002', category: 'Produce',
-    unitCostRp: 32000, onHand: 12, parLevel: 15, unit: 'kg', daysRemaining: 2.4, dailyBurn: 5,
+    id: 'INV-006', name: 'Chicken thighs, boneless', sku: 'SKU-0103', category: 'Protein',
+    venues: ['BC', 'RC', 'SP'],
+    unitCostRp: 58_000, onHand: 42, parLevel: 50, unit: 'kg', daysRemaining: 3.3, dailyBurn: 12.6,
     group: 'watch', trend: 'down', autoReordered: false,
-    agentTrigger: 'Agent #25 (POS Intelligence)',
-    agentReasoning: 'New menu item "Grilled Pepper Steak" launching Friday will increase bell pepper demand 3x.',
-    marketSignal: 'Seasonal supply — prices stable. Recommend pre-ordering for Friday launch.',
+    supplierName: 'Krakatoa Coldstore', supplierPhone: '+62 821 9876 5432',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Chicken thighs for BC/RC/SP — approaching par. Splash event Saturday will spike SP burn by ~40%. Restock proposal pending the combined Krakatoa drop.',
+    marketSignal: 'No price pressure on poultry this cycle. Bundle opportunity with pork belly noted.',
+    confidenceScore: 84,
+    velocityData: makeVelocity(12.6, 3),
+    monthlySaving: 240_000, hoursEliminated: 1.7,
+  },
+  // Produce
+  {
+    id: 'INV-007', name: 'Mixed greens (rocket, lettuce)', sku: 'SKU-0201', category: 'Produce',
+    venues: ['BC', 'RC', 'ST'],
+    unitCostRp: 22_000, onHand: 15, parLevel: 18, unit: 'kg', daysRemaining: 2.5, dailyBurn: 6.0,
+    group: 'watch', trend: 'down', autoReordered: false,
+    supplierName: 'CV Indo Sayur', supplierPhone: '+62 813 5555 1234',
+    linkedOrderId: 'PO-3042',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Recurring weekly produce — auto-approved by A-04 under the standing recurring schedule. Pak Made confirmed Monday 06:00 BC drop.',
+    marketSignal: 'CV Indo Sayur recurring vendor — no quote pressure expected.',
+    confidenceScore: 93,
+    restockDag: { stage: 2 },
+    velocityData: makeVelocity(6.0, 1.5),
+  },
+  {
+    id: 'INV-008', name: 'Tomatoes, vine-ripened', sku: 'SKU-0202', category: 'Produce',
+    venues: ['BC', 'RC', 'ST', 'SP'],
+    unitCostRp: 18_000, onHand: 36, parLevel: 40, unit: 'kg', daysRemaining: 3.3, dailyBurn: 11.0,
+    group: 'watch', trend: 'flat', autoReordered: false,
+    supplierName: 'CV Indo Sayur', supplierPhone: '+62 813 5555 1234',
+    linkedOrderId: 'PO-3042',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Tomatoes for all four venues. Riding the same Monday recurring drop as mixed greens.',
+    marketSignal: 'Bali local supply healthy — Pak Made flagged a possible variety swap to plum if heirlooms run short.',
+    confidenceScore: 87,
+    velocityData: makeVelocity(11, 3),
+    monthlySaving: 130_000, hoursEliminated: 1.0,
+  },
+  {
+    id: 'INV-009', name: 'Lime, key', sku: 'SKU-0204', category: 'Produce',
+    venues: ['BC', 'RC', 'ST', 'SP'],
+    unitCostRp: 24_000, onHand: 32, parLevel: 35, unit: 'kg', daysRemaining: 3.4, dailyBurn: 9.5,
+    group: 'watch', trend: 'flat', autoReordered: false,
+    supplierName: 'CV Indo Sayur', supplierPhone: '+62 813 5555 1234',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Cocktails at BC and RC consume most of the limes. Splash QSR drinks add ~20% to weekend burn.',
+    marketSignal: 'No supply pressure.',
+    confidenceScore: 80,
+    velocityData: makeVelocity(9.5, 2.5),
+  },
+  // Dairy
+  {
+    id: 'INV-010', name: 'Butter, salted (Anchor)', sku: 'SKU-0301', category: 'Dairy',
+    venues: ['BC', 'RC', 'ST', 'SP'],
+    unitCostRp: 95_000, onHand: 24, parLevel: 30, unit: 'kg', daysRemaining: 3.5, dailyBurn: 6.8,
+    group: 'watch', trend: 'flat', autoReordered: false,
+    supplierName: 'Sumber Dairy', supplierPhone: '+62 815 6677 8899',
+    linkedOrderId: 'PO-3045',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Butter delivered this morning — A-05 (Logistics) awaiting your QC sign-off at BC kitchen.',
+    marketSignal: 'Sumber halal cert renewal due May 28 — A-03 has the renewal ready.',
+    confidenceScore: 89,
+    restockDag: { stage: 4 },
+    velocityData: makeVelocity(6.8, 1.5),
+    monthlySaving: 180_000, hoursEliminated: 1.2,
+  },
+  {
+    id: 'INV-011', name: 'Burrata', sku: 'SKU-0302', category: 'Dairy',
+    venues: ['ST'],
+    unitCostRp: 85_000, onHand: 12, parLevel: 18, unit: 'pcs', daysRemaining: 3.0, dailyBurn: 4.0,
+    group: 'watch', trend: 'down', autoReordered: false,
+    supplierName: 'Sumber Dairy', supplierPhone: '+62 815 6677 8899',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Stake-specific burrata. Stocks under par — restock proposal queued behind the wider dairy delivery.',
+    marketSignal: 'Burrata batch limited this week — Sumber flagged production capacity issue.',
     confidenceScore: 76,
-    velocityData: makeVelocity(5, 2),
-    monthlySaving: 90, hoursEliminated: 0.8,
+    velocityData: makeVelocity(4.0, 1),
+  },
+  // Beverages
+  {
+    id: 'INV-012', name: 'Bintang Beer 330ml (case 24)', sku: 'SKU-0501', category: 'Beverages',
+    venues: ['BC', 'RC', 'SP'],
+    unitCostRp: 320_000, onHand: 84, parLevel: 100, unit: 'case', daysRemaining: 2.6, dailyBurn: 32.0,
+    group: 'critical', trend: 'down', autoReordered: true, eta: 'May 16 · 14:00',
+    supplierName: 'Bintang Distribusi', supplierPhone: '+62 811 2233 4455',
+    linkedOrderId: 'PO-3044',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Bintang case par tracking 84% — long-weekend forecast +8%. A-05 has the truck 60km out, ETA 14:00 for BC + SP + RC.',
+    marketSignal: 'Bintang cold-chain SLA dipped to 88% last week — keep an eye on the next two drops.',
+    confidenceScore: 91,
+    restockDag: { stage: 3 },
+    velocityData: makeVelocity(32, 6),
+    monthlySaving: 320_000, hoursEliminated: 2.6,
   },
   {
-    id: 'INV-009', name: 'Jasmine Rice', sku: 'DRY-JR-001', category: 'Dry Goods',
-    unitCostRp: 14000, onHand: 120, parLevel: 50, unit: 'kg', daysRemaining: 8, dailyBurn: 15,
+    id: 'INV-013', name: 'Prosecco, Treviso DOC (750ml)', sku: 'SKU-0502', category: 'Beverages',
+    venues: ['RC', 'ST'],
+    unitCostRp: 280_000, onHand: 96, parLevel: 120, unit: 'btl', daysRemaining: 4.4, dailyBurn: 22.0,
+    group: 'watch', trend: 'flat', autoReordered: false,
+    supplierName: 'PT Wine Cellar Nusa', supplierPhone: '+62 818 4321 9876',
+    linkedOrderId: 'PO-3046',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Prosecco shipment cleared customs yesterday — Logistics tracking last-mile to Bali warehouse.',
+    marketSignal: 'PT Wine Cellar Nusa on watchlist — long lead times, FX exposure tracked.',
+    confidenceScore: 78,
+    restockDag: { stage: 3 },
+    velocityData: makeVelocity(22, 4),
+  },
+  {
+    id: 'INV-014', name: 'Coca-Cola 330ml (case 24)', sku: 'SKU-0504', category: 'Beverages',
+    venues: ['BC', 'SP', 'RC'],
+    unitCostRp: 180_000, onHand: 56, parLevel: 80, unit: 'case', daysRemaining: 2.2, dailyBurn: 25.0,
+    group: 'critical', trend: 'down', autoReordered: false,
+    supplierName: 'Bintang Distribusi', supplierPhone: '+62 811 2233 4455',
+    agentTrigger: 'A-02 (Restock)',
+    agentReasoning: 'Coke par dropping fast — Splash QSR drives most of the volume.',
+    marketSignal: 'Same vendor as Bintang — can bundle on next drop.',
+    confidenceScore: 86,
+    velocityData: makeVelocity(25, 5),
+    monthlySaving: 150_000, hoursEliminated: 1.0,
+  },
+  // Dry Goods
+  {
+    id: 'INV-015', name: 'Olive oil, EV (5L tin)', sku: 'SKU-0601', category: 'Dry Goods',
+    venues: ['BC', 'RC', 'ST'],
+    unitCostRp: 480_000, onHand: 14, parLevel: 18, unit: 'tin', daysRemaining: 5.8, dailyBurn: 2.4,
     group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(15, 3), monthlySaving: 150, hoursEliminated: 1.0,
+    supplierName: 'Pulau Dry Goods', supplierPhone: '+62 813 1111 2222',
+    velocityData: makeVelocity(2.4, 0.6), monthlySaving: 120_000, hoursEliminated: 0.7,
   },
   {
-    id: 'INV-010', name: 'Cooking Oil', sku: 'DRY-CO-002', category: 'Dry Goods',
-    unitCostRp: 28000, onHand: 80, parLevel: 30, unit: 'L', daysRemaining: 12, dailyBurn: 6.5,
+    id: 'INV-016', name: 'Jasmine rice (25kg sack)', sku: 'SKU-0602', category: 'Dry Goods',
+    venues: ['BC', 'RC', 'SP'],
+    unitCostRp: 280_000, onHand: 22, parLevel: 30, unit: 'sack', daysRemaining: 4.9, dailyBurn: 4.5,
     group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(6.5, 2), monthlySaving: 110, hoursEliminated: 0.7,
+    supplierName: 'Pulau Dry Goods', supplierPhone: '+62 813 1111 2222',
+    velocityData: makeVelocity(4.5, 1), monthlySaving: 90_000, hoursEliminated: 0.6,
   },
   {
-    id: 'INV-011', name: 'Coconut Milk', sku: 'DRY-CM-003', category: 'Dairy',
-    unitCostRp: 8500, onHand: 60, parLevel: 25, unit: 'cans', daysRemaining: 10, dailyBurn: 6,
-    group: 'autonomous', trend: 'up', autoReordered: false,
-    velocityData: makeVelocity(6, 2), monthlySaving: 70, hoursEliminated: 0.5,
-  },
-  {
-    id: 'INV-012', name: 'Sugar', sku: 'DRY-SG-004', category: 'Dry Goods',
-    unitCostRp: 12000, onHand: 45, parLevel: 20, unit: 'kg', daysRemaining: 15, dailyBurn: 3,
+    id: 'INV-017', name: 'Kopi Bali roasted (1kg)', sku: 'SKU-0603', category: 'Dry Goods',
+    venues: ['BC', 'RC', 'ST', 'SP'],
+    unitCostRp: 240_000, onHand: 38, parLevel: 45, unit: 'kg', daysRemaining: 4.8, dailyBurn: 8.0,
     group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(3, 1),
+    supplierName: 'Kopi Bali Roastery', supplierPhone: '+62 819 5555 6666',
+    velocityData: makeVelocity(8, 1.5), monthlySaving: 130_000, hoursEliminated: 0.9,
   },
+  // Other
   {
-    id: 'INV-013', name: 'Basmati Rice', sku: 'DRY-BR-005', category: 'Dry Goods',
-    unitCostRp: 22000, onHand: 90, parLevel: 40, unit: 'kg', daysRemaining: 9, dailyBurn: 10,
-    group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(10, 3), monthlySaving: 130, hoursEliminated: 0.9,
-  },
-  {
-    id: 'INV-014', name: 'Fresh Herbs (Mixed)', sku: 'PRD-FH-003', category: 'Produce',
-    unitCostRp: 45000, onHand: 8, parLevel: 5, unit: 'kg', daysRemaining: 4, dailyBurn: 2,
-    group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(2, 1),
-  },
-  {
-    id: 'INV-015', name: 'Soy Sauce', sku: 'DRY-SS-006', category: 'Dry Goods',
-    unitCostRp: 16000, onHand: 30, parLevel: 10, unit: 'bottles', daysRemaining: 20, dailyBurn: 1.5,
-    group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(1.5, 0.5),
-  },
-  {
-    id: 'INV-016', name: 'Flour (All Purpose)', sku: 'DRY-FL-007', category: 'Dry Goods',
-    unitCostRp: 9000, onHand: 50, parLevel: 20, unit: 'kg', daysRemaining: 12, dailyBurn: 4,
-    group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(4, 1),
-  },
-  {
-    id: 'INV-017', name: 'Milk (Full Cream)', sku: 'DRY-MK-008', category: 'Dairy',
-    unitCostRp: 18000, onHand: 40, parLevel: 15, unit: 'L', daysRemaining: 7, dailyBurn: 5.5,
-    group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(5.5, 2),
-  },
-  {
-    id: 'INV-018', name: 'Butter (Unsalted)', sku: 'DRY-BT-009', category: 'Dairy',
-    unitCostRp: 42000, onHand: 15, parLevel: 8, unit: 'kg', daysRemaining: 10, dailyBurn: 1.5,
-    group: 'autonomous', trend: 'flat', autoReordered: false,
-    velocityData: makeVelocity(1.5, 0.5),
+    id: 'INV-018', name: 'Takeaway box, 1000ml (case 100)', sku: 'SKU-0801', category: 'Other',
+    venues: ['BC', 'SP', 'RC'],
+    unitCostRp: 350_000, onHand: 24, parLevel: 30, unit: 'case', daysRemaining: 4.4, dailyBurn: 5.5,
+    group: 'watch', trend: 'flat', autoReordered: false,
+    supplierName: 'Eka Packaging', supplierPhone: '+62 812 7777 8888',
+    linkedOrderId: 'PO-3047',
+    agentTrigger: 'A-04 (Spend Watchdog)',
+    agentReasoning: 'PO-3047 disputed — quote 18% above 30-day median. F&B Director raised override for Splash Saturday event.',
+    marketSignal: 'No alternative vendor carries this SKU in 1000ml. Eka has the quote on hold.',
+    confidenceScore: 72,
+    restockDag: { stage: 1, failedStage: 1, failureReason: 'A-04 (Spend Watchdog) held the PO under RUL-001 (Spend Cap, vendor scope). Dispute DSP-101 open in Activity & Governance.' },
+    velocityData: makeVelocity(5.5, 1),
   },
 ];
 
@@ -450,7 +483,7 @@ const ITEMS: InventoryItem[] = [
 const GROUP_META: Record<HeartbeatGroup, { label: string; icon: typeof Zap; color: string; darkColor: string; bgDark: string; bgLight: string; desc: string }> = {
   critical: { label: 'Critical', icon: Flame, color: 'text-red-600', darkColor: 'text-red-400', bgDark: 'bg-red-500/10', bgLight: 'bg-red-50', desc: 'Immediate restock required' },
   watch:    { label: 'Watch', icon: Eye, color: 'text-amber-600', darkColor: 'text-amber-400', bgDark: 'bg-amber-500/10', bgLight: 'bg-amber-50', desc: 'Predicted stockout within 72h' },
-  autonomous: { label: 'Autonomous Flow', icon: ShieldCheck, color: 'text-green-600', darkColor: 'text-green-400', bgDark: 'bg-green-500/10', bgLight: 'bg-green-50', desc: 'Handled by Agent #8' },
+  autonomous: { label: 'Autonomous Flow', icon: ShieldCheck, color: 'text-green-600', darkColor: 'text-green-400', bgDark: 'bg-green-500/10', bgLight: 'bg-green-50', desc: 'Handled by A-02 Restock' },
 };
 
 // ── Macro Intelligence (Right panel in Audit Mode) ───────────────────
@@ -466,12 +499,12 @@ const TOTAL_INVENTORY_VALUE = CATEGORY_VALUES.reduce((s, c) => s + c.valueRp, 0)
 const DEAD_STOCK = ITEMS.filter(i => i.dailyBurn <= 1.5 && i.onHand > i.parLevel);
 const DEAD_STOCK_VALUE = DEAD_STOCK.reduce((s, i) => s + i.onHand * i.unitCostRp, 0);
 
-// Supply chain weather
+// Supply chain weather — Finn's relevant regions
 const SUPPLY_WEATHER: { region: string; icon: typeof Sun; status: 'clear' | 'caution' | 'disrupted'; detail: string }[] = [
-  { region: 'Australia', icon: Sun, status: 'clear', detail: 'Lamb & beef routes clear. No delays.' },
-  { region: 'Indonesia (Java)', icon: CloudRain, status: 'caution', detail: 'Monsoon season — seafood shipments +1 day.' },
-  { region: 'Bali (Local)', icon: Sun, status: 'clear', detail: 'Produce farms operating normally.' },
-  { region: 'Norway', icon: CloudLightning, status: 'disrupted', detail: 'Port congestion — salmon lead times +3 days.' },
+  { region: 'Bali (Local)',       icon: Sun,           status: 'clear',     detail: 'PT Bali Seafood + CV Indo Sayur + Bali Fresh Farms — all operating normally.' },
+  { region: 'Java / Tanjung Priok', icon: CloudRain,   status: 'caution',   detail: 'Monsoon edge — Bintang + Krakatoa cold-chain deliveries +6–12h.' },
+  { region: 'Australia (Imports)', icon: Sun,          status: 'clear',     detail: 'AUS Premium Meats routes clear. No customs delays this fortnight.' },
+  { region: 'Europe (Wine)',      icon: CloudLightning, status: 'disrupted', detail: 'PT Wine Cellar Nusa flagged Treviso DOC restock +5 days due to vendor backlog.' },
 ];
 
 // ── Aggregate velocity ───────────────────────────────────────────────
@@ -911,8 +944,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
     setChatInput('');
     setTimeout(() => {
       const response = selected
-        ? `For ${selected.name}: Agent #25 reports ${selected.dailyBurn} ${selected.unit}/day burn. ${selected.marketSignal ? `Agent #21 signal: ${selected.marketSignal}.` : ''} ${selected.confidenceScore ? `Confidence: ${selected.confidenceScore}%.` : ''}`
-        : 'Select an item to get specific intelligence from Agent #8, #21, or #25.';
+        ? `For ${selected.name}: A-02 (Restock) reports ${selected.dailyBurn} ${selected.unit}/day burn. ${selected.marketSignal ? `A-01 (Sourcing) signal: ${selected.marketSignal}.` : ''} ${selected.confidenceScore ? `Confidence: ${selected.confidenceScore}%.` : ''}`
+        : 'Select an item to get specific intelligence from A-02 Restock, A-01 Sourcing, or A-04 Spend Watchdog.';
       setChatMessages(prev => [...prev, { role: 'atlas', text: response }]);
     }, 600);
   }, [chatInput, selected]);
@@ -1107,7 +1140,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Inventory Audit</h2>
-                <p className={`text-[10px] ${t.textMuted}`}>{auditFiltered.length} of {ITEMS.length} SKUs · Agent #10 (Analytics)</p>
+                <p className={`text-[10px] ${t.textMuted}`}>{auditFiltered.length} of {ITEMS.length} SKUs · A-04 Spend Watchdog</p>
               </div>
               <button onClick={() => setAuditMode(false)} title="Collapse"
                 className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
@@ -1365,7 +1398,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Consumption Velocity Map</h3>
-              <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>Real-time depletion from Agent #25 (POS Intelligence)</p>
+              <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>Real-time depletion from A-02 (Restock)</p>
             </div>
             <Badge variant="outline" className={isDark ? 'bg-[#87986a]/10 text-[#a3b085] border-[#87986a]/20 text-[10px]' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#dbe3ce] text-[10px]'}>
               <Activity className="h-3 w-3 mr-1" /> Live
@@ -1572,7 +1605,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                         ? isDark ? 'text-amber-300' : 'text-amber-700'
                         : isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
                     }`}>
-                      Agent #{String(skuAgent.id).padStart(2, '0')} Watch
+                      {skuAgent.id} Watch
                     </span>
                     <span className={`text-[11px] ${t.textPrimary}`}>{detail}</span>
                     <span className={`ml-auto text-[9px] ${t.textMuted}`}>
@@ -1689,7 +1722,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                                   <div className="flex-1 min-w-0">
                                     <div className={`text-[11px] font-semibold ${t.textPrimary}`}>{d.id}</div>
                                     <div className={`text-[9px] ${t.textMuted}`}>
-                                      {d.items.length} line{d.items.length === 1 ? '' : 's'} · Stage {d.stage + 1}/12 · {agentLabel(d.assignedAgent)}
+                                      {d.items.length} line{d.items.length === 1 ? '' : 's'} · Stage {d.stage + 1}/5 · {agentLabel(d.assignedAgent)}
                                     </div>
                                   </div>
                                   <span className={`shrink-0 text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity ${
@@ -1715,7 +1748,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                                   <div className="flex-1 min-w-0">
                                     <div className={`text-[11px] font-semibold ${t.textPrimary}`}>{d.id}</div>
                                     <div className={`text-[9px] ${t.textMuted}`}>
-                                      {d.items.length} line{d.items.length === 1 ? '' : 's'} · Stage {d.stage + 1}/12 · {agentLabel(d.assignedAgent)}
+                                      {d.items.length} line{d.items.length === 1 ? '' : 's'} · Stage {d.stage + 1}/5 · {agentLabel(d.assignedAgent)}
                                     </div>
                                   </div>
                                   <span className={`shrink-0 text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity ${
@@ -1803,7 +1836,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                       const restockNeeded = onHand < valueToSave;
                       toast.success(`Manual floor saved at ${valueToSave}${selected.unit}.`, {
                         description: restockNeeded
-                          ? `Below floor — Agent #${String(getAssignedAgent(selected).id).padStart(2, '0')} initiating restock now.`
+                          ? `Below floor — ${getAssignedAgent(selected).id} initiating restock now.`
                           : 'Above floor · no restock needed yet.',
                       });
                       setChatMessages(prev => [...prev, {
@@ -1943,8 +1976,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                           {stockoutRisk > 60
                             ? <>At <strong>{currentPar} {selected.unit}</strong> you'd run out on a busy weekend. I'd set par to <strong>{recommended} {selected.unit}</strong> for a 4-day buffer (~{recommendedRisk}% stockout risk).</>
                             : stockoutRisk > 30
-                              ? <>{daysWithPar} days runway is tight if suppliers delay. Agent #08 will auto-escalate, but a {recommended} {selected.unit} par would give you headroom.</>
-                              : <>Well covered — {daysWithPar} days even at peak. Agent #08 is monitoring; no change recommended.</>}
+                              ? <>{daysWithPar} days runway is tight if suppliers delay. A-02 will auto-escalate, but a {recommended} {selected.unit} par would give you headroom.</>
+                              : <>Well covered — {daysWithPar} days even at peak. A-02 is monitoring; no change recommended.</>}
                         </p>
                         {isManualFloor && !alreadyAtRecommended && stockoutRisk > 30 && (
                           <button
@@ -2023,7 +2056,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                           {/* Fortress / Internal Directory badge on Supplier Match */}
                           {isSupplierMatch && (
                             <span
-                              title="Agent #21 cross-referenced only the vetted suppliers in your internal directory"
+                              title="A-01 (Sourcing) cross-referenced only the vetted suppliers in your internal directory"
                               className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${
                                 isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
                               }`}>
@@ -2097,7 +2130,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                         <Hand className="h-2.5 w-2.5" /> Click any stage · View Trace or Force Complete
                       </span>
                     )}
-                    <span className={`text-[10px] ${t.textMuted}`}>Stage {effectiveStage + 1}/12</span>
+                    <span className={`text-[10px] ${t.textMuted}`}>Stage {effectiveStage + 1}/5</span>
                   </div>
                 </div>
 
@@ -2262,7 +2295,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
           </div>
           <div>
             <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Atlas</h3>
-            <p className={`text-[9px] ${t.textMuted}`}>{auditMode && selected ? 'Quick Journey · Slide-Sheet' : auditMode ? 'Macro-Portfolio Insights · Agent #10' : 'Stock intelligence · Restock copilot'}</p>
+            <p className={`text-[9px] ${t.textMuted}`}>{auditMode && selected ? 'Quick Journey · Slide-Sheet' : auditMode ? 'Macro-Portfolio Insights · A-04 Spend Watchdog' : 'Stock intelligence · Restock copilot'}</p>
           </div>
         </div>
       </div>
@@ -2314,7 +2347,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className={`text-[10px] font-semibold ${t.sectionLabel}`}>RESTOCK JOURNEY</h4>
-                  <span className={`text-[9px] ${t.textMuted}`}>Stage {selected.restockDag.stage + 1}/12</span>
+                  <span className={`text-[9px] ${t.textMuted}`}>Stage {selected.restockDag.stage + 1}/5</span>
                 </div>
                 <div className="space-y-0">
                   {dagStages.map((stage, idx) => {
@@ -2542,7 +2575,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             {selected?.marketSignal && (
               <div className="px-4 pb-3">
                 <div className={`p-2.5 rounded-lg ${isDark ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-blue-50 border border-blue-200'}`}>
-                  <div className="flex items-center gap-1.5 mb-1"><Radar className={`h-3 w-3 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} /><span className={`text-[9px] font-semibold uppercase ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Agent #21 Market Signal</span></div>
+                  <div className="flex items-center gap-1.5 mb-1"><Radar className={`h-3 w-3 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} /><span className={`text-[9px] font-semibold uppercase ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>A-01 Market Signal</span></div>
                   <p className={`text-[10px] leading-relaxed ${isDark ? 'text-blue-300' : 'text-blue-800'}`}>{selected.marketSignal}</p>
                 </div>
               </div>
@@ -2565,8 +2598,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               <h4 className={`text-[10px] font-semibold mb-2 ${t.sectionLabel}`}>ASK ATLAS</h4>
               <div className="space-y-1.5">
                 {(selected ? [
-                  `Why did Agent #8 trigger for ${selected.name}?`,
-                  `What signals from Agent #21 affect ${selected.name}?`,
+                  `Why did A-02 trigger for ${selected.name}?`,
+                  `What signals from A-01 affect ${selected.name}?`,
                   `Confidence score for ${selected.name} forecast?`,
                 ] : [
                   'Which items need attention this week?',
@@ -2765,7 +2798,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 <span className={`text-[10px] font-bold uppercase tracking-wide ${isComplete ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : (isDark ? 'text-amber-300' : 'text-amber-700')}`}>
                   History &amp; Trace Record
                 </span>
-                <span className={`text-[10px] ${t.textMuted}`}>{phaseLabel} · Stage {stageIdx + 1}/12</span>
+                <span className={`text-[10px] ${t.textMuted}`}>{phaseLabel} · Stage {stageIdx + 1}/5</span>
                 {/* Attribution */}
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
                   attribution === 'admin'

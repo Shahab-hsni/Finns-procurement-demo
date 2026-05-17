@@ -550,31 +550,64 @@ On mount and on every `hashchange`, Orders inspects `window.location.hash`:
 
 ## 1.13 Mode-Awareness · Manual Baseline Audit
 
-The Orders page must be fully usable in `Off` mode — a Procurement Manager with no agents running needs to be able to progress every PO from Request through Delivered & Checked. See `PLATFORM-MAP.md § 3a` for the global model.
+The Orders page (the cockpit) must be fully usable in `Off` mode — a Procurement Manager with no agents running needs to be able to progress every PO from Request through Delivered & Checked. See `PLATFORM-MAP.md § 3a` for the global model.
 
-### Sensing surfaces (always on)
+### Sensing surfaces + manual mechanics (always on)
 
-- Left panel order groupings (NEEDS YOUR ACTION / AUTONOMOUS FLOW) — derived from PO state, not agent decisions.
-- 5-stage DAG rendering — pure state display.
-- ⌘K palette, Audit Mode + all filters, Source Bridge, ETA tracking, late-delivery warnings, QC fail alerts.
-- Atlas right panel — header, page-context subtitle, data summaries (vendor reliability, venue consumption split, batch logic), chat input. Never gated.
+- **Left panel order groupings** (NEEDS YOUR ACTION / AUTONOMOUS FLOW) — derived from PO state, not agent decisions.
+- **5-stage DAG rendering** on every order — pure state display per stage.
+- **All Audit Mode filters** (status, date, supplier, stage band, agent, venue, workflow, search). Pure data filtering.
+- **⌘K command palette** — search across POs / suppliers / agents / venues.
+- **Source Bridge** (right-panel takeover for WhatsApp / Telegram supplier comms) — user types the message, hits send. Pure manual UI, no agent draft pre-fill by default.
+- **Stage Trace** modal (read-only history per stage).
+- **Export CSV** in Audit Mode.
+- **Track Shipment / Message Supplier / Repeat Order** ⋯ menu actions — all user-initiated.
+- **Atlas right panel** — header, page-context subtitle ("Agent model · PO-3041" / "Batch analysis · 3 orders"), data summaries (Venue Consumption Split, Batch Logic counts, Operations Insights KPIs in Audit Mode, Quick Journey card), chat input. Never gated.
+
+### Atlas-curated data layer (always on)
+
+- **Venue Consumption Split** card for multi-venue POs — pure data calc from PO `venues` field.
+- **Batch Logic Summary** (Cold-Chain Verified / Pricing Confidence / Exceptions Flagged) when ≥2 POs selected — counts are sensing.
+- **Operations Insights** in Audit Mode (4 KPI cards + top suppliers + status mix + venue mix) — aggregate stats from PO data.
+- **Quick Journey card** for historical rows in Audit Mode.
+
+Per-PO **Agent Reasoning** card surfaces in the right panel **only when an operating agent is actively driving the PO** (`laborMode: 'agent'` AND global mode is not Off). In Off mode this slot is empty by design — fix is to replace it with a user-fillable "Notes" surface, not to fake content.
 
 ### Mode-aware CTAs (action layer)
 
 | Surface | Auto | Assist | Off |
 |---------|------|--------|-----|
-| Single Order Journey primary CTA (Stage 2 awaiting approval) | "Approve & Execute" → A-04 auto-approves within policy | "Approve & Execute" → confirms A-01's quote suggestion | "Approve & Execute" → opens a Review modal where user enters approval notes |
-| "Managed by · Agent A-NN →" link on header | Routes to Activity & Governance | Same | Hidden — no agent assigned in pure Off mode |
-| Stage advance (manual mode) | Agent fills the Task Module | Agent drafts inputs for human confirmation | Human types every input |
-| Repeat Order (⋯ menu, Stage 5) | One-click clone, agent dispatches | One-click clone, manual confirmation | Opens Draft Sheet pre-filled, user reviews + submits |
+| Stage 2 "Quote Received" advance | A-04 auto-approves if under spend cap | "Approve PO-3041" with A-01's reasoning + Approve / Defer / Decline | Manual review modal: user enters quote details (amount, lead time, vendor) + approval reason |
+| Stage 3 PO Approved → Stage 4 In Transit | A-05 auto-dispatches confirmation, polls carrier API | "A-05 has carrier ready — send dispatch confirmation?" | Manual Task Module: user enters carrier name, tracking number, ETA |
+| Stage 4 In Transit → Stage 5 Delivered | A-05 auto-marks Delivered when ETA + carrier signal confirm | "Carrier signal says delivered — confirm receipt?" | Manual QC: photo upload, qc_outcome (pass/fail), receiving staff name typed by hand |
+| Stage 5 QC fail | A-05 auto-fires `finns-qc-failure` → Suppliers gets alert | Suggests opening dispute | Manual dispute creation via Activity & Governance |
+| **Approve & Execute** primary CTA | One-click, fires agent execution | One-click, fires confirmation flow | Opens Review modal capturing reason + notes before advancing |
+| **"Managed by · Agent A-NN →"** header chip | Routes to Activity & Governance | Same | **Hidden** or "Self-managed" — no agent assigned |
+| **Resume Agent** button (in Manual Takeover mode) | Returns control to A-NN | Returns to "suggest" mode for this PO | **Hidden** (no agent to return to globally) |
+| Per-PO **Labor Switch** | Agent / Manual toggle | Same | **Hidden / read-only** (global Off already locks to manual) |
+| Right-panel **Manual Takeover Copilot** ("I am standing by") | Appears only when laborMode=manual | Same | **Always shown** when a PO is selected (every PO is in manual mode) |
+| **Batch Console "Execute Batch"** | One-click fires agent execution across all selected | One-click confirms suggestions | Opens batch review modal — user steps through each PO's approval reason |
 
 ### Real gaps (open backlog)
 
-1. **PO `laborMode` is hardcoded `'agent'` for every new PO** created from RequestPanel's `handleSubmit`. In Off mode the PO should land as `'manual'` so it doesn't auto-progress. Fix: read `useAutonomyMode()` + `defaultLaborMode()` from `lib/autonomy.ts`.
-2. **The "Managed by · Agent A-NN" header chip** assumes an operating agent is assigned to every PO. In Off mode there's no agent — the chip should either hide or render "Self-managed."
-3. **Task Module Sheet copy** still uses agent-flavored hints (`"Atlas will mirror to ERP"`). In Off mode the Active Handshake delegation buttons should hide entirely.
-4. **Stage 2 "Quote received" stage history** is synthesized via `synthesizeStageHistory` and attributes every action to an agent. For POs progressed manually, the stage history rows should show user actor + free-text note instead of fabricated agent activity.
-5. **No "Send RFQ" surface inside Orders.** Today the only way to ask a vendor for a quote is via Source Bridge (1-on-1 message). In Off mode, when a PO is at Stage 2 and the user needs to gather quotes from 3 vendors, the user has to open Source Bridge 3 times manually. Should be a multi-vendor RFQ composer at Stage 2 in manual mode.
+1. **PO `laborMode` is hardcoded `'agent'`** for every new PO created from RequestPanel's `handleSubmit`. In Off / Assist mode the PO should land as `'manual'` so it doesn't auto-progress. Fix: read `useAutonomyMode()` + `defaultLaborMode()` from `lib/autonomy.ts`.
+2. **The "Managed by · Agent A-NN →" header chip** assumes an operating agent is assigned to every PO. In Off mode there's no agent — chip should either hide or render "Self-managed."
+3. **Task Module Sheet copy** uses agent-flavored hints (`"Atlas will mirror to ERP"` / `"Atlas is drafting the PO from the last accepted quote"`). In Off mode the Active Handshake delegation buttons should hide entirely; copilot hints should switch to plain reference info ("Vendor's preferred channel: WhatsApp · last contact 3 days ago").
+4. **`synthesizeStageHistory` attributes every stage to an agent** when generating completed stage records. POs progressed manually should record `actor: 'user'` + free-text note instead of fabricated agent activity.
+5. **Stage 2 "Quote received" has no multi-quote entry surface.** Today the Task Module captures only `channel + lead_time + quote_amt` (single quote). In Off mode the user needs a UX for "I received quotes from 3 vendors, here's the winner" — table of received quotes + winner radio.
+6. **No multi-vendor RFQ composer at Stage 2.** Source Bridge is 1-on-1 only. In Off mode a user at Stage 2 needs to gather quotes from 3 vendors — today they'd open Source Bridge 3 times. Should be a single RFQ composer reachable from the Stage 2 Task Module that broadcasts to selected vendors. **Same gap as § 4.7 New Request.**
+7. **Batch Console "Execute Batch"** fires agent execution. In Off mode "Execute Batch" should open a batch review modal where the user steps through each PO's approval reason in sequence.
+8. **Right-panel "Agent Reasoning" slot empties in Off mode** with no fallback. Should become a user-fillable "Notes" surface so the audit trail isn't lost.
+
+### Proposed fix shape
+
+- **Mode-aware Task Module hints**: hide Active Handshake delegation in Off mode; replace agent-flavored copilot hints with raw reference data.
+- **Stage 2 multi-quote entry**: split the Task Module into "Received Quotes" (table: vendor, amount, lead time, notes) + "Selected Winner" radio.
+- **RFQ Composer modal** reachable from Stage 2 Task Module ("Send RFQ to vendors") — pre-fills items, lets user multi-select vendors, composes one message broadcast to all. Routes through Source Bridge under the hood. Auto mode auto-fires this; Off requires user-click Send.
+- **Unified Action Log** (same fix as Overview / Inventory) — actor-tagged: `you | A-01 | A-02 | ...`. Right panel filters by mode.
+- **`synthesizeStageHistory` actor**: when manual mode, set `actor: 'user'` + capture the user's free-text note in the Task Module.
+- **`handleSubmit` in RequestPanel** reads `useAutonomyMode()` + sets new PO `laborMode = defaultLaborMode(mode)`.
+- **"Notes" surface in right panel** replaces the empty Agent Reasoning slot for manual-mode POs.
 
 ---
 

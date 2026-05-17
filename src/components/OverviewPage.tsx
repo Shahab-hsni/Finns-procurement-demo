@@ -3,7 +3,7 @@ import {
   DollarSign, Package, AlertTriangle, TrendingUp, TrendingDown,
   CheckCircle, Zap, Bot, ThumbsUp, ThumbsDown,
   ChevronRight, Sparkles, Send, Activity, Shield, Eye,
-  Brain, Radar, Scale, Info, Check, Clock, Calendar,
+  Radar, Scale, Info, Check, Clock, Calendar,
   BarChart3, Truck, FileText, CreditCard,
   MessageCircle, ChevronDown, ChevronUp, X,
 } from 'lucide-react';
@@ -13,127 +13,156 @@ import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { ThreePanelLayout } from './layout/ThreePanelLayout';
 import { theme as themeTokens } from '../lib/theme';
+import type { FinnsAgentId, FinnsAgentRole, VenueTag } from '../lib/types';
 
 interface OverviewPageProps {
   theme: 'dark' | 'light';
 }
 
-// ── Agent classes ──────────────────────────────────────────────────────
-type AgentClass = 'Sensing' | 'Reasoning' | 'Execution' | 'Governance';
-const AGENT_CLASS_META: Record<AgentClass, { icon: typeof Zap; color: string; darkColor: string }> = {
-  Sensing:    { icon: Radar,  color: 'text-blue-600',   darkColor: 'text-blue-400'   },
-  Reasoning:  { icon: Brain,  color: 'text-purple-600', darkColor: 'text-purple-400' },
-  Execution:  { icon: Zap,    color: 'text-green-600',  darkColor: 'text-green-400'  },
-  Governance: { icon: Scale,  color: 'text-amber-600',  darkColor: 'text-amber-400'  },
+// ── IDR formatting ─────────────────────────────────────────────────────
+const fmtIdr = (n: number) => `Rp ${n.toLocaleString('id-ID')}`;
+const fmtIdrShort = (n: number) => {
+  if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)}M`;
+  if (n >= 1_000_000)     return `Rp ${(n / 1_000_000).toFixed(1)}jt`;
+  if (n >= 1_000)         return `Rp ${(n / 1_000).toFixed(0)}rb`;
+  return `Rp ${n}`;
 };
 
-// ── Triage / PO data ───────────────────────────────────────────────────
+// ── Agent icon meta (keyed by id) ──────────────────────────────────────
+const AGENT_META: Record<FinnsAgentId, { role: FinnsAgentRole; icon: typeof Zap; color: string; darkColor: string }> = {
+  'A-01': { role: 'Sourcing Agent',      icon: Radar,         color: 'text-blue-600',   darkColor: 'text-blue-400'   },
+  'A-02': { role: 'Restock Agent',       icon: Package,       color: 'text-green-600',  darkColor: 'text-green-400'  },
+  'A-03': { role: 'Vendor Comms Agent',  icon: MessageCircle, color: 'text-purple-600', darkColor: 'text-purple-400' },
+  'A-04': { role: 'Spend Watchdog',      icon: Scale,         color: 'text-amber-600',  darkColor: 'text-amber-400'  },
+  'A-05': { role: 'Logistics Agent',     icon: Truck,         color: 'text-orange-600', darkColor: 'text-orange-400' },
+};
+
+// ── Top metrics ────────────────────────────────────────────────────────
 const METRICS = [
-  { label: "Month's Spend", value: '$47,820', change: -8.2, icon: DollarSign, detail: 'vs $52,080 last month' },
-  { label: 'Active Orders', value: '23',      change: 12,   icon: Package,    detail: '5 arriving today'      },
-  { label: 'Low Stock',     value: '4',       change: 0,    icon: AlertTriangle, detail: '2 auto-reorders sent' },
-  { label: 'AI Savings',    value: '$3,075',  change: 0,    icon: Zap,        detail: '12 actions today'      },
+  { label: "Month's Spend",  value: fmtIdrShort(420_000_000),  change: -6.2, icon: DollarSign,    detail: 'vs Rp 448jt last month' },
+  { label: 'Active Orders',  value: '7',                       change: 12,   icon: Package,       detail: '3 arriving this week'   },
+  { label: 'Low Stock',      value: '4',                       change: 0,    icon: AlertTriangle, detail: '2 auto-restocks sent'   },
+  { label: 'AI Savings MTD', value: fmtIdrShort(38_400_000),   change: 0,    icon: Zap,           detail: '17 actions this month'  },
 ];
 
 type Urgency = 'high' | 'medium' | 'low';
 const URGENCY_ICON: Record<Urgency, typeof Zap> = { high: Zap, medium: AlertTriangle, low: Info };
 
-const CRITICAL_ACTIONS = [
+// ── Critical Actions (Finn's-flavored, mirrors mockData live orders) ──
+interface CriticalAction {
+  id: string;
+  supplier: string;
+  amount: number;          // IDR
+  amountUsd?: number;      // when import
+  venues: VenueTag[];
+  type: string;
+  urgency: Urgency;
+  why: string;
+  aiReasoning: string;
+  estimatedSaving: number; // IDR
+  contextQuestions: string[];
+  negotiationLog: { agent: string; text: string }[];
+}
+
+const CRITICAL_ACTIONS: CriticalAction[] = [
   {
-    id: 'PO-2847', supplier: 'PT Maju Bersama', amount: 12400,
-    type: 'High-Value PO', urgency: 'high' as Urgency,
-    why: 'New supplier — first order over $10k threshold',
-    aiReasoning: 'I matched this against 5 vendors. PT Maju is your best choice for reliability (98%) but a shared purchase pool could save an additional 15% if you wait 2 days. Price is locked for 4 more hours.',
-    estimatedSaving: 1120,
+    id: 'PO-3041', supplier: 'PT Bali Seafood Lestari', amount: 14_200_000, venues: ['BC', 'ST'],
+    type: 'Quote Awaiting Approval', urgency: 'high',
+    why: 'Spend Watchdog flagged — quote 4% below market but above standing approval threshold',
+    aiReasoning: "Quote validated against the 30-day median by Sourcing Agent (A-01). Vendor reliability holding at 92 composite, cold-chain 98% SLA — well above your trust floor. The Rp 14.2M sits above the auto-approve threshold for Seafood (Rp 12M) so it needs your nod. Spend Watchdog (A-04) cleared the policy gates; only the cap rule is holding it.",
+    estimatedSaving: 590_000,
     contextQuestions: [
-      'Why is PT Maju 8% below the market average?',
-      "What's the shared purchase pool window closing time?",
-      'Compare this to the last 5 similar orders',
+      'Why is PT Bali Seafood 4% below market median?',
+      'How does this compare to the last 5 tuna orders?',
+      'What changes if I approve at L4 autonomy for Seafood?',
     ],
     negotiationLog: [
-      { agent: '#5 (Sourcing)',  text: 'Queried 8 vendors for 500kg Jasmine Rice' },
-      { agent: '#6 (Pricing)',   text: 'Received 5 quotes — PT Maju lowest at $12,400' },
-      { agent: '#6 (Pricing)',   text: 'Counter-offered $11,800 — PT Maju declined' },
-      { agent: '#26 (Forecast)', text: 'Price lock window: 4h remaining before expiry' },
+      { agent: 'A-01 Sourcing',     text: 'RFQ sent to PT Bali Seafood Lestari, Krakatoa Coldstore, and Indo Oseanik' },
+      { agent: 'A-01 Sourcing',     text: 'Received 3 quotes — PT Bali Seafood lowest at Rp 14.2M (sashimi grade for ST, food grade for BC)' },
+      { agent: 'A-04 Spend Watchdog', text: 'Variance vs 30d median: −4%. Vendor trust floor PASS (92 > 70). Cap rule HOLD — escalate to human' },
     ],
   },
   {
-    id: 'PO-2851', supplier: 'Thai Fresh Co', amount: 3200,
-    type: 'Rush Order', urgency: 'high' as Urgency,
-    why: 'Client #4021 needs Friday delivery',
-    aiReasoning: "Rush route available via Bangkok hub. Approving now locks the 3-day window. Waiting 24h adds $180 in express freight. I've pre-confirmed availability with Thai Fresh.",
-    estimatedSaving: 240,
+    id: 'PO-3043', supplier: 'AUS Premium Meats', amount: 28_500_000, amountUsd: 1840, venues: ['ST'],
+    type: 'Rush — Par Floor Breached', urgency: 'high',
+    why: 'Wagyu MB7+ on hand 5kg vs par 8kg — Restock Agent promoted to Rush playbook',
+    aiReasoning: "Restock Agent (A-02) flagged the par floor breach this morning. Stake bookings are up 18% week-over-week so the burn rate moved +12%. Going Standard would risk a 2-day gap for Stake's tasting menu. Rush playbook bypasses RFQ — AUS Premium Meats is your contracted Wagyu vendor and the quote came in within the 12% Rush premium tolerance. USD-denominated; FX locked at 15,490.",
+    estimatedSaving: 0,
     contextQuestions: [
-      "What's the cost if we miss the Friday window?",
-      'Are there alternative rush routes available?',
-      "Show Client #4021's order history",
+      'Why did Rush promote over Standard for this SKU?',
+      'How much do we lose if Stake runs out of Wagyu Saturday?',
+      "What's the FX exposure if we don't lock now?",
     ],
     negotiationLog: [
-      { agent: '#5 (Sourcing)',   text: 'Confirmed stock availability at Thai Fresh Bangkok' },
-      { agent: '#6 (Pricing)',    text: 'Express route locked — window closes in 18h' },
-      { agent: '#12 (Logistics)', text: 'ETA: Thursday 6pm via Bangkok-Singapore hub' },
+      { agent: 'A-02 Restock',     text: 'Par floor breached: SKU-0101 Wagyu Ribeye MB7+ at 5/8 kg — burn +12% wk/wk' },
+      { agent: 'A-02 Restock',     text: 'Promoted to Rush playbook (WF-RSH) — Stake covers up 18%, 2-day gap risk under Standard' },
+      { agent: 'A-01 Sourcing',    text: 'Direct quote from AUS Premium Meats: USD 1,840 (≈ Rp 28.5M). Within 12% Rush premium tolerance' },
     ],
   },
   {
-    id: 'PO-2855', supplier: 'AUS Meats Pty', amount: 8900,
-    type: 'New Supplier Trial', urgency: 'medium' as Urgency,
-    why: 'Scored 88/100 — trial order with quality hold clause',
-    aiReasoning: 'New vendor passed all vetting checks. Quality hold clause limits your exposure to $8,900. If quality passes, they can replace Indo Seafood at 11% lower ongoing cost on protein.',
-    estimatedSaving: 680,
+    id: 'PO-3047', supplier: 'Eka Packaging', amount: 18_900_000, venues: ['SP'],
+    type: 'Dispute — Quote +18% Above Market', urgency: 'medium',
+    why: 'Spend Watchdog held the PO. F&B Director raised a dispute to accept the premium.',
+    aiReasoning: "Eka Packaging's takeaway-box quote came in 18% over the 30-day median — Spend Watchdog (A-04) auto-held under the standing Spend Cap rule (RUL-001). F&B Director raised a dispute citing the Splash event Saturday. No alternative vendor in the catalog carries the 1000ml takeaway SKU. You can approve the override here, or kick to the Disputes workspace on Activity & Governance to harden as a precedent.",
+    estimatedSaving: 0,
     contextQuestions: [
-      'Why is AUS Meats 12% cheaper than our regular supplier?',
-      'What happens if the quality hold clause triggers?',
-      'Show outcomes from similar trial orders',
+      'Why is Eka Packaging 18% above market this cycle?',
+      'Who else carries the 1000ml takeaway SKU?',
+      'What happens if I harden this as a precedent?',
     ],
     negotiationLog: [
-      { agent: '#5 (Sourcing)',    text: 'Identified AUS Meats via APAC Supplier Network' },
-      { agent: '#33 (Compliance)', text: 'Vetting passed — certifications verified' },
-      { agent: '#6 (Pricing)',     text: 'Price benchmarked: 12% below Indo Seafood avg' },
+      { agent: 'A-01 Sourcing',    text: 'Quote from Eka Packaging: Rp 18.9M. No alternative carries the SKU.' },
+      { agent: 'A-04 Spend Watchdog', text: 'Variance +18% triggered RUL-001 (Spend Cap, vendor scope). PO held.' },
+      { agent: 'A-04 Spend Watchdog', text: 'Dispute DSP-101 opened by F&B Director — needs human override' },
     ],
   },
 ];
 
 const SYSTEM_ALERTS = [
-  { id: 'a1', icon: AlertTriangle, label: 'Lamb Rack at 12% — auto-reorder queued', severity: 'warning' as const, canQuickApprove: true,  saving: 85 },
-  { id: 'a2', icon: Shield,        label: 'Vietnam import cert expires in 5 days',   severity: 'warning' as const, canQuickApprove: false, saving: 0  },
-  { id: 'a3', icon: TrendingDown,  label: 'VN Supply reliability score fell to 82',  severity: 'info'    as const, canQuickApprove: false, saving: 0  },
+  { id: 'a1', icon: AlertTriangle, label: 'Yellowfin Tuna (sashimi) at 1.9 days cover — auto-restock queued', severity: 'warning' as const, canQuickApprove: true,  saving: 420_000 },
+  { id: 'a2', icon: Shield,        label: 'Halal cert renewal for Sumber Dairy due in 12 days',              severity: 'warning' as const, canQuickApprove: false, saving: 0 },
+  { id: 'a3', icon: TrendingDown,  label: 'Bintang Distribusi cold-chain SLA dipped to 88% (target 92%)',    severity: 'info'    as const, canQuickApprove: false, saving: 0 },
 ];
 
-const AI_ACTIONS: { time: string; action: string; agent: string; agentClass: AgentClass; saving: number | null }[] = [
-  { time: '2m ago',  action: 'Auto-ordered 500kg rice from PT Maju Bersama',     agent: '#14', agentClass: 'Execution',  saving: 240  },
-  { time: '18m ago', action: 'Rejected VN Supply quote — 15% above market rate', agent: '#6',  agentClass: 'Reasoning',  saving: 1200 },
-  { time: '45m ago', action: 'Joined shared purchase pool for cooking oil',       agent: '#14', agentClass: 'Execution',  saving: 680  },
-  { time: '1h ago',  action: 'Updated demand forecast for seafood category',      agent: '#26', agentClass: 'Sensing',    saving: null },
-  { time: '2h ago',  action: 'Generated import compliance docs for Indonesia',    agent: '#33', agentClass: 'Governance', saving: null },
-  { time: '3h ago',  action: 'Auto-ordered cleaning supplies — below threshold',  agent: '#14', agentClass: 'Execution',  saving: 85   },
+const AI_ACTIONS: { time: string; action: string; agentId: FinnsAgentId; saving: number | null }[] = [
+  { time: '12m ago', action: 'Auto-ordered weekly produce from CV Indo Sayur for BC + SP',         agentId: 'A-01', saving: 240_000 },
+  { time: '34m ago', action: 'Rejected Eka Packaging quote — 18% above 30d median, escalated',     agentId: 'A-04', saving: 1_200_000 },
+  { time: '1h ago',  action: 'Sent WhatsApp confirmation to Wayan Sukma re: PO-3041 quote',        agentId: 'A-03', saving: null },
+  { time: '2h ago',  action: 'Updated tuna burn-rate model — Stake covers +18% wk/wk',             agentId: 'A-02', saving: null },
+  { time: '3h ago',  action: 'Locked FX rate for AUS Premium Meats import (USD/IDR 15,490)',       agentId: 'A-04', saving: 680_000 },
+  { time: '4h ago',  action: 'Confirmed Bintang shipment dispatch — ETA Friday 14:00 for BC',      agentId: 'A-05', saving: 85_000  },
 ];
 
-const LIVE_PULSES = [
-  { agent: '#6 (Pricing)',     text: 'Analyzing 14 quotes for PO-2855...'        },
-  { agent: '#26 (Forecast)',   text: 'Updating protein demand model...'           },
-  { agent: '#5 (Sourcing)',    text: 'Scanning 3 new vendor listings...'          },
-  { agent: '#33 (Compliance)', text: 'Verifying Indonesia import cert...'         },
+const LIVE_PULSES: { agentId: FinnsAgentId; text: string }[] = [
+  { agentId: 'A-01', text: 'Validating 3 seafood quotes for PO-3041...' },
+  { agentId: 'A-02', text: 'Recomputing burn model — Wagyu for Stake...' },
+  { agentId: 'A-05', text: 'Tracking PO-3044 — Bintang shipment 60km out...' },
+  { agentId: 'A-03', text: "Drafting WhatsApp to Pak Made re: tomorrow's drop..." },
 ];
 
-const SPEND_TREND = Array.from({ length: 12 }, (_, i) => {
-  const base = 38000 + Math.sin(i / 2) * 8000 + i * 400;
-  const isPred = i >= 10;
-  return {
-    month: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i],
-    spend:     isPred ? null : Math.round(base + 2000),
-    predicted: isPred ? Math.round(base + 3000) : null,
-    predHigh:  isPred ? Math.round(base + 6000) : null,
-    predLow:   isPred ? Math.round(base - 2000) : null,
-  };
-});
+// 12-month spend trend (current month + 11 prior). Last 2 months are predictive.
+const SPEND_TREND = (() => {
+  const monthLabels = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'];
+  return monthLabels.map((m, i) => {
+    const base = 380_000_000 + Math.sin(i / 2) * 60_000_000 + i * 4_000_000;
+    const isPred = i >= 10;
+    return {
+      month: m,
+      spend:     isPred ? null : Math.round(base + 20_000_000),
+      predicted: isPred ? Math.round(base + 30_000_000) : null,
+      predHigh:  isPred ? Math.round(base + 60_000_000) : null,
+      predLow:   isPred ? Math.round(base - 20_000_000) : null,
+    };
+  });
+})();
 
-const AUTONOMY = { current: 3, next: 4, progress: 72, remaining: 8, label: 'Semi-Autonomous', category: 'Seafood' };
-const ROI = { manualTouches: 14, hoursSaved: 3.5, capitalFreed: 4200 };
+const AUTONOMY = { progress: 72, remaining: 8, label: 'Higher Autonomy', category: 'Seafood' };
+const ROI = { manualTouches: 14, hoursSaved: 3.5, capitalFreed: 34_200_000 };
 
 const DEFAULT_QUESTIONS = [
   'What needs my attention most urgently?',
-  'Run a buy-vs-make analysis for PO-2847',
-  "What's blocking the Level 4 autonomy upgrade?",
+  'Which PO has the biggest savings opportunity today?',
+  "What's blocking the next autonomy unlock?",
 ];
 
 // ══════════════════════════════════════════════════════════════════════
@@ -145,15 +174,17 @@ interface CalendarEvent {
   id: string;
   title: string;
   date: string;       // YYYY-MM-DD
-  time?: string;      // HH:MM display
+  time?: string;
   type: 'delivery' | 'payment' | 'compliance' | 'restock' | 'meeting';
   status: CalEventStatus;
   supplier?: string;
   amount?: number;
+  amountUsd?: number;
+  venues?: VenueTag[];
   poRef?: string;
   agentReasoning: string;
   estimatedSaving?: number;
-  dagStage: number;   // 0-11
+  dagStage: number;   // 0-4 (5 stages)
   failedStage?: number;
 }
 
@@ -177,143 +208,148 @@ const TYPE_ICON: Record<CalendarEvent['type'], typeof Truck> = {
   meeting:    MessageCircle,
 };
 
-// Today = April 10 2026 (matches project date)
+// Today = May 16 2026
 const CALENDAR_EVENTS: CalendarEvent[] = [
   {
-    id: 'EVT-001', title: 'Lamb Rack Delivery', date: '2026-04-11', time: '14:00',
-    type: 'delivery', status: 'in-transit', supplier: 'AUS Meats Pty', amount: 12400, poRef: 'PO-2847',
-    agentReasoning: 'Agent #7 (Logistics) tracking GPS — cold-chain intact. Arrival confirmed for 2PM tomorrow. Agent #9 (Quality) will run inspection on arrival.',
-    estimatedSaving: 420, dagStage: 9,
+    id: 'EVT-001', title: 'Bintang Beer Delivery — BC + SP + RC', date: '2026-05-16', time: '14:00',
+    type: 'delivery', status: 'in-transit', supplier: 'Bintang Distribusi', amount: 9_400_000, venues: ['BC', 'SP', 'RC'], poRef: 'PO-3044',
+    agentReasoning: 'Logistics Agent (A-05) tracking GPS — vehicle 60km out, ETA 14:00. BC receives 50%, SP 30%, RC 20%. Receiving leads notified via WhatsApp 30 min ago.',
+    estimatedSaving: 320_000, dagStage: 3,
   },
   {
-    id: 'EVT-002', title: 'Tiger Prawn Arrival', date: '2026-04-12', time: '08:00',
-    type: 'delivery', status: 'pending', supplier: 'Indo Seafood Corp', amount: 4650, poRef: 'PO-2839',
-    agentReasoning: 'Agent #12 (Logistics) confirmed port slot. Monsoon delay risk +6h but backup cold storage secured by Agent #7.',
-    estimatedSaving: 520, dagStage: 10,
+    id: 'EVT-002', title: 'Sumber Dairy QC Check-in', date: '2026-05-16', time: '10:00',
+    type: 'delivery', status: 'action-needed', supplier: 'Sumber Dairy', amount: 3_200_000, venues: ['BC', 'RC'], poRef: 'PO-3045',
+    agentReasoning: 'Delivered at 09:42. Logistics Agent (A-05) awaiting your QC sign-off at the BC kitchen receiving bay. Burrata batch needs visual check before stock release.',
+    estimatedSaving: 0, dagStage: 4,
   },
   {
-    id: 'EVT-003', title: 'Pay Thai Fresh Co', date: '2026-04-12', time: '17:00',
-    type: 'payment', status: 'action-needed', supplier: 'Thai Fresh Co', amount: 3200, poRef: 'PO-2851',
-    agentReasoning: 'Agent #28 (Payments) detected a 2% early-payment discount window closing today at 5PM. Paying now saves Rp 640K vs net-30 terms. Funds are available.',
-    estimatedSaving: 640, dagStage: 7,
+    id: 'EVT-003', title: 'PT Wine Cellar Nusa — Customs Clear', date: '2026-05-17', time: '08:00',
+    type: 'compliance', status: 'pending', supplier: 'PT Wine Cellar Nusa', amount: 42_000_000, amountUsd: 2710, venues: ['RC', 'ST'], poRef: 'PO-3046',
+    agentReasoning: 'Imported wine cleared Tanjung Priok customs yesterday — ETA Bali warehouse Sunday. Logistics Agent (A-05) coordinating last-mile with cold-chain handler.',
+    estimatedSaving: 0, dagStage: 3,
   },
   {
-    id: 'EVT-004', title: 'Salmon Fillet Restock', date: '2026-04-12', time: '16:00',
-    type: 'restock', status: 'action-needed', supplier: 'Oceanic Harvest', amount: 2800,
-    agentReasoning: 'Agent #13 (Supplier Comms) failed to reach Nordic Fish Co after 3 retries. Fallback PO routed to Oceanic Harvest. Manual confirmation required before dispatch.',
-    dagStage: 4, failedStage: 2,
+    id: 'EVT-004', title: 'AUS Wagyu Restock — Stake', date: '2026-05-17', time: '16:00',
+    type: 'restock', status: 'action-needed', supplier: 'AUS Premium Meats', amount: 28_500_000, amountUsd: 1840, venues: ['ST'], poRef: 'PO-3043',
+    agentReasoning: 'Rush PO awaiting your approval. Par floor breached this morning. FX locked at 15,490. Skipping this cycle risks a 2-day gap for Stake tasting menu.',
+    estimatedSaving: 0, dagStage: 0, failedStage: undefined,
   },
   {
-    id: 'EVT-005', title: 'Indonesia Import Cert Renewal', date: '2026-04-14',
+    id: 'EVT-005', title: 'CV Indo Sayur — Weekly Produce', date: '2026-05-17', time: '06:00',
+    type: 'delivery', status: 'in-transit', supplier: 'CV Indo Sayur', amount: 4_800_000, venues: ['BC', 'SP'], poRef: 'PO-3042',
+    agentReasoning: 'Recurring weekly produce — auto-approved by Spend Watchdog under standing recurring schedule. Pak Made confirmed 06:00 drop at BC kitchen.',
+    estimatedSaving: 0, dagStage: 3,
+  },
+  {
+    id: 'EVT-006', title: 'Halal Cert Renewal — Sumber Dairy', date: '2026-05-28',
     type: 'compliance', status: 'pending',
-    agentReasoning: 'Agent #33 (Compliance) has pre-filled renewal forms. Requires your digital signature. Expiry in 5 days — auto-escalation triggers at 48h.',
-    dagStage: 6,
+    agentReasoning: 'Halal cert expires May 28. Vendor Comms (A-03) has the renewal pack ready to send to Sumber. Needs your sign-off to dispatch.',
+    estimatedSaving: 0, dagStage: 1,
   },
   {
-    id: 'EVT-006', title: 'Beef Tenderloin Delivery', date: '2026-04-13', time: '10:00',
-    type: 'delivery', status: 'pending', supplier: 'PT Sumber Daging', amount: 8900, poRef: 'PO-2855',
-    agentReasoning: 'Agent #14 locked current rate before forecast 5% increase. Quality hold clause active — Agent #9 will verify on arrival.',
-    estimatedSaving: 380, dagStage: 8,
+    id: 'EVT-007', title: 'BC Saturday Stock Build (event prep)', date: '2026-05-16', time: '23:59',
+    type: 'restock', status: 'action-needed', amount: 18_900_000, venues: ['SP'], poRef: 'PO-3047',
+    agentReasoning: 'Splash hosting Saturday event — Eka Packaging takeaway boxes needed. Quote came in 18% over market; dispute open in Activity & Governance.',
+    estimatedSaving: 0, dagStage: 1, failedStage: 1,
   },
   {
-    id: 'EVT-007', title: 'Cooking Oil Group Buy Window', date: '2026-04-11', time: '23:59',
-    type: 'payment', status: 'action-needed', amount: 1800,
-    agentReasoning: 'Agent #14 (Execution) joined shared purchase pool with 3 restaurants. Window closes tonight. Confirming now locks 12% volume discount — saves Rp 216K.',
-    estimatedSaving: 216, dagStage: 4,
+    id: 'EVT-008', title: 'PT Bali Seafood — Tuna for ST + BC', date: '2026-05-17', time: '11:00',
+    type: 'delivery', status: 'pending', supplier: 'PT Bali Seafood Lestari', amount: 14_200_000, venues: ['BC', 'ST'], poRef: 'PO-3041',
+    agentReasoning: 'Quote pending your approval. Sashimi-grade for Stake, food-grade for Beach Club. Wayan Sukma standing by for confirmation via WhatsApp.',
+    estimatedSaving: 590_000, dagStage: 1,
   },
   {
-    id: 'EVT-008', title: 'Chicken Breast PO Decision', date: '2026-04-11', time: '20:00',
-    type: 'restock', status: 'pending', supplier: 'PT Maju Bersama', amount: 2080,
-    agentReasoning: 'Agent #8 holding PO — Agent #14 negotiating group buy with 3 nearby restaurants for 12% volume discount. Decision expected tonight at 8PM.',
-    estimatedSaving: 290, dagStage: 3,
-  },
-  {
-    id: 'EVT-009', title: 'Seafood Quality Audit', date: '2026-04-15',
+    id: 'EVT-009', title: 'Krakatoa Coldstore Quality Audit', date: '2026-05-22',
     type: 'compliance', status: 'pending',
-    agentReasoning: 'Agent #33 scheduling routine quality audit for all seafood suppliers. Pre-audit checklist generated. Requires your sign-off to confirm scope.',
-    dagStage: 1,
+    agentReasoning: 'Routine quarterly QC audit for cold-chain vendors. Pre-audit checklist generated by Vendor Comms (A-03). Needs your scope sign-off.',
+    estimatedSaving: 0, dagStage: 0,
   },
   {
-    id: 'EVT-010', title: 'Rice Delivery — PT Maju', date: '2026-04-10', time: '11:00',
-    type: 'delivery', status: 'completed', supplier: 'PT Maju Bersama', amount: 3500, poRef: 'PO-2840',
-    agentReasoning: 'Delivered and verified. Agent #9 QC passed — quality score 94/100. Inventory updated. Volume discount saved Rp 240K vs spot price.',
-    estimatedSaving: 240, dagStage: 11,
+    id: 'EVT-010', title: 'Krakatoa Coldstore — Pork + Chicken Bulk', date: '2026-05-13',
+    type: 'delivery', status: 'completed', supplier: 'Krakatoa Coldstore', amount: 22_000_000, venues: ['BC', 'RC'], poRef: 'PO-2990',
+    agentReasoning: 'Delivered and verified. Logistics Agent QC passed — cold chain intact, quality score 92. Inventory updated.',
+    estimatedSaving: 380_000, dagStage: 4,
   },
   {
-    id: 'EVT-011', title: 'Bell Pepper Pre-Order', date: '2026-04-10', time: '15:00',
-    type: 'restock', status: 'completed', supplier: 'Bali Fresh Farms', amount: 960,
-    agentReasoning: 'Pre-order for Friday menu launch confirmed. Same-day delivery slot locked. Agent #25 POS reports 3x demand increase expected.',
-    estimatedSaving: 90, dagStage: 11,
+    id: 'EVT-011', title: 'Bali Fresh Farms — Herb Pre-Order', date: '2026-05-15', time: '15:00',
+    type: 'restock', status: 'completed', supplier: 'Bali Fresh Farms', amount: 960_000, venues: ['BC', 'ST'],
+    agentReasoning: 'Pre-order for weekend tasting menu confirmed. Same-day delivery slot locked.',
+    estimatedSaving: 90_000, dagStage: 4,
   },
   {
-    id: 'EVT-012', title: 'VN Supply Invoice Overdue', date: '2026-04-08',
-    type: 'payment', status: 'overdue', supplier: 'VN Supply Co', amount: 5400,
-    agentReasoning: 'Agent #28 flagged: Invoice 48h past net-30 terms. Late fee of 1.5% accruing daily. Agent #13 sent 2 follow-up reminders — manual escalation recommended.',
-    dagStage: 8,
+    id: 'EVT-012', title: 'Eka Packaging Invoice Overdue', date: '2026-05-14',
+    type: 'payment', status: 'overdue', supplier: 'Eka Packaging', amount: 5_400_000,
+    agentReasoning: 'Invoice 48h past net-30 terms. Late fee of 1.5% accruing daily. Vendor Comms (A-03) sent 2 follow-up reminders — manual escalation recommended.',
+    estimatedSaving: 0, dagStage: 4,
   },
   {
-    id: 'EVT-013', title: 'Herb Supplier Meeting', date: '2026-04-16', time: '10:00',
+    id: 'EVT-013', title: 'Quarterly Review — Bali Fresh Farms', date: '2026-05-21', time: '10:00',
     type: 'meeting', status: 'pending', supplier: 'Bali Fresh Farms',
-    agentReasoning: 'Agent #5 (Sourcing) arranged quarterly review. Topics: seasonal pricing lock for Q3, new organic herb line, delivery frequency adjustment.',
-    dagStage: 0,
+    agentReasoning: 'Sourcing Agent (A-01) arranged quarterly review. Agenda: seasonal pricing lock for Q3, organic herb line for Stake, delivery frequency adjustment.',
+    estimatedSaving: 0, dagStage: 0,
   },
   {
-    id: 'EVT-014', title: 'Coconut Milk Bulk Restock', date: '2026-04-17',
-    type: 'restock', status: 'pending', amount: 1275,
-    agentReasoning: 'Agent #8 scheduled routine restock. Consumption trend up 8% — Agent #26 recommends increasing par from 25 to 30 cans to buffer demand.',
-    estimatedSaving: 70, dagStage: 2,
+    id: 'EVT-014', title: 'Kopi Bali — Biweekly Coffee All Venues', date: '2026-05-19',
+    type: 'restock', status: 'pending', amount: 1_275_000, venues: ['BC', 'RC', 'ST', 'SP'],
+    agentReasoning: 'Restock Agent (A-02) scheduled routine biweekly coffee restock. Consumption trend up 8% — recommends increasing par by 5kg next cycle.',
+    estimatedSaving: 70_000, dagStage: 0,
   },
 ];
 
-// ── 12-Stage DAG Kernel ──────────────────────────────────────────────
+// ── 5-Stage Order Journey DAG ────────────────────────────────────────
 const DAG_STAGES: { label: string; agentStep?: string }[] = [
-  { label: 'Demand Forecast',      agentStep: 'Agent #25 (POS Intelligence) calculated 7-day consumption velocity from live sales data' },
-  { label: 'Par Level Check',      agentStep: 'Agent #8 (Restock) detected depletion below par threshold' },
-  { label: 'Supplier Match',       agentStep: 'Agent #21 (Market Intel) cross-referenced suppliers against price + reliability' },
-  { label: 'Price Lock',           agentStep: 'Agent #14 (Pricing) locked volume discount' },
-  { label: 'PO Generated',         agentStep: 'Agent #1 (PO Engine) generated PO with quality hold clause' },
-  { label: 'ERP Sync',             agentStep: 'Agent #14 (ERP) synced inventory reservation to accounting ledger' },
-  { label: 'Compliance Check',     agentStep: 'Agent #22 (Compliance) verified certifications + PPN tax calculation' },
-  { label: 'Payment Queued',       agentStep: 'Agent #28 (Payments) queued payment with governance rules applied' },
-  { label: 'Dispatched',           agentStep: 'Agent #12 (Logistics) confirmed dispatch from supplier warehouse' },
-  { label: 'In Transit',           agentStep: 'Agent #7 (Logistics) monitoring GPS + cold-chain temperature sensors' },
-  { label: 'Regional Hub',         agentStep: 'Agent #7 confirmed cold-chain integrity at regional hub' },
-  { label: 'Delivered & Verified', agentStep: 'Agent #9 (Quality) ran QC inspection against specs' },
+  { label: 'Request',                  agentStep: 'Restock Agent (A-02) raised the demand signal — par breach, scheduled trigger, or human request.' },
+  { label: 'Quote / Vendor Confirmed', agentStep: 'Sourcing Agent (A-01) ran the playbook. RFQ for Standard, direct vendor for Rush, contract draw for Recurring. Quote validated vs 30-day market median.' },
+  { label: 'PO Approved',              agentStep: 'Spend Watchdog (A-04) checked the policy stack — spend cap, vendor trust floor, duplicate detection. PO issued to vendor on pass.' },
+  { label: 'In Transit',               agentStep: 'Logistics Agent (A-05) confirmed dispatch and tracks ETA. Cold-chain sensors monitored for proteins, seafood, dairy.' },
+  { label: 'Delivered & Checked',      agentStep: 'Receiving venue staff QC the delivery against PO. Pass → stock updated. Fail → dispute opened on Activity & Governance.' },
 ];
 
 // ── Temporal Alerts ──────────────────────────────────────────────────
 const TEMPORAL_ALERTS: {
   id: string; severity: 'high' | 'medium' | 'low';
-  title: string; detail: string; agent: string; saving: number;
+  title: string; detail: string; agentId: FinnsAgentId; saving: number;
 }[] = [
   {
     id: 'ta-1', severity: 'high',
-    title: 'Cash-Flow Crunch — Apr 12–13',
-    detail: '3 payments totaling $15.8K due in 48h. Agent #28 recommends: pay Thai Fresh today (2% discount saves $640), defer Oceanic Harvest to net-15.',
-    agent: '#28 (Payments)', saving: 640,
+    title: 'Stake Tasting Menu — Wagyu Gap Risk',
+    detail: 'AUS Wagyu PO-3043 still pending approval. Standard playbook would land Tuesday; Rush playbook needs your nod by 16:00 today. Spending Rp 28.5M now vs missing the weekend menu.',
+    agentId: 'A-02', saving: 0,
   },
   {
     id: 'ta-2', severity: 'medium',
-    title: 'Logistics Bottleneck — Apr 12',
-    detail: '2 deliveries + 1 payment converge Saturday. Port monsoon delay risk could shift Tiger Prawn to Sunday — breaking cold-chain continuity.',
-    agent: '#7 (Logistics)', saving: 0,
+    title: 'Bintang Multi-Venue Delivery — 14:00 today',
+    detail: '180-case Bintang drop hits BC, SP, and RC this afternoon. Logistics Agent (A-05) flagged: BC receiving window closes 16:00. Confirm with each venue lead now.',
+    agentId: 'A-05', saving: 0,
   },
   {
     id: 'ta-3', severity: 'low',
-    title: 'Compliance Window Closing',
-    detail: 'Indonesia import cert expires Apr 14. If missed, all Indo Seafood orders pause 5–7 business days. Agent #33 has pre-filled renewal — needs signature only.',
-    agent: '#33 (Compliance)', saving: 0,
+    title: 'Halal Cert Window Closing',
+    detail: 'Sumber Dairy halal cert expires May 28. If missed, Sumber orders pause 5–7 business days. Vendor Comms (A-03) has the renewal pre-filled — needs only your dispatch sign-off.',
+    agentId: 'A-03', saving: 0,
   },
 ];
 
 const CAL_SAVINGS = {
-  total: 2596,
+  total: 4_200_000,
   items: [
-    { label: 'Early-payment discounts', amount: 640,  agent: '#28' },
-    { label: 'Group buy volume locks',  amount: 506,  agent: '#14' },
-    { label: 'Pre-locked price windows', amount: 1450, agent: '#6'  },
+    { label: 'Early-payment discounts',  amount: 1_080_000, agentId: 'A-04' as FinnsAgentId },
+    { label: 'Recurring vendor lock-in', amount: 1_620_000, agentId: 'A-01' as FinnsAgentId },
+    { label: 'Pre-locked FX windows',    amount: 1_500_000, agentId: 'A-04' as FinnsAgentId },
   ],
 };
+
+// ── Venue chip ───────────────────────────────────────────────────────
+const VENUE_LABEL: Record<VenueTag, string> = { BC: 'BC', RC: 'RC', ST: 'ST', SP: 'SP' };
+const VenueChips = ({ venues, isDark }: { venues: VenueTag[]; isDark: boolean }) => (
+  <div className="flex items-center gap-0.5 flex-wrap">
+    {venues.map(v => (
+      <span key={v} className={`text-[8px] font-bold px-1 py-0.5 rounded ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+        {VENUE_LABEL[v]}
+      </span>
+    ))}
+  </div>
+);
 
 // ══════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -326,7 +362,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
   const [approvedIds, setApprovedIds]     = useState<Set<string>>(new Set());
   const [quickApproved, setQuickApproved] = useState<Set<string>>(new Set());
   const [flyOutId, setFlyOutId]           = useState<string | null>(null);
-  const [selectedPoId, setSelectedPoId]  = useState<string | null>(null);
+  const [selectedPoId, setSelectedPoId]   = useState<string | null>(null);
   const [chatInput, setChatInput]         = useState('');
   const [savingFloat, setSavingFloat]     = useState<string | null>(null);
   const [pulseIdx, setPulseIdx]           = useState(0);
@@ -358,7 +394,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
 
   const currentQuestions = selectedEvent
     ? [
-        `Why is "${selectedEvent.title}" at stage ${selectedEvent.dagStage + 1}/12?`,
+        `Why is "${selectedEvent.title}" at stage ${selectedEvent.dagStage + 1}/5?`,
         `What are the risks for this ${selectedEvent.type}?`,
         `Show alternatives for ${selectedEvent.supplier ?? 'this event'}`,
       ]
@@ -367,8 +403,8 @@ export function OverviewPage({ theme }: OverviewPageProps) {
     : DEFAULT_QUESTIONS;
 
   // ── Calendar date helpers ──────────────────────────────────────────
-  // Project date: April 10 2026
-  const TODAY = useMemo(() => new Date(2026, 3, 10), []);
+  // Project date: May 16 2026 (matches Finn's system date)
+  const TODAY = useMemo(() => new Date(2026, 4, 16), []);
 
   const weekDays = useMemo<Date[]>(() => {
     const sun = new Date(TODAY);
@@ -388,6 +424,8 @@ export function OverviewPage({ theme }: OverviewPageProps) {
 
   const dateKey = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const TODAY_KEY = dateKey(TODAY);
 
   const eventsFor = useCallback((d: Date) =>
     CALENDAR_EVENTS.filter(e => e.date === dateKey(d) && !clearedIds.has(e.id)),
@@ -411,14 +449,14 @@ export function OverviewPage({ theme }: OverviewPageProps) {
     const po = CRITICAL_ACTIONS.find(a => a.id === id);
     setFlyOutId(id);
     if (po?.estimatedSaving) {
-      setSavingFloat(`Saved $${po.estimatedSaving.toLocaleString()}`);
+      setSavingFloat(`Saved ${fmtIdrShort(po.estimatedSaving)}`);
       setTimeout(() => setSavingFloat(null), 2400);
     }
     setTimeout(() => {
       setApprovedIds(prev => new Set([...prev, id]));
       setFlyOutId(null);
       setSelectedPoId(null);
-      if (po) setChatMessages(prev => [...prev, { from: 'atlas', text: `${id} submitted. $${po.estimatedSaving.toLocaleString()} saving estimated — pending vendor acknowledgement. I'll surface the vendor's ack and confirm the realised saving once the PO is accepted.` }]);
+      if (po) setChatMessages(prev => [...prev, { from: 'atlas', text: `${id} submitted. ${fmtIdrShort(po.estimatedSaving)} saving estimated — pending vendor acknowledgement. I'll surface the vendor's ack and confirm the realised saving once the PO is accepted.` }]);
     }, 380);
   }, []);
 
@@ -431,7 +469,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
 
   const handleQuickApprove = useCallback((alertId: string, saving: number) => {
     setQuickApproved(prev => new Set([...prev, alertId]));
-    if (saving > 0) { setSavingFloat(`Saved $${saving}`); setTimeout(() => setSavingFloat(null), 2400); }
+    if (saving > 0) { setSavingFloat(`Saved ${fmtIdrShort(saving)}`); setTimeout(() => setSavingFloat(null), 2400); }
   }, []);
 
   const handleChat = useCallback(() => {
@@ -455,7 +493,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
     setClearingId(evt.id);
     const saving = evt.estimatedSaving ?? 0;
     if (saving > 0) {
-      setSavingFloat(`Deadline Cleared — Saved $${saving}`);
+      setSavingFloat(`Deadline Cleared — Saved ${fmtIdrShort(saving)}`);
       setTimeout(() => setSavingFloat(null), 2800);
     }
     setTimeout(() => {
@@ -465,7 +503,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
       setDailySavings(prev => prev + saving);
       setChatMessages(prev => [...prev, {
         from: 'atlas',
-        text: `${evt.title} cleared. ${saving > 0 ? `$${saving} saving estimated — pending downstream confirmation (payment / compliance / receipt depending on event type).` : 'Status updated across all systems.'}`,
+        text: `${evt.title} cleared. ${saving > 0 ? `${fmtIdrShort(saving)} saving estimated — pending downstream confirmation (payment / compliance / receipt depending on event type).` : 'Status updated across all systems.'}`,
       }]);
     }, 850);
   }, []);
@@ -474,7 +512,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
     setExpandedDag(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n; });
   }, []);
 
-  // Pre-compute selected event metadata (avoids IIFE in JSX)
+  // Pre-compute selected event metadata
   const evtSm   = selectedEvent ? STATUS_META[selectedEvent.status] : null;
   const EvtStatusIcon = evtSm?.icon ?? Clock;
   const EvtTypeIcon   = selectedEvent ? TYPE_ICON[selectedEvent.type] : Truck;
@@ -510,6 +548,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className={`text-[11px] font-medium truncate ${t.textPrimary}`}>{evt.title}</span>
               <StatusIcon className={`h-3 w-3 shrink-0 ${isDark ? sm.darkColor : sm.color}`} />
+              {evt.venues && evt.venues.length > 0 && <VenueChips venues={evt.venues} isDark={isDark} />}
             </div>
             {!compact && (
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -517,18 +556,18 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 {evt.supplier && <span className={`text-[9px] ${t.textMuted}`}>· {evt.supplier}</span>}
                 {evt.amount != null && (
                   <span className={`text-[9px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
-                    ${evt.amount.toLocaleString()}
+                    {fmtIdrShort(evt.amount)}
                   </span>
                 )}
-                {evt.estimatedSaving != null && (
-                  <span className="text-[9px] text-green-500">saves ${evt.estimatedSaving}</span>
+                {evt.estimatedSaving != null && evt.estimatedSaving > 0 && (
+                  <span className="text-[9px] text-green-500">saves {fmtIdrShort(evt.estimatedSaving)}</span>
                 )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Hover micro-actions: Rule of Three */}
+        {/* Hover micro-actions */}
         {isHov && !compact && !isClearing && (
           <div className={`flex items-center gap-1 mt-2 pt-2 border-t ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]/70'}`}
             onClick={e => e.stopPropagation()}>
@@ -606,11 +645,17 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                     <div className="flex items-center gap-1.5">
                       <UrgIcon className={`h-3 w-3 shrink-0 ${item.urgency === 'high' ? (isDark ? 'text-red-400' : 'text-red-600') : item.urgency === 'medium' ? (isDark ? 'text-amber-400' : 'text-amber-600') : (isDark ? 'text-blue-400' : 'text-blue-600')}`} />
                       <span className={`text-xs font-medium ${t.textPrimary}`}>{item.id}</span>
+                      <VenueChips venues={item.venues} isDark={isDark} />
                     </div>
                     <ChevronRight className={`h-3 w-3 ${isSelected ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textMuted}`} />
                   </div>
                   <p className={`text-[10px] leading-snug mt-0.5 ${t.textMuted}`}>{item.why}</p>
-                  <span className={`text-xs font-semibold mt-1.5 block ${t.textPrimary}`}>${item.amount.toLocaleString()}</span>
+                  <div className="flex items-baseline gap-1.5 mt-1.5">
+                    <span className={`text-xs font-semibold ${t.textPrimary}`}>{fmtIdrShort(item.amount)}</span>
+                    {item.amountUsd && (
+                      <span className={`text-[9px] ${t.textMuted}`}>· USD {item.amountUsd.toLocaleString()}</span>
+                    )}
+                  </div>
                 </button>
               </div>
             );
@@ -656,7 +701,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         </div>
       )}
 
-      {/* ── Mode toggle header (hidden when PO workspace or DAG journey open) ── */}
+      {/* Mode toggle header (hidden when PO workspace or DAG journey open) */}
       {!selectedPO && !selectedEvent && (
         <div className={`px-6 pt-5 pb-4 flex items-center justify-between shrink-0 border-b ${t.border}`}>
           <div className={`flex items-center rounded-lg border p-0.5 ${isDark ? 'border-gray-700 bg-[#1a1a1a]' : 'border-[#e5e5e0] bg-gray-50'}`}>
@@ -677,7 +722,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             <div className="flex items-center gap-2">
               {dailySavings > 0 && (
                 <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700 border border-green-200'}`}>
-                  Daily Savings: ${dailySavings}
+                  Daily Savings: {fmtIdrShort(dailySavings)}
                 </span>
               )}
               <div className={`flex items-center rounded-md border p-0.5 ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'}`}>
@@ -725,9 +770,9 @@ export function OverviewPage({ theme }: OverviewPageProps) {
           <div>
             <div className="flex items-center justify-between mb-1">
               <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Monthly Spending Trend</h2>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-700'}`}>AI forecast: Nov–Dec</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-700'}`}>Spend Watchdog forecast: Apr–May</span>
             </div>
-            <p className={`text-xs mb-4 ${t.textMuted}`}>Shaded zone = Agent #26 confidence band</p>
+            <p className={`text-xs mb-4 ${t.textMuted}`}>Shaded zone = Spend Watchdog (A-04) confidence band</p>
             <div className={`${t.cardPanel} p-4`}>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -743,11 +788,11 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                       </linearGradient>
                     </defs>
                     <XAxis dataKey="month" tick={{ fontSize: 10, fill: isDark ? '#777' : '#999' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: isDark ? '#777' : '#999' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}K`} />
+                    <YAxis tick={{ fontSize: 10, fill: isDark ? '#777' : '#999' }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1_000_000).toFixed(0)}jt`} />
                     <Tooltip contentStyle={{ background: isDark ? '#2a2a2a' : '#fff', border: isDark ? '1px solid #333' : '1px solid #e5e5e0', borderRadius: 8, fontSize: 11, color: isDark ? '#fff' : '#111' }}
                       formatter={(value: number, name: string) => {
                         if (name === 'predHigh' || name === 'predLow') return [null, null];
-                        return [`$${value?.toLocaleString() ?? '—'}`, name === 'spend' ? 'Actual' : 'Forecast'];
+                        return [value != null ? fmtIdrShort(value) : '—', name === 'spend' ? 'Actual' : 'Forecast'];
                       }} />
                     <Area type="monotone" dataKey="predHigh" stroke="none" fill="#87986a" fillOpacity={0.07} legendType="none" />
                     <Area type="monotone" dataKey="predLow"  stroke="none" fill={isDark ? '#1a1a1a' : '#fff'} fillOpacity={1} legendType="none" />
@@ -763,11 +808,10 @@ export function OverviewPage({ theme }: OverviewPageProps) {
 
       {/* ═══ CALENDAR VIEWS ═══ */}
       <div className={`transition-all duration-[400ms] flex-1 min-h-0 flex flex-col overflow-hidden p-6 pt-4 ${centerMode === 'calendar' && !selectedEvent && !selectedPO ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`}>
-
         {/* Calendar sub-header */}
         <div className="flex items-center justify-between mb-4 shrink-0">
           <div>
-            <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Logistics Calendar — April 2026</h2>
+            <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Logistics Calendar — May 2026</h2>
             <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
               {CALENDAR_EVENTS.filter(e => !clearedIds.has(e.id) && (e.status === 'action-needed' || e.status === 'overdue')).length} items need action
             </p>
@@ -777,7 +821,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         {/* Calendar scroll area */}
         <div className="flex-1 overflow-y-auto min-h-0">
 
-          {/* ── MONTH VIEW ── Progressive Disclosure: dot counts only */}
+          {/* MONTH VIEW */}
           {calView === 'month' && (
             <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
               <div className={`grid grid-cols-7 border-b ${t.border} ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
@@ -804,21 +848,17 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                               </span>
                             )}
                           </div>
-                          {/* Status dots only — progressive disclosure */}
                           <div className="flex flex-wrap gap-1">
-                            {evts.slice(0, 4).map(evt => {
-                              const sm = STATUS_META[evt.status];
-                              return (
-                                <button key={evt.id} onClick={() => handleEventClick(evt)}
-                                  title={evt.title}
-                                  className={`w-2 h-2 rounded-full transition-transform hover:scale-[2] ${
-                                    evt.status === 'overdue'       ? 'bg-red-500'    :
-                                    evt.status === 'action-needed' ? 'bg-amber-400'  :
-                                    evt.status === 'in-transit'    ? 'bg-purple-400' :
-                                    evt.status === 'completed'     ? 'bg-green-500'  : 'bg-blue-400'
-                                  }`} />
-                              );
-                            })}
+                            {evts.slice(0, 4).map(evt => (
+                              <button key={evt.id} onClick={() => handleEventClick(evt)}
+                                title={evt.title}
+                                className={`w-2 h-2 rounded-full transition-transform hover:scale-[2] ${
+                                  evt.status === 'overdue'       ? 'bg-red-500'    :
+                                  evt.status === 'action-needed' ? 'bg-amber-400'  :
+                                  evt.status === 'in-transit'    ? 'bg-purple-400' :
+                                  evt.status === 'completed'     ? 'bg-green-500'  : 'bg-blue-400'
+                                }`} />
+                            ))}
                             {evts.length > 4 && <span className={`text-[8px] ${t.textMuted}`}>+{evts.length - 4}</span>}
                           </div>
                         </>
@@ -830,7 +870,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             </div>
           )}
 
-          {/* ── WEEK VIEW ── Full event cards with generous padding */}
+          {/* WEEK VIEW */}
           {calView === 'week' && (
             <div className="space-y-1.5">
               {weekDays.map(date => {
@@ -840,7 +880,6 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                   <div key={date.toISOString()}
                     className={`rounded-xl border p-4 ${todayRow ? (isDark ? 'bg-[#87986a]/5 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]') : (isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]')}`}>
                     <div className="flex items-start gap-5">
-                      {/* Date column — Meaningful Space */}
                       <div className="w-12 shrink-0 text-center pt-0.5">
                         <div className={`text-[10px] font-medium ${t.textMuted}`}>{date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                         <div className={`text-xl font-bold mt-0.5 leading-none ${todayRow ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textPrimary}`}>
@@ -848,7 +887,6 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                         </div>
                         {todayRow && <div className={`text-[8px] font-bold uppercase mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>Today</div>}
                       </div>
-                      {/* Events */}
                       <div className="flex-1 min-w-0">
                         {evts.length === 0
                           ? <p className={`text-[10px] py-2 ${t.textMuted}`}>No scheduled events</p>
@@ -862,7 +900,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             </div>
           )}
 
-          {/* ── AGENDA VIEW ── Grouped by date with date dividers */}
+          {/* AGENDA VIEW */}
           {calView === 'agenda' && (() => {
             const grouped = new Map<string, CalendarEvent[]>();
             agendaEvents.forEach(evt => {
@@ -875,10 +913,10 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 {[...grouped.entries()].map(([ds, evts]) => (
                   <div key={ds}>
                     <div className="flex items-center gap-3 mb-2">
-                      <span className={`text-xs font-semibold ${ds === '2026-04-10' ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textPrimary}`}>
+                      <span className={`text-xs font-semibold ${ds === TODAY_KEY ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textPrimary}`}>
                         {friendlyDate(ds)}
                       </span>
-                      {ds === '2026-04-10' && (
+                      {ds === TODAY_KEY && (
                         <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full uppercase ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>Today</span>
                       )}
                       <div className={`flex-1 h-px ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
@@ -908,6 +946,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                   <Badge variant="outline" className={`text-[10px] border ${isDark ? evtSm.darkBg : evtSm.bg}`}>
                     <EvtStatusIcon className="h-2.5 w-2.5 mr-0.5" />{evtSm.label}
                   </Badge>
+                  {selectedEvent.venues && <VenueChips venues={selectedEvent.venues} isDark={isDark} />}
                 </div>
                 <p className={`text-[10px] mt-1 ${t.textMuted}`}>
                   {friendlyDate(selectedEvent.date)}
@@ -927,7 +966,10 @@ export function OverviewPage({ theme }: OverviewPageProps) {
               <div className="flex items-start justify-between">
                 {selectedEvent.amount != null && (
                   <div>
-                    <span className={`text-2xl font-bold ${t.textPrimary}`}>${selectedEvent.amount.toLocaleString()}</span>
+                    <span className={`text-2xl font-bold ${t.textPrimary}`}>{fmtIdr(selectedEvent.amount)}</span>
+                    {selectedEvent.amountUsd && (
+                      <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>USD {selectedEvent.amountUsd.toLocaleString()} (locked)</p>
+                    )}
                     <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
                       {selectedEvent.type === 'payment' ? 'Payment due'
                         : selectedEvent.type === 'delivery' ? 'Order value'
@@ -935,9 +977,9 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                     </p>
                   </div>
                 )}
-                {selectedEvent.estimatedSaving != null && (
+                {selectedEvent.estimatedSaving != null && selectedEvent.estimatedSaving > 0 && (
                   <div className="text-right">
-                    <span className="text-sm font-bold text-green-400">${selectedEvent.estimatedSaving.toLocaleString()}</span>
+                    <span className="text-sm font-bold text-green-400">{fmtIdrShort(selectedEvent.estimatedSaving)}</span>
                     <p className={`text-[10px] ${t.textMuted}`}>potential saving</p>
                   </div>
                 )}
@@ -959,11 +1001,11 @@ export function OverviewPage({ theme }: OverviewPageProps) {
               </div>
             </div>
 
-            {/* 12-Stage DAG Kernel */}
+            {/* 5-Stage DAG */}
             <div className={t.cardPanel}>
               <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Journey — DAG Kernel</h3>
-                <span className={`text-[10px] ${t.textMuted}`}>Stage {selectedEvent.dagStage + 1}/12</span>
+                <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Journey — 5-Stage DAG</h3>
+                <span className={`text-[10px] ${t.textMuted}`}>Stage {selectedEvent.dagStage + 1}/5</span>
               </div>
               <div>
                 {DAG_STAGES.map((stage, idx) => {
@@ -1041,7 +1083,10 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Purchase Order Workspace</h2>
-                <p className={`text-xs ${t.textMuted}`}>{selectedPO.id} · {selectedPO.supplier} · {selectedPO.type}</p>
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  <span className={`text-xs ${t.textMuted}`}>{selectedPO.id} · {selectedPO.supplier} · {selectedPO.type}</span>
+                  <VenueChips venues={selectedPO.venues} isDark={isDark} />
+                </div>
               </div>
               <button onClick={() => setSelectedPoId(null)}
                 className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-[#f4f6f0]'}`}>
@@ -1051,7 +1096,10 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             <div className={`${t.cardPanel} space-y-4`}>
               <div className="flex items-start justify-between">
                 <div>
-                  <span className={`text-2xl font-bold ${t.textPrimary}`}>${selectedPO.amount.toLocaleString()}</span>
+                  <span className={`text-2xl font-bold ${t.textPrimary}`}>{fmtIdr(selectedPO.amount)}</span>
+                  {selectedPO.amountUsd && (
+                    <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>USD {selectedPO.amountUsd.toLocaleString()} (FX locked)</p>
+                  )}
                   <div className="flex items-center gap-2 mt-1">
                     {(() => { const UI = URGENCY_ICON[selectedPO.urgency]; return (
                       <Badge variant="outline" className={`text-[10px] flex items-center gap-1 ${selectedPO.urgency === 'high' ? (isDark ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-700 border-red-200') : selectedPO.urgency === 'medium' ? (isDark ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-amber-50 text-amber-700 border-amber-200') : (isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-700 border-blue-200')}`}>
@@ -1063,7 +1111,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 </div>
                 {selectedPO.estimatedSaving > 0 && (
                   <div className="text-right">
-                    <span className="text-sm font-bold text-green-400">${selectedPO.estimatedSaving.toLocaleString()}</span>
+                    <span className="text-sm font-bold text-green-400">{fmtIdrShort(selectedPO.estimatedSaving)}</span>
                     <p className={`text-[10px] ${t.textMuted}`}>estimated saving</p>
                   </div>
                 )}
@@ -1088,7 +1136,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
               <div className={`${t.cardPanel} space-y-2.5`}>
                 {selectedPO.negotiationLog.map((entry, i) => (
                   <div key={i} className="flex items-start gap-3">
-                    <div className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold mt-0.5 ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>Agent {entry.agent}</div>
+                    <div className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold mt-0.5 ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>{entry.agent}</div>
                     <p className={`text-[10px] leading-snug ${t.textPrimary}`}>{entry.text}</p>
                   </div>
                 ))}
@@ -1106,7 +1154,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 <span className={`text-[10px] font-semibold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Menu Engineering Insight</span>
               </div>
               <p className={`text-xs leading-relaxed ${t.textPrimary}`}>
-                Poultry prices rising 8% this week. Swapping <strong>Chicken Sate &rarr; Tuna Sate</strong> maintains your 32% food cost target and avoids a $2,100 overrun.
+                Wagyu market hit a +6% spike last week. Stake's Wagyu tasting menu hits the 32% food cost target only if Beef Wellington (Day 3) swaps to a beef shin braise — saves Rp 2.1jt this weekend at the same margin.
               </p>
             </div>
           </div>
@@ -1130,8 +1178,11 @@ export function OverviewPage({ theme }: OverviewPageProps) {
   );
 
   // ══════════════════════════════════════════════════════════════════
-  // RIGHT PANEL — Atlas with Temporal Reasoning
+  // RIGHT PANEL — Atlas
   // ══════════════════════════════════════════════════════════════════
+  const currentPulse = LIVE_PULSES[pulseIdx];
+  const currentPulseMeta = AGENT_META[currentPulse.agentId];
+
   const rightPanel = (
     <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
       {/* Header */}
@@ -1148,7 +1199,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
 
       <div className="flex-1 min-h-0 overflow-y-auto">
 
-        {/* ── TEMPORAL ALERTS — shown when calendar mode is active ── */}
+        {/* TEMPORAL ALERTS — calendar mode */}
         {centerMode === 'calendar' && !selectedEvent && (
           <div className={`p-4 border-b ${t.border}`}>
             <div className="flex items-center gap-2 mb-3">
@@ -1157,6 +1208,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             </div>
             <div className="space-y-2">
               {TEMPORAL_ALERTS.map(alert => {
+                const meta = AGENT_META[alert.agentId];
                 const severityStyle = alert.severity === 'high'
                   ? { bg: isDark ? 'bg-red-500/5 border-red-500/20' : 'bg-red-50 border-red-200', textH: isDark ? 'text-red-400' : 'text-red-700', icon: isDark ? 'text-red-400' : 'text-red-600' }
                   : alert.severity === 'medium'
@@ -1170,8 +1222,8 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                     </div>
                     <p className={`text-[10px] leading-relaxed ${t.textSecondary}`}>{alert.detail}</p>
                     <div className="flex items-center justify-between mt-1.5">
-                      <span className={`text-[9px] ${t.textMuted}`}>Agent {alert.agent}</span>
-                      {alert.saving > 0 && <span className="text-[9px] font-semibold text-green-400">Save ${alert.saving}</span>}
+                      <span className={`text-[9px] ${t.textMuted}`}>{alert.agentId} {meta.role}</span>
+                      {alert.saving > 0 && <span className="text-[9px] font-semibold text-green-400">Save {fmtIdrShort(alert.saving)}</span>}
                     </div>
                   </div>
                 );
@@ -1180,7 +1232,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
           </div>
         )}
 
-        {/* ── ROI FORECAST IN CALENDAR — savings detected by agents ── */}
+        {/* SAVINGS IN CALENDAR */}
         {centerMode === 'calendar' && !selectedEvent && (
           <div className={`p-4 border-b ${t.border}`}>
             <div className="flex items-center gap-2 mb-3">
@@ -1190,21 +1242,21 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/10 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
               <div className="flex items-center justify-between mb-2.5">
                 <span className={`text-[10px] ${t.textMuted}`}>Available potential</span>
-                <span className={`text-base font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>${CAL_SAVINGS.total.toLocaleString()}</span>
+                <span className={`text-base font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(CAL_SAVINGS.total)}</span>
               </div>
               <div className="space-y-1.5">
                 {CAL_SAVINGS.items.map((item, i) => (
                   <div key={i} className="flex items-center justify-between">
                     <span className={`text-[10px] ${t.textSecondary}`}>{item.label}</span>
                     <div className="flex items-center gap-1.5">
-                      <span className={`text-[9px] ${t.textMuted}`}>Agent {item.agent}</span>
-                      <span className={`text-[10px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>${item.amount}</span>
+                      <span className={`text-[9px] ${t.textMuted}`}>{item.agentId}</span>
+                      <span className={`text-[10px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(item.amount)}</span>
                     </div>
                   </div>
                 ))}
               </div>
               <p className={`text-[9px] mt-2.5 leading-snug italic ${t.textMuted}`}>
-                Agent #28 scans continuously for early-payment windows and volume lock opportunities.
+                Spend Watchdog (A-04) scans continuously for early-payment windows and FX lock opportunities.
               </p>
             </div>
           </div>
@@ -1222,8 +1274,8 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 {[0, 150, 300].map(d => <div key={d} className="w-1 h-1 rounded-full bg-[#87986a] animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
               </div>
               <div>
-                <span className={`text-[10px] font-medium ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>Agent {LIVE_PULSES[pulseIdx].agent}</span>
-                <p className={`text-[10px] ${t.textMuted}`}>{LIVE_PULSES[pulseIdx].text}</p>
+                <span className={`text-[10px] font-medium ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{currentPulse.agentId} {currentPulseMeta.role}</span>
+                <p className={`text-[10px] ${t.textMuted}`}>{currentPulse.text}</p>
               </div>
             </div>
           </div>
@@ -1258,7 +1310,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
           </div>
           <div className="space-y-2.5">
             {AI_ACTIONS.map((action, i) => {
-              const meta = AGENT_CLASS_META[action.agentClass];
+              const meta = AGENT_META[action.agentId];
               const AIcon = meta.icon;
               return (
                 <div key={i} className="flex items-start gap-2">
@@ -1268,9 +1320,9 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                   <div className="flex-1 min-w-0">
                     <p className={`text-[10px] leading-snug ${t.textPrimary}`}>{action.action}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className={`text-[9px] font-medium ${isDark ? meta.darkColor : meta.color}`}>{action.agent} {action.agentClass}</span>
+                      <span className={`text-[9px] font-medium ${isDark ? meta.darkColor : meta.color}`}>{action.agentId} {meta.role}</span>
                       <span className={`text-[9px] ${t.textMuted}`}>{action.time}</span>
-                      {action.saving && <span className="text-[9px] text-green-400">+${action.saving}</span>}
+                      {action.saving && <span className="text-[9px] text-green-400">+{fmtIdrShort(action.saving)}</span>}
                     </div>
                   </div>
                 </div>
@@ -1286,14 +1338,14 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>AUTONOMY GOAL</span>
           </div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className={`text-xs font-semibold ${t.textPrimary}`}>Level {AUTONOMY.current} &rarr; {AUTONOMY.next}</span>
+            <span className={`text-xs font-semibold ${t.textPrimary}`}>{AUTONOMY.category} category</span>
             <span className={`text-[10px] font-medium ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{AUTONOMY.progress}%</span>
           </div>
           <div className={`h-1.5 rounded-full ${t.progressTrack} mb-2`}>
             <div className="h-1.5 rounded-full bg-[#87986a] transition-all duration-700" style={{ width: `${AUTONOMY.progress}%` }} />
           </div>
           <p className={`text-[10px] leading-snug ${t.textMuted}`}>
-            <span className={`font-semibold ${t.textPrimary}`}>{AUTONOMY.remaining} more approvals</span> until Level {AUTONOMY.next} ({AUTONOMY.label}) unlocks for <span className={`font-medium ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{AUTONOMY.category}</span>.
+            <span className={`font-semibold ${t.textPrimary}`}>{AUTONOMY.remaining} more approvals</span> until Sourcing Agent (A-01) unlocks higher autonomy for <span className={`font-medium ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{AUTONOMY.category}</span>.
           </p>
         </div>
 
@@ -1314,7 +1366,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             </div>
             <div className={`flex items-center justify-between pt-1.5 border-t ${t.border}`}>
               <span className={`text-[10px] font-medium ${t.textPrimary}`}>Working capital freed</span>
-              <span className="text-xs font-bold text-green-400">${ROI.capitalFreed.toLocaleString()}</span>
+              <span className="text-xs font-bold text-green-400">{fmtIdrShort(ROI.capitalFreed)}</span>
             </div>
           </div>
           <p className={`text-[9px] mt-2 italic ${t.textMuted}`}>The system is making you money — not just saving time.</p>

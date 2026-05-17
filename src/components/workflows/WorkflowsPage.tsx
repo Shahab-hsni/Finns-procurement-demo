@@ -4,28 +4,19 @@ import { ThreePanelLayout } from '../layout/ThreePanelLayout';
 import { IntelligencePanel } from '../IntelligencePanel';
 import { WorkflowTemplateList } from './WorkflowTemplateList';
 import { DagFlowPath } from './DagFlowPath';
-import { workflowTemplates } from '../../lib/mockData';
-import { getTrailReturn, type TrailReturnMarker } from '../../lib/trailReturn';
-import { TrailReturnPill } from '../TrailReturnPill';
+import { finnsPlaybooks } from '../../lib/mockData';
+import type { PlaybookId } from '../../lib/types';
 
 interface WorkflowsPageProps {
   theme: 'dark' | 'light';
   onNavigate?: (page: string) => void;
 }
 
-export function WorkflowsPage({ theme, onNavigate }: WorkflowsPageProps) {
+export function WorkflowsPage({ theme }: WorkflowsPageProps) {
   const isDark = theme === 'dark';
-  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>('WF-STD');
-  const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
-  const [trailReturn, setTrailReturnState] = useState<TrailReturnMarker | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<PlaybookId>('WF-STD');
 
-  // Read the Trail-Return marker on mount.
-  useEffect(() => {
-    setTrailReturnState(getTrailReturn());
-  }, []);
-
-  // Deep-link hash reader — `#workflow=WF-XXX` selects that template.
-  // Dispatched by the Orders Decision Attribution Trail's workflow chip.
+  // Deep-link hash reader — `#workflow=WF-XXX` selects that playbook.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const applyHash = () => {
@@ -34,11 +25,11 @@ export function WorkflowsPage({ theme, onNavigate }: WorkflowsPageProps) {
       const params = new URLSearchParams(raw);
       const wf = params.get('workflow');
       if (!wf) return;
-      if (workflowTemplates.some(t => t.id === wf)) {
-        setSelectedWorkflow(wf);
+      if (finnsPlaybooks.some(p => p.id === wf)) {
+        setSelectedWorkflow(wf as PlaybookId);
       } else {
-        toast.warning(`${wf} isn't a known workflow template`, {
-          description: 'The template list is open for browsing.',
+        toast.warning(`${wf} isn't a known playbook`, {
+          description: 'Finn\'s runs three playbooks: Standard, Rush, Recurring.',
         });
       }
       window.location.hash = '';
@@ -49,40 +40,28 @@ export function WorkflowsPage({ theme, onNavigate }: WorkflowsPageProps) {
   }, []);
 
   return (
-    <>
-      {trailReturn && (
-        <TrailReturnPill
-          marker={trailReturn}
+    <ThreePanelLayout
+      isDark={isDark}
+      left={
+        <WorkflowTemplateList
           isDark={isDark}
-          onReturn={() => { setTrailReturnState(null); onNavigate?.('orders'); }}
+          selectedWorkflow={selectedWorkflow}
+          onSelectWorkflow={(id) => setSelectedWorkflow(id as PlaybookId)}
         />
-      )}
-      <ThreePanelLayout
-        isDark={isDark}
-        left={
-          <WorkflowTemplateList
-            isDark={isDark}
-            selectedWorkflow={selectedWorkflow}
-            onSelectWorkflow={setSelectedWorkflow}
-            selectedSignalId={selectedSignalId}
-            onSignalSelect={setSelectedSignalId}
-          />
-        }
-        center={
-          <DagFlowPath
-            isDark={isDark}
-            selectedWorkflowId={selectedWorkflow}
-            selectedSignalId={selectedSignalId}
-          />
-        }
-        right={
-          <IntelligencePanel
-            theme={theme}
-            context="workflows"
-            workflowId={selectedWorkflow}
-          />
-        }
-      />
-    </>
+      }
+      center={
+        <DagFlowPath
+          isDark={isDark}
+          selectedWorkflowId={selectedWorkflow}
+        />
+      }
+      right={
+        <IntelligencePanel
+          theme={theme}
+          context="workflows"
+          workflowId={selectedWorkflow}
+        />
+      }
+    />
   );
 }

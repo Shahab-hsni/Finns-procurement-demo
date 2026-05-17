@@ -19,6 +19,7 @@ import { theme as themeTokens } from '../lib/theme';
 import { workflowTemplates } from '../lib/mockData';
 import { logUserAction, type ActionKind } from '../lib/actionLog';
 import { AgentCTA } from './AgentCTA';
+import { ManualNotes } from './ManualNotes';
 
 interface OrdersPageProps {
   theme: 'dark' | 'light';
@@ -3243,6 +3244,18 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             onDefer={() => toast.info(`Deferred ${selectedOrder.id}`, { description: 'The recommendation is snoozed for 4h. It will re-surface in the Needs Action queue after that.' })}
             onDecline={() => toast.warning(`Declined ${selectedOrder.id}`, { description: 'Recommendation rejected. The agent will not re-suggest this PO without new data.' })}
           />
+        )}
+
+        {/* ── Single: Manual notes (Phase 4l) ── */}
+        {selectedOrder && !isBatch && (
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+            <ManualNotes
+              isDark={isDark}
+              type="po"
+              id={selectedOrder.id}
+              entityLabel={`${selectedOrder.id} · ${selectedOrder.supplier}`}
+            />
+          </div>
         )}
 
         {/* ── Single: Embedded Finance ── */}

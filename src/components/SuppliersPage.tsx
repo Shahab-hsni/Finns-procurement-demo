@@ -20,6 +20,7 @@ import { theme as themeTokens } from '../lib/theme';
 import { AgentCTA } from './AgentCTA';
 import { VendorOnboardingModal } from './VendorOnboardingModal';
 import { RenegotiationModal } from './RenegotiationModal';
+import { ManualNotes } from './ManualNotes';
 
 interface SuppliersPageProps {
   theme: 'dark' | 'light';
@@ -3438,6 +3439,14 @@ function renderRelationshipWorkspace(
           </button>
         )}
       </div>
+
+      {/* ═══ MANUAL NOTES (Phase 4l) ═══ */}
+      <ManualNotes
+        isDark={isDark}
+        type="supplier"
+        id={selected.id}
+        entityLabel={selected.name}
+      />
 
       {/* ═══ FILTERED ORDER LEDGER ═══ */}
       <div>

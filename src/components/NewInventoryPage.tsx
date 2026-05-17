@@ -20,6 +20,7 @@ import { toast } from 'sonner@2.0.3';
 import type { VenueTag, FinnsAgentId, FinnsCategory } from '../lib/types';
 import { logUserAction } from '../lib/actionLog';
 import { AgentCTA } from './AgentCTA';
+import { ManualNotes } from './ManualNotes';
 
 interface InventoryPageProps {
   theme: 'dark' | 'light';
@@ -2596,6 +2597,18 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   <div className="flex items-center gap-1.5 mb-1"><Radar className={`h-3 w-3 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} /><span className={`text-[9px] font-semibold uppercase ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>A-01 Market Signal</span></div>
                   <p className={`text-[10px] leading-relaxed ${isDark ? 'text-blue-300' : 'text-blue-800'}`}>{selected.marketSignal}</p>
                 </div>
+              </div>
+            )}
+
+            {/* Manual notes per SKU (Phase 4l) */}
+            {selected && (
+              <div className="px-4 pb-3">
+                <ManualNotes
+                  isDark={isDark}
+                  type="sku"
+                  id={selected.sku}
+                  entityLabel={`${selected.sku} · ${selected.name}`}
+                />
               </div>
             )}
 

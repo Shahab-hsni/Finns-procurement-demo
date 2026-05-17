@@ -72,7 +72,8 @@ export type ActionKind =
   | 'agent-suspend' | 'agent-resume'
   | 'ledger-approve' | 'undo-mode-change'
   // Cross-page
-  | 'autonomy-mode-change';
+  | 'autonomy-mode-change'
+  | 'entity-note-edit';
 
 export type ActionEntityType =
   | 'po' | 'sku' | 'supplier' | 'rule' | 'event'

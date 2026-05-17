@@ -1,8 +1,15 @@
+// Finn's mock data lives at the bottom of this file. The legacy Buyamia
+// mock data above is carried forward so the surviving pages still compile
+// during the Phase 3 migration. Phase 4 prunes the legacy.
+
 import type {
   Agent, DagStage, WorkflowTemplate, DemandSignal,
   MetricCategory, SupplierPromise, Country, Industry,
   ControlPlane, LossCategory, DecisionRecord, Dispute,
   ServiceIndicator,
+  // Finn's
+  VenueDefinition, Playbook, FinnsOrder, FinnsSKU, FinnsSupplier,
+  ActivityEvent, PolicyRule, FinnsDispute, FinnsAgent,
 } from './types';
 
 // ── 40 Agents across 5 Classes ───────────────────────────────
@@ -203,4 +210,654 @@ export const infrastructureServices: ServiceIndicator[] = [
   { id: 'SVC-MDL', label: 'Model Gateway', status: 'healthy' },
   { id: 'SVC-TOL', label: 'Tool Registry', status: 'healthy' },
   { id: 'SVC-DAG', label: 'DAG Engine',    status: 'healthy' },
+];
+
+// ═════════════════════════════════════════════════════════════
+// ── Finn's Canonical Mock Data ───────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+// ── Venues (4) ───────────────────────────────────────────────
+
+export const finnsVenues: VenueDefinition[] = [
+  { tag: 'BC', name: 'Beach Club',       type: 'beach club',       description: 'Flagship beach club — high-volume bar, casual F&B, large daily covers.' },
+  { tag: 'RC', name: 'Recreation Club',  type: 'recreation club',  description: 'Member-only club — F&B + retail, multi-day events.' },
+  { tag: 'ST', name: 'Stake',            type: 'fine dining',      description: 'Fine-dining restaurant — premium proteins, smaller volumes, higher-spec sourcing.' },
+  { tag: 'SP', name: 'Splash Waterpark', type: 'waterpark',        description: 'Waterpark concessions — high-volume QSR, beverages, packaged goods.' },
+];
+
+// ── Agents (6: Atlas chat copilot + A-01..A-05) ──────────────
+// Atlas is intentionally NOT in this array — it has no profile and no hash.
+
+export const finnsAgents: FinnsAgent[] = [
+  {
+    id: 'A-01',
+    name: 'Sourcing Agent',
+    role: 'Sourcing Agent',
+    description: 'Picks vendors for new requests, validates quotes against market prices, surfaces alternative suppliers.',
+    status: 'active',
+    performanceBand: 'green',
+    tasksCompletedToday: 18,
+    recentDecisions: ['evt-001', 'evt-004', 'evt-007'],
+  },
+  {
+    id: 'A-02',
+    name: 'Restock Agent',
+    role: 'Restock Agent',
+    description: 'Watches par levels and consumption velocity, proposes restocks before stockout, prioritizes by venue demand.',
+    status: 'active',
+    performanceBand: 'green',
+    tasksCompletedToday: 26,
+    recentDecisions: ['evt-002', 'evt-005', 'evt-009'],
+  },
+  {
+    id: 'A-03',
+    name: 'Vendor Comms Agent',
+    role: 'Vendor Comms Agent',
+    description: 'Drafts and sends WhatsApp / Telegram messages to suppliers via the Source Bridge. Handles 1-on-1 and broadcast announcements.',
+    status: 'active',
+    performanceBand: 'green',
+    tasksCompletedToday: 12,
+    recentDecisions: ['evt-003', 'evt-008'],
+  },
+  {
+    id: 'A-04',
+    name: 'Spend Watchdog',
+    role: 'Spend Watchdog',
+    description: 'Flags overspend, unusual cost spikes, duplicate invoices, and gates POs against active policy rules.',
+    status: 'active',
+    performanceBand: 'amber',
+    tasksCompletedToday: 9,
+    recentDecisions: ['evt-006', 'evt-010', 'evt-012'],
+  },
+  {
+    id: 'A-05',
+    name: 'Logistics Agent',
+    role: 'Logistics Agent',
+    description: 'Owns the In Transit → Delivered & Checked stages. Tracks shipments, surfaces delivery risk, escalates late or failed deliveries.',
+    status: 'active',
+    performanceBand: 'green',
+    tasksCompletedToday: 14,
+    recentDecisions: ['evt-011'],
+  },
+];
+
+// ── Playbooks (3) ────────────────────────────────────────────
+
+export const finnsPlaybooks: Playbook[] = [
+  {
+    id: 'WF-STD',
+    name: 'Standard',
+    description: 'Default playbook for every non-urgent, non-recurring request. Full RFQ + vendor selection cycle.',
+    whenItRuns: 'Used for any new request that is not urgency=urgent and not flagged as recurring.',
+    complexity: 'standard',
+    activeOrderCount: 24,
+    avgDurationHours: 96,
+    savingsVsBaseline: 14,
+    stages: [
+      { stage: 1, name: 'Request',                  owningAgent: 'A-02', description: 'Demand signal raised — par breach, scheduled trigger, or human request.', throughputPerHour: 12 },
+      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'RFQ sent to ≥3 vendors. Quotes validated against 30-day market median.', throughputPerHour: 10 },
+      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Policy checks: spend cap, vendor trust, duplicate detection. Above threshold → human gate.', throughputPerHour: 14 },
+      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Vendor confirms shipment. ETA tracked. Late/risk signals surfaced.', throughputPerHour: 8 },
+      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Delivery received at target venue. QC check: pass → completed; fail → dispute.', throughputPerHour: 6 },
+    ],
+  },
+  {
+    id: 'WF-RSH',
+    name: 'Rush',
+    description: 'Expedited path for urgent requests. Skips RFQ; goes direct to preferred vendor with up to 12% premium tolerated.',
+    whenItRuns: 'Marked urgent at request time, OR auto-promoted by Restock Agent when par floor is breached.',
+    complexity: 'simple',
+    activeOrderCount: 6,
+    avgDurationHours: 18,
+    savingsVsBaseline: 4,
+    stages: [
+      { stage: 1, name: 'Request',                  owningAgent: 'A-02', description: 'Urgency=urgent OR par floor breach detected.', throughputPerHour: 18 },
+      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'Skips RFQ. Direct to preferred vendor. Price up to 12% over market tolerated.', throughputPerHour: 20 },
+      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Streamlined policy check. Auto-approves under standard spend cap.', throughputPerHour: 22 },
+      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Expedited shipping flag set.', throughputPerHour: 16 },
+      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Standard QC at receiving venue.', throughputPerHour: 12 },
+    ],
+  },
+  {
+    id: 'WF-REC',
+    name: 'Recurring',
+    description: 'Standing orders for high-velocity SKUs. Runs on schedule, requires no human approval until spend cap is hit.',
+    whenItRuns: 'Standing weekly / biweekly / monthly orders from existing vendors (e.g. PT Indo Sayur weekly produce for Beach Club kitchen).',
+    complexity: 'simple',
+    activeOrderCount: 11,
+    avgDurationHours: 72,
+    savingsVsBaseline: 8,
+    stages: [
+      { stage: 1, name: 'Request',                  owningAgent: 'A-02', description: 'Scheduled trigger fires (weekly / biweekly / monthly).', throughputPerHour: 4 },
+      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'Existing vendor contract — no RFQ.', throughputPerHour: 30 },
+      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Auto-approved up to active spend cap. Paused if cap hit.', throughputPerHour: 28 },
+      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Standard tracking.', throughputPerHour: 10 },
+      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Standard QC at receiving venue.', throughputPerHour: 8 },
+    ],
+  },
+];
+
+// ── Suppliers (10) ───────────────────────────────────────────
+
+export const finnsSuppliers: FinnsSupplier[] = [
+  {
+    id: 'SUP-014', name: 'PT Bali Seafood Lestari', type: 'local', region: 'Bali',
+    categories: ['Seafood'], venuesServed: ['BC', 'ST', 'RC'],
+    laborMode: 'agent', agent: 'A-01',
+    accountManager: { name: 'Wayan Sukma', whatsapp: '+62 812 3456 7890', telegram: '@wayanseafood' },
+    metrics: { composite: 92, onTime: 96, coldChain: 98, quality: 94, leadTimeDays: 1, annualContractIdr: 2_100_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+  {
+    id: 'SUP-021', name: 'CV Indo Sayur', type: 'local', region: 'Bali',
+    categories: ['Produce'], venuesServed: ['BC', 'RC', 'SP'],
+    laborMode: 'agent', agent: 'A-01',
+    accountManager: { name: 'Pak Made', whatsapp: '+62 813 5555 1234' },
+    metrics: { composite: 88, onTime: 91, coldChain: 86, quality: 90, leadTimeDays: 1, annualContractIdr: 1_400_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+  {
+    id: 'SUP-008', name: 'Krakatoa Coldstore', type: 'regional', region: 'Java',
+    categories: ['Protein', 'Seafood'], venuesServed: ['BC', 'ST', 'RC'],
+    laborMode: 'agent', agent: 'A-01',
+    accountManager: { name: 'Budi Hartono', whatsapp: '+62 821 9876 5432', telegram: '@krakatoacold' },
+    metrics: { composite: 85, onTime: 89, coldChain: 94, quality: 92, leadTimeDays: 2, annualContractIdr: 3_400_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+  {
+    id: 'SUP-031', name: 'Bintang Distribusi', type: 'regional', region: 'Java',
+    categories: ['Beverages'], venuesServed: ['BC', 'RC', 'ST', 'SP'],
+    laborMode: 'agent', agent: 'A-03',
+    accountManager: { name: 'Andi Wijaya', whatsapp: '+62 811 2233 4455' },
+    metrics: { composite: 90, onTime: 95, coldChain: 88, quality: 91, leadTimeDays: 2, annualContractIdr: 4_800_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+  {
+    id: 'SUP-007', name: 'Sumber Dairy', type: 'regional', region: 'East Java',
+    categories: ['Dairy'], venuesServed: ['BC', 'RC', 'SP'],
+    laborMode: 'agent', agent: 'A-01',
+    accountManager: { name: 'Sari Wahyuni', whatsapp: '+62 815 6677 8899' },
+    metrics: { composite: 87, onTime: 92, coldChain: 95, quality: 88, leadTimeDays: 2, annualContractIdr: 1_900_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+  {
+    id: 'SUP-042', name: 'PT Wine Cellar Nusa', type: 'import', region: 'Australia / France',
+    categories: ['Beverages'], venuesServed: ['ST', 'RC'],
+    laborMode: 'manual', agent: 'A-01',
+    accountManager: { name: 'Helena Mardiana', whatsapp: '+62 818 4321 9876', telegram: '@winecellarnusa' },
+    metrics: { composite: 81, onTime: 84, coldChain: 90, quality: 95, leadTimeDays: 14, annualContractIdr: 5_200_000_000 },
+    status: 'watchlist', qcAlerts: [],
+  },
+  {
+    id: 'SUP-018', name: 'Eka Packaging', type: 'local', region: 'Bali',
+    categories: ['Other'], venuesServed: ['BC', 'RC', 'SP'],
+    laborMode: 'agent', agent: 'A-01',
+    accountManager: { name: 'Eka Ratnasari', whatsapp: '+62 812 7777 8888' },
+    metrics: { composite: 78, onTime: 82, coldChain: 100, quality: 80, leadTimeDays: 3, annualContractIdr: 620_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+  {
+    id: 'SUP-009', name: 'AUS Premium Meats', type: 'import', region: 'Australia',
+    categories: ['Protein'], venuesServed: ['ST', 'BC'],
+    laborMode: 'agent', agent: 'A-01',
+    accountManager: { name: 'James Whitford', whatsapp: '+61 4 1234 5678' },
+    metrics: { composite: 89, onTime: 87, coldChain: 96, quality: 97, leadTimeDays: 10, annualContractIdr: 6_800_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+  {
+    id: 'SUP-027', name: 'Kopi Bali Roastery', type: 'local', region: 'Bali',
+    categories: ['Beverages', 'Dry Goods'], venuesServed: ['BC', 'RC', 'ST', 'SP'],
+    laborMode: 'agent', agent: 'A-01',
+    accountManager: { name: 'Ketut Astawa', whatsapp: '+62 819 5555 6666', telegram: '@kopibalir' },
+    metrics: { composite: 93, onTime: 96, coldChain: 100, quality: 95, leadTimeDays: 1, annualContractIdr: 1_100_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+  {
+    id: 'SUP-052', name: 'Pulau Dry Goods', type: 'local', region: 'Bali',
+    categories: ['Dry Goods'], venuesServed: ['BC', 'RC', 'SP'],
+    laborMode: 'agent', agent: 'A-01',
+    accountManager: { name: 'Nyoman Suparta', whatsapp: '+62 813 1111 2222' },
+    metrics: { composite: 84, onTime: 90, coldChain: 100, quality: 86, leadTimeDays: 2, annualContractIdr: 880_000_000 },
+    status: 'active', qcAlerts: [],
+  },
+];
+
+// ── SKUs (24) ────────────────────────────────────────────────
+
+export const finnsSKUs: FinnsSKU[] = [
+  // Seafood
+  { id: 'SKU-0421', name: 'Yellowfin Tuna (sashimi grade)', category: 'Seafood', venues: ['ST'],                     uom: 'kg',   onHand: 8,   par: 12,  burnRate: 4.2,  daysOfCover: 1.9,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3041' },
+  { id: 'SKU-0422', name: 'Yellowfin Tuna (food grade)',    category: 'Seafood', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 22,  par: 30,  burnRate: 7.5,  daysOfCover: 2.9,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3041' },
+  { id: 'SKU-0423', name: 'Prawns (large, head-on)',        category: 'Seafood', venues: ['BC', 'ST', 'RC'],         uom: 'kg',   onHand: 14,  par: 25,  burnRate: 6.8,  daysOfCover: 2.1,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0424', name: 'Mahi Mahi fillets',              category: 'Seafood', venues: ['BC', 'ST'],               uom: 'kg',   onHand: 18,  par: 20,  burnRate: 4.0,  daysOfCover: 4.5,  agent: 'A-02', laborMode: 'agent' },
+
+  // Protein
+  { id: 'SKU-0101', name: 'AUS Wagyu Ribeye MB7+',          category: 'Protein', venues: ['ST'],                     uom: 'kg',   onHand: 5,   par: 8,   burnRate: 1.8,  daysOfCover: 2.8,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3043' },
+  { id: 'SKU-0102', name: 'Pork Belly, skin-on',            category: 'Protein', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 28,  par: 35,  burnRate: 8.4,  daysOfCover: 3.3,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0103', name: 'Chicken thighs, boneless',       category: 'Protein', venues: ['BC', 'RC', 'SP'],         uom: 'kg',   onHand: 42,  par: 50,  burnRate: 12.6, daysOfCover: 3.3,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0104', name: 'Lamb rack, frenched',            category: 'Protein', venues: ['ST'],                     uom: 'kg',   onHand: 9,   par: 12,  burnRate: 2.4,  daysOfCover: 3.8,  agent: 'A-02', laborMode: 'agent' },
+
+  // Produce
+  { id: 'SKU-0201', name: 'Mixed greens (rocket, lettuce)', category: 'Produce', venues: ['BC', 'RC', 'ST'],         uom: 'kg',   onHand: 15,  par: 18,  burnRate: 6.0,  daysOfCover: 2.5,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3042' },
+  { id: 'SKU-0202', name: 'Tomatoes, vine-ripened',         category: 'Produce', venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 36,  par: 40,  burnRate: 11.0, daysOfCover: 3.3,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3042' },
+  { id: 'SKU-0203', name: 'Avocado, hass',                  category: 'Produce', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 24,  par: 28,  burnRate: 7.0,  daysOfCover: 3.4,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0204', name: 'Lime, key',                      category: 'Produce', venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 32,  par: 35,  burnRate: 9.5,  daysOfCover: 3.4,  agent: 'A-02', laborMode: 'agent' },
+
+  // Dairy
+  { id: 'SKU-0301', name: 'Butter, salted (Anchor)',        category: 'Dairy',   venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 24,  par: 30,  burnRate: 6.8,  daysOfCover: 3.5,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3045' },
+  { id: 'SKU-0302', name: 'Burrata',                        category: 'Dairy',   venues: ['ST'],                     uom: 'pcs',  onHand: 12,  par: 18,  burnRate: 4.0,  daysOfCover: 3.0,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0303', name: 'Milk, whole UHT (1L)',           category: 'Dairy',   venues: ['BC', 'RC', 'SP'],         uom: 'L',    onHand: 78,  par: 100, burnRate: 26.0, daysOfCover: 3.0,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0304', name: 'Cream, heavy (1L)',              category: 'Dairy',   venues: ['BC', 'RC', 'ST'],         uom: 'L',    onHand: 18,  par: 24,  burnRate: 6.5,  daysOfCover: 2.8,  agent: 'A-02', laborMode: 'agent' },
+
+  // Beverages
+  { id: 'SKU-0501', name: 'Bintang Beer 330ml (case 24)',   category: 'Beverages', venues: ['BC', 'RC', 'SP'],       uom: 'case', onHand: 84,  par: 100, burnRate: 32.0, daysOfCover: 2.6,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3044' },
+  { id: 'SKU-0502', name: 'Prosecco, Treviso DOC (750ml)',  category: 'Beverages', venues: ['RC', 'ST'],             uom: 'btl',  onHand: 96,  par: 120, burnRate: 22.0, daysOfCover: 4.4,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3046' },
+  { id: 'SKU-0503', name: 'House red, Shiraz (AU)',         category: 'Beverages', venues: ['RC', 'ST'],             uom: 'btl',  onHand: 64,  par: 80,  burnRate: 14.0, daysOfCover: 4.6,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0504', name: 'Coca-Cola 330ml (case 24)',      category: 'Beverages', venues: ['BC', 'SP', 'RC'],       uom: 'case', onHand: 56,  par: 80,  burnRate: 25.0, daysOfCover: 2.2,  agent: 'A-02', laborMode: 'agent' },
+
+  // Dry Goods
+  { id: 'SKU-0601', name: 'Olive oil, EV (5L tin)',         category: 'Dry Goods', venues: ['BC', 'RC', 'ST'],       uom: 'tin',  onHand: 14,  par: 18,  burnRate: 2.4,  daysOfCover: 5.8,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0602', name: 'Jasmine rice (25kg sack)',       category: 'Dry Goods', venues: ['BC', 'RC', 'SP'],       uom: 'sack', onHand: 22,  par: 30,  burnRate: 4.5,  daysOfCover: 4.9,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0603', name: 'Kopi Bali roasted (1kg)',        category: 'Dry Goods', venues: ['BC', 'RC', 'ST', 'SP'], uom: 'kg',   onHand: 38,  par: 45,  burnRate: 8.0,  daysOfCover: 4.8,  agent: 'A-02', laborMode: 'agent' },
+
+  // Packaging / Other
+  { id: 'SKU-0801', name: 'Takeaway box, 1000ml (case 100)', category: 'Other',   venues: ['BC', 'SP', 'RC'],        uom: 'case', onHand: 24,  par: 30,  burnRate: 5.5,  daysOfCover: 4.4,  agent: 'A-02', laborMode: 'agent' },
+];
+
+// ── Live Orders (7) ──────────────────────────────────────────
+
+const _today = '2026-05-16';
+const _yesterday = '2026-05-15';
+const _twoDaysAgo = '2026-05-14';
+
+export const finnsLiveOrders: FinnsOrder[] = [
+  {
+    id: 'PO-3041', supplier: 'PT Bali Seafood Lestari', supplierId: 'SUP-014',
+    managedBy: 'A-01', amount: 14_200_000, currency: 'IDR', venues: ['BC', 'ST'],
+    category: 'Seafood', workflowTemplate: 'WF-STD',
+    stage: 2, status: 'live', laborMode: 'agent',
+    trace: [
+      { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: _yesterday, completedAt: _yesterday },
+      { stage: 2, outcome: 'in-progress', agent: 'A-01', startedAt: _yesterday },
+      { stage: 3, outcome: 'pending' },
+      { stage: 4, outcome: 'pending' },
+      { stage: 5, outcome: 'pending' },
+    ],
+    humanDescription: 'Quote awaiting Spend Watchdog approval — yellowfin tuna for BC + ST',
+    createdAt: _yesterday, eta: '2026-05-17',
+  },
+  {
+    id: 'PO-3042', supplier: 'CV Indo Sayur', supplierId: 'SUP-021',
+    managedBy: 'A-02', amount: 4_800_000, currency: 'IDR', venues: ['BC', 'SP'],
+    category: 'Produce', workflowTemplate: 'WF-REC',
+    stage: 3, status: 'live', laborMode: 'agent',
+    trace: [
+      { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: _twoDaysAgo, completedAt: _twoDaysAgo },
+      { stage: 2, outcome: 'complete', agent: 'A-01', startedAt: _twoDaysAgo, completedAt: _yesterday },
+      { stage: 3, outcome: 'in-progress', agent: 'A-04', startedAt: _yesterday },
+      { stage: 4, outcome: 'pending' },
+      { stage: 5, outcome: 'pending' },
+    ],
+    humanDescription: 'Recurring weekly produce — auto-approved by spend cap',
+    createdAt: _twoDaysAgo, eta: '2026-05-17',
+    recurring: { frequency: 'weekly', nextRun: '2026-05-23' },
+  },
+  {
+    id: 'PO-3043', supplier: 'AUS Premium Meats', supplierId: 'SUP-009',
+    managedBy: 'A-01', amount: 28_500_000, currency: 'IDR', amountUsd: 1840, fxRateAtQuote: 15490, venues: ['ST'],
+    category: 'Protein', workflowTemplate: 'WF-RSH',
+    stage: 1, status: 'live', laborMode: 'agent',
+    trace: [
+      { stage: 1, outcome: 'in-progress', agent: 'A-02', startedAt: _today },
+      { stage: 2, outcome: 'pending' },
+      { stage: 3, outcome: 'pending' },
+      { stage: 4, outcome: 'pending' },
+      { stage: 5, outcome: 'pending' },
+    ],
+    humanDescription: 'Urgent — Wagyu ribeye for ST, par floor breached',
+    createdAt: _today,
+  },
+  {
+    id: 'PO-3044', supplier: 'Bintang Distribusi', supplierId: 'SUP-031',
+    managedBy: 'A-05', amount: 9_400_000, currency: 'IDR', venues: ['BC', 'SP', 'RC'],
+    category: 'Beverages', workflowTemplate: 'WF-STD',
+    stage: 4, status: 'live', laborMode: 'agent',
+    trace: [
+      { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: '2026-05-12', completedAt: '2026-05-12' },
+      { stage: 2, outcome: 'complete', agent: 'A-01', startedAt: '2026-05-12', completedAt: '2026-05-13' },
+      { stage: 3, outcome: 'complete', agent: 'A-04', startedAt: '2026-05-13', completedAt: '2026-05-14' },
+      { stage: 4, outcome: 'in-progress', agent: 'A-05', startedAt: _yesterday },
+      { stage: 5, outcome: 'pending' },
+    ],
+    humanDescription: 'In transit — Bintang case x180 for BC + SP + RC',
+    createdAt: '2026-05-12', eta: _today,
+  },
+  {
+    id: 'PO-3045', supplier: 'Sumber Dairy', supplierId: 'SUP-007',
+    managedBy: 'A-05', amount: 3_200_000, currency: 'IDR', venues: ['BC', 'RC'],
+    category: 'Dairy', workflowTemplate: 'WF-STD',
+    stage: 5, status: 'live', laborMode: 'agent',
+    trace: [
+      { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: '2026-05-13', completedAt: '2026-05-13' },
+      { stage: 2, outcome: 'complete', agent: 'A-01', startedAt: '2026-05-13', completedAt: '2026-05-14' },
+      { stage: 3, outcome: 'complete', agent: 'A-04', startedAt: '2026-05-14', completedAt: '2026-05-14' },
+      { stage: 4, outcome: 'complete', agent: 'A-05', startedAt: '2026-05-15', completedAt: _today },
+      { stage: 5, outcome: 'in-progress', agent: 'A-05', startedAt: _today },
+    ],
+    humanDescription: 'Delivered — awaiting QC checkin at BC + RC',
+    createdAt: '2026-05-13', eta: _today, deliveredAt: _today,
+  },
+  {
+    id: 'PO-3046', supplier: 'PT Wine Cellar Nusa', supplierId: 'SUP-042',
+    managedBy: 'A-05', amount: 42_000_000, currency: 'IDR', amountUsd: 2710, fxRateAtQuote: 15500, venues: ['RC', 'ST'],
+    category: 'Beverages', workflowTemplate: 'WF-STD',
+    stage: 4, status: 'live', laborMode: 'manual',
+    trace: [
+      { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: '2026-05-02', completedAt: '2026-05-02' },
+      { stage: 2, outcome: 'complete', agent: 'A-01', startedAt: '2026-05-03', completedAt: '2026-05-05' },
+      { stage: 3, outcome: 'complete', agent: 'A-04', startedAt: '2026-05-05', completedAt: '2026-05-06' },
+      { stage: 4, outcome: 'in-progress', agent: 'A-05', startedAt: '2026-05-07' },
+      { stage: 5, outcome: 'pending' },
+    ],
+    humanDescription: 'Imported wine — extended transit, customs cleared 2 days ago',
+    createdAt: '2026-05-02', eta: '2026-05-18',
+  },
+  {
+    id: 'PO-3047', supplier: 'Eka Packaging', supplierId: 'SUP-018',
+    managedBy: 'A-04', amount: 18_900_000, currency: 'IDR', venues: ['SP'],
+    category: 'Other', workflowTemplate: 'WF-STD',
+    stage: 2, status: 'disputed', laborMode: 'manual',
+    trace: [
+      { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: _twoDaysAgo, completedAt: _twoDaysAgo },
+      { stage: 2, outcome: 'failed', agent: 'A-01', startedAt: _yesterday, completedAt: _yesterday,
+        dataPoints: { 'Quote vs market median': '+18%', 'Vendor trust score': '78' } },
+      { stage: 3, outcome: 'pending' },
+      { stage: 4, outcome: 'pending' },
+      { stage: 5, outcome: 'pending' },
+    ],
+    humanDescription: 'Quote flagged 18% above market by Spend Watchdog — awaiting dispute resolution',
+    createdAt: _twoDaysAgo,
+  },
+];
+
+// ── Historical Orders (8 completed/disputed/cancelled across last 90 days) ─
+
+export const finnsHistoricalOrders: FinnsOrder[] = [
+  {
+    id: 'PO-2988', supplier: 'PT Bali Seafood Lestari', supplierId: 'SUP-014',
+    managedBy: 'A-01', amount: 12_400_000, currency: 'IDR', venues: ['BC', 'ST'],
+    category: 'Seafood', workflowTemplate: 'WF-STD',
+    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    humanDescription: 'Tuna delivery for BC + ST', createdAt: '2026-05-08', deliveredAt: '2026-05-10',
+    qcOutcome: 'pass',
+  },
+  {
+    id: 'PO-2989', supplier: 'CV Indo Sayur', supplierId: 'SUP-021',
+    managedBy: 'A-02', amount: 4_600_000, currency: 'IDR', venues: ['BC', 'SP'],
+    category: 'Produce', workflowTemplate: 'WF-REC',
+    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    humanDescription: 'Weekly produce — recurring', createdAt: '2026-05-06', deliveredAt: '2026-05-09',
+    qcOutcome: 'pass',
+  },
+  {
+    id: 'PO-2990', supplier: 'Krakatoa Coldstore', supplierId: 'SUP-008',
+    managedBy: 'A-01', amount: 22_000_000, currency: 'IDR', venues: ['BC', 'RC'],
+    category: 'Protein', workflowTemplate: 'WF-STD',
+    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    humanDescription: 'Pork belly + chicken thighs bulk', createdAt: '2026-05-04', deliveredAt: '2026-05-07',
+    qcOutcome: 'pass',
+  },
+  {
+    id: 'PO-2991', supplier: 'Bintang Distribusi', supplierId: 'SUP-031',
+    managedBy: 'A-03', amount: 8_900_000, currency: 'IDR', venues: ['BC', 'SP'],
+    category: 'Beverages', workflowTemplate: 'WF-STD',
+    stage: 5, status: 'disputed', laborMode: 'agent', trace: [],
+    humanDescription: 'Short delivery — 12 cases missing', createdAt: '2026-05-01', deliveredAt: '2026-05-04',
+    qcOutcome: 'fail',
+  },
+  {
+    id: 'PO-2992', supplier: 'Sumber Dairy', supplierId: 'SUP-007',
+    managedBy: 'A-05', amount: 3_400_000, currency: 'IDR', venues: ['BC', 'RC', 'SP'],
+    category: 'Dairy', workflowTemplate: 'WF-STD',
+    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    humanDescription: 'Dairy run — burrata + butter', createdAt: '2026-04-28', deliveredAt: '2026-05-01',
+    qcOutcome: 'pass',
+  },
+  {
+    id: 'PO-2993', supplier: 'AUS Premium Meats', supplierId: 'SUP-009',
+    managedBy: 'A-01', amount: 31_200_000, currency: 'IDR', amountUsd: 2010, fxRateAtQuote: 15522, venues: ['ST'],
+    category: 'Protein', workflowTemplate: 'WF-STD',
+    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    humanDescription: 'Wagyu MB7+ for Stake monthly', createdAt: '2026-04-20', deliveredAt: '2026-04-30',
+    qcOutcome: 'pass',
+  },
+  {
+    id: 'PO-2994', supplier: 'Kopi Bali Roastery', supplierId: 'SUP-027',
+    managedBy: 'A-01', amount: 6_800_000, currency: 'IDR', venues: ['BC', 'RC', 'ST', 'SP'],
+    category: 'Beverages', workflowTemplate: 'WF-REC',
+    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    humanDescription: 'Biweekly coffee — all venues', createdAt: '2026-04-22', deliveredAt: '2026-04-23',
+    qcOutcome: 'pass',
+  },
+  {
+    id: 'PO-2995', supplier: 'Pulau Dry Goods', supplierId: 'SUP-052',
+    managedBy: 'A-01', amount: 5_400_000, currency: 'IDR', venues: ['BC', 'SP'],
+    category: 'Dry Goods', workflowTemplate: 'WF-STD',
+    stage: 1, status: 'cancelled', laborMode: 'manual', trace: [],
+    humanDescription: 'Cancelled by manager — duplicate of PO-2989', createdAt: '2026-04-25',
+  },
+];
+
+// ── Activity Events (12) ─────────────────────────────────────
+
+export const finnsActivityEvents: ActivityEvent[] = [
+  {
+    id: 'evt-001', type: 'auto-order', agentId: 'A-01', at: _today, category: 'Seafood', venue: 'Multi',
+    poId: 'PO-3041', supplierId: 'SUP-014', confidence: 92, outcome: 'pending',
+    reasoning: {
+      why: 'Selected PT Bali Seafood after 30-day median comparison. Quote 4% below market, lead time 1d, cold-chain SLA 98%.',
+      dataPoints: [
+        { label: 'Quote vs 30d median', value: '−4%', delta: -4 },
+        { label: 'Lead time',           value: '1 day' },
+        { label: 'Cold-chain SLA',      value: '98%' },
+      ],
+      alternatives: [
+        { label: 'Krakatoa Coldstore',  rejectedBecause: 'Lead time 2 days exceeds receiving window for ST evening service.' },
+      ],
+    },
+    undoWindow: { mode: 'hard-60', expiresAt: '2026-05-16T15:30:00Z' },
+  },
+  {
+    id: 'evt-002', type: 'restock-forecast', agentId: 'A-02', at: _today, category: 'Protein', venue: 'ST',
+    skuId: 'SKU-0101', supplierId: 'SUP-009', confidence: 88, outcome: 'pending',
+    reasoning: {
+      why: 'Wagyu ribeye on hand 5kg vs par 8kg, burn rate +12% from prior 2 weeks (Stake bookings up). Promoted to Rush.',
+      dataPoints: [
+        { label: 'On hand vs par',  value: '5 / 8 kg' },
+        { label: 'Burn rate change', value: '+12%', delta: 12 },
+        { label: 'Booking trend',   value: 'Stake +18% wk/wk' },
+      ],
+      alternatives: [
+        { label: 'Standard playbook', rejectedBecause: 'Par floor breach risk within 2 days; Standard avg cycle is 96 hours.' },
+      ],
+    },
+    undoWindow: { mode: 'hard-60' },
+  },
+  {
+    id: 'evt-003', type: 'vendor-rejection', agentId: 'A-01', at: _yesterday, category: 'Other', venue: 'SP',
+    poId: 'PO-3047', supplierId: 'SUP-018', confidence: 78, outcome: 'failed',
+    reasoning: {
+      why: 'Quote +18% over 30d median triggered Spend Watchdog. Eka Packaging cited supply shortage.',
+      dataPoints: [
+        { label: 'Quote vs market', value: '+18%', delta: 18 },
+        { label: 'Trust score',     value: '78' },
+      ],
+      alternatives: [
+        { label: 'Pulau Dry Goods', rejectedBecause: 'Does not carry the 1000ml takeaway box SKU.' },
+      ],
+    },
+    undoWindow: { mode: 'hard-60' },
+  },
+  {
+    id: 'evt-004', type: 'auto-order', agentId: 'A-01', at: '2026-05-15', category: 'Produce', venue: 'Multi',
+    poId: 'PO-3042', supplierId: 'SUP-021', confidence: 95, outcome: 'success',
+    reasoning: {
+      why: 'Recurring weekly trigger fired for CV Indo Sayur. Vendor contract active, spend cap untouched.',
+      dataPoints: [
+        { label: 'Recurring schedule', value: 'Weekly · Mon 06:00' },
+        { label: 'Spend cap usage',    value: '34% of monthly' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'ledger-close' },
+  },
+  {
+    id: 'evt-005', type: 'restock-forecast', agentId: 'A-02', at: '2026-05-15', category: 'Beverages', venue: 'BC',
+    skuId: 'SKU-0501', confidence: 86, outcome: 'success',
+    reasoning: {
+      why: 'Bintang case on-hand 84, par 100, burn rate trending up 8% (long weekend forecast). Restock proposed.',
+      dataPoints: [
+        { label: 'Days of cover',  value: '2.6 days' },
+        { label: 'Weekend signal', value: '+8% expected' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'hard-60' },
+  },
+  {
+    id: 'evt-006', type: 'spend-flag', agentId: 'A-04', at: '2026-05-15', category: 'Other', venue: 'SP',
+    poId: 'PO-3047', confidence: 91, outcome: 'overridden',
+    reasoning: {
+      why: 'Quote 18% above market median triggered hold under standing Spend Cap rule RUL-001.',
+      dataPoints: [
+        { label: 'Variance',     value: '+18%' },
+        { label: 'Rule fired',   value: 'RUL-001 Spend Cap' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'hard-60' },
+    override: { actor: 'user', reason: 'Splash needs the takeaway boxes for Saturday event — accept premium', at: _yesterday },
+  },
+  {
+    id: 'evt-007', type: 'auto-order', agentId: 'A-01', at: '2026-05-14', category: 'Beverages', venue: 'Multi',
+    poId: 'PO-3044', supplierId: 'SUP-031', confidence: 89, outcome: 'success',
+    reasoning: {
+      why: 'Multi-venue Bintang order auto-issued. BC + SP + RC consumption signals aligned.',
+      dataPoints: [
+        { label: 'Venue split',  value: 'BC 50% / SP 30% / RC 20%' },
+        { label: 'Vendor score', value: '90 composite' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'hard-60' },
+  },
+  {
+    id: 'evt-008', type: 'auto-order', agentId: 'A-03', at: '2026-05-14', category: 'Seafood', venue: 'Multi',
+    supplierId: 'SUP-014', confidence: 83, outcome: 'success',
+    reasoning: {
+      why: 'WhatsApp message sent to Wayan Sukma confirming PO-3041 quote details. Read receipt at 14:08.',
+      dataPoints: [
+        { label: 'Channel',  value: 'WhatsApp · +62 812 3456 7890' },
+        { label: 'Status',   value: 'Read 14:08' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'ledger-close' },
+  },
+  {
+    id: 'evt-009', type: 'restock-forecast', agentId: 'A-02', at: '2026-05-13', category: 'Seafood', venue: 'ST',
+    skuId: 'SKU-0421', confidence: 84, outcome: 'success',
+    reasoning: {
+      why: 'Sashimi-grade tuna burn rate up 12% (Stake covers +18% wk). Restock proposed.',
+      dataPoints: [
+        { label: 'Burn rate',     value: '+12%' },
+        { label: 'Stake covers',  value: '+18% wk/wk' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'hard-60' },
+  },
+  {
+    id: 'evt-010', type: 'spend-flag', agentId: 'A-04', at: '2026-05-12', category: 'Beverages', venue: 'ST',
+    poId: 'PO-3046', confidence: 87, outcome: 'success',
+    reasoning: {
+      why: 'PT Wine Cellar Nusa quote within 3% of last benchmark. Approved.',
+      dataPoints: [
+        { label: 'Variance vs last',  value: '+3%' },
+        { label: 'FX lock applied',   value: 'IDR/USD 15500' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'hard-60' },
+  },
+  {
+    id: 'evt-011', type: 'qc-event', agentId: 'A-05', at: '2026-05-04', category: 'Beverages', venue: 'Multi',
+    poId: 'PO-2991', supplierId: 'SUP-031', confidence: 99, outcome: 'failed',
+    reasoning: {
+      why: 'Bintang delivery short 12 cases. QC fail recorded at receiving venue (BC). Dispute opened.',
+      dataPoints: [
+        { label: 'Cases ordered',  value: '180' },
+        { label: 'Cases received', value: '168' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'hard-60' },
+  },
+  {
+    id: 'evt-012', type: 'rule-trigger', agentId: 'A-04', at: '2026-05-10', category: 'Protein', venue: 'ST',
+    confidence: 100, outcome: 'success',
+    reasoning: {
+      why: 'Vendor Trust Floor (RUL-002, scope=vendor, threshold=70) checked against AUS Premium Meats (composite 89). Passed.',
+      dataPoints: [
+        { label: 'Vendor composite', value: '89' },
+        { label: 'Floor threshold',  value: '70' },
+      ],
+      alternatives: [],
+    },
+    undoWindow: { mode: 'ledger-close' },
+  },
+];
+
+// ── Policy Rules (3 active) ──────────────────────────────────
+
+export const finnsPolicyRules: PolicyRule[] = [
+  {
+    id: 'RUL-001', template: 'spend-cap',
+    name: 'Spend cap · Wine vendors',
+    config: { threshold: 50_000_000, currency: 'IDR' },
+    scope: 'vendor', active: true,
+    createdBy: 'Procurement Manager', createdAt: '2026-04-12',
+    triggers: 4,
+  },
+  {
+    id: 'RUL-002', template: 'vendor-trust-floor',
+    name: 'Vendor trust floor · 70 composite',
+    config: { threshold: 70 },
+    scope: 'all', active: true,
+    createdBy: 'Procurement Manager', createdAt: '2026-03-08',
+    triggers: 11,
+  },
+  {
+    id: 'RUL-003', template: 'fraud-hold',
+    name: 'Duplicate-amount fraud hold',
+    config: { window_hours: 72, exact_amount_match: true },
+    scope: 'all', active: true,
+    createdBy: 'Procurement Manager', createdAt: '2026-02-20',
+    triggers: 2,
+  },
+];
+
+// ── Disputes (2) ─────────────────────────────────────────────
+
+export const finnsDisputes: FinnsDispute[] = [
+  {
+    id: 'DSP-101', raisedBy: 'F&B Director', refEventId: 'evt-003', refPoId: 'PO-3047',
+    reason: 'Splash event Saturday — packaging shortage. Accept 18% premium one-off.',
+    priority: 'high', status: 'open',
+  },
+  {
+    id: 'DSP-102', raisedBy: 'BC Receiving Lead', refEventId: 'evt-011', refPoId: 'PO-2991',
+    reason: 'Bintang short delivery — 12 cases missing. Request credit memo + redelivery.',
+    priority: 'medium', status: 'escalated',
+  },
 ];

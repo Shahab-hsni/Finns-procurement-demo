@@ -10,12 +10,8 @@ import { SpendingPage } from "./components/SpendingPage";
 import { SuppliersPage } from "./components/SuppliersPage";
 import { AIActivityPage } from "./components/AIActivityPage";
 // Agent modules
-import { NerveCenterPage } from "./components/nerve-center/NerveCenterPage";
 import { WorkflowsPage } from "./components/workflows/WorkflowsPage";
-import { TransformationPage } from "./components/transformation/TransformationPage";
-import { GlobalOpsPage } from "./components/global-ops/GlobalOpsPage";
 import { GovernancePage } from "./components/governance/GovernancePage";
-import { InfrastructurePage } from "./components/infrastructure/InfrastructurePage";
 // Demo (not part of production)
 import { UserFlowDemoPage } from "./components/demo/UserFlowDemoPage";
 import { FlowChartPage } from "./components/demo/FlowChartPage";
@@ -46,19 +42,15 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 
 // ── Page types ──
 type CorePage = 'overview' | 'orders' | 'inventory' | 'spending' | 'suppliers' | 'ai-activity' | 'request';
-type AgentPage = 'nerve-center' | 'workflows' | 'global-ops' | 'intelligence' | 'governance' | 'infrastructure';
+type AgentPage = 'workflows' | 'governance';
 type DemoPage = 'flow-demo' | 'flow-chart';
 type Page = CorePage | AgentPage | DemoPage;
 
-const AGENT_PAGES: AgentPage[] = ['nerve-center', 'workflows', 'global-ops', 'intelligence', 'governance', 'infrastructure'];
+const AGENT_PAGES: AgentPage[] = ['workflows', 'governance'];
 
 const AGENT_NAV: { id: AgentPage; label: string }[] = [
-  { id: 'nerve-center', label: 'Nerve Center' },
-  { id: 'workflows', label: 'Workflows & Kernel' },
-  { id: 'global-ops', label: 'Global Operations' },
-  { id: 'intelligence', label: 'Intelligence' },
-  { id: 'governance', label: 'Governance' },
-  { id: 'infrastructure', label: 'Infrastructure' },
+  { id: 'workflows', label: 'Workflows' },
+  { id: 'governance', label: 'Activity & Governance' },
 ];
 
 export default function App() {
@@ -163,14 +155,8 @@ export default function App() {
   const renderPageContent = () => {
     switch (currentPage) {
       // ── Agent pages ──
-      case 'nerve-center':
-        return <NerveCenterPage theme={pageTheme} />;
       case 'workflows':
         return <WorkflowsPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
-      case 'intelligence':
-        return <TransformationPage theme={pageTheme} />;
-      case 'global-ops':
-        return <GlobalOpsPage theme={pageTheme} />;
       case 'governance':
         return <GovernancePage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
       // ── Core pages ──
@@ -186,8 +172,6 @@ export default function App() {
         return <SuppliersPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
       case 'ai-activity':
         return <AIActivityPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
-      case 'infrastructure':
-        return <InfrastructurePage theme={pageTheme} />;
       case 'flow-demo':
         return <UserFlowDemoPage theme={pageTheme} />;
       case 'flow-chart':

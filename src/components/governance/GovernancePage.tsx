@@ -5,7 +5,6 @@ import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
 import { ThreePanelLayout } from '../layout/ThreePanelLayout';
 import { IntelligencePanel } from '../IntelligencePanel';
-import { ControlPlaneList } from './ControlPlaneList';
 import { DecisionLedger } from './DecisionLedger';
 import { DisputePanel } from './DisputePanel';
 import { InfoTooltip } from '../ui/InfoTooltip';
@@ -617,12 +616,9 @@ export function GovernancePage({ theme: themeProp, onNavigate }: GovernancePageP
     <ThreePanelLayout
       isDark={isDark}
       left={
-        <div id="gov-left-panel" className="h-full">
-          <ControlPlaneList
-            isDark={isDark}
-            selectedId={selectedId}
-            onSelectId={setSelectedId}
-          />
+        <div id="gov-left-panel" className={`h-full p-4 ${isDark ? 'text-gray-500' : 'text-gray-400'} text-xs`}>
+          {/* Control planes removed — left panel will become the Activity/Agents/Policy/Disputes tabbed catalog in Phase 3h. */}
+          <div>Activity & Governance left panel — pending merge</div>
         </div>
       }
       center={

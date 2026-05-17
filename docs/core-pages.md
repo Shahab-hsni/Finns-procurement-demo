@@ -2191,6 +2191,45 @@ On mount and on every `hashchange`:
 
 ---
 
+## 8.8 Mode-Awareness · Manual Baseline Audit
+
+Workflows is a read-only reference page. **Almost nothing changes per mode** — the page describes what each playbook is, not what the system is currently doing with it. See `PLATFORM-MAP.md § 3a` for the global model.
+
+### Sensing + reference content (always on)
+
+- **3 playbook cards** in left panel (icon, name, complexity badge, 3-stat strip).
+- **Search input** filters playbook cards.
+- **Hero card** for selected playbook (icon, complexity, description, 4 stats, "when it runs" note).
+- **Flow Path** vertical 5-stage list (stage name, owning-agent chip, plain-English description, throughput).
+- **Read-only banner** at bottom directs config to Activity & Governance policy rules.
+- **Atlas right panel** — playbook stats, recent POs on this playbook (deep-link chips), stage agent reference list, Atlas insight one-liner. Never gated.
+- **Hash deep-link reader** for `#workflow=WF-XXX`.
+
+### Mode-aware surfaces (action layer)
+
+**The page is fundamentally read-only** — it describes playbook semantics, not live state. Per-mode differences are cosmetic:
+
+| Surface | Auto | Assist | Off |
+|---------|------|--------|-----|
+| Stage card description copy | Describes agent role in playbook concept | Same | Same — describes the role; doesn't depend on agent currently acting |
+| "Owning Agent" chip on each stage | Shows A-01..A-05 / Human | Same | Same — descriptive of the role, not action |
+| Recent POs chip list | Lists POs that ran on playbook | Same | Same — historical, mode-agnostic |
+| Atlas insight one-liner | Describes playbook design | Same | Same |
+
+### Real gaps (open backlog)
+
+1. **"Owning Agent" chip might confuse Off-mode users** — each stage shows "A-04 · Spend Watchdog" but no agent is acting. **Fix**: small mode-aware caveat under the Flow Path — "In Off mode you fulfill these roles yourself." Or hover state on the chip explains the role.
+2. **No "Manual Workflow Guide" content for Off mode.** A user in Off mode may want a checklist of "Here's what each stage requires you to do manually" — items expanded with actual manual inputs (matches Orders' Task Module Sheet fields). Today the stage descriptions are agent-flavored.
+3. **`activeOrderCount` per playbook is misleading in Off mode** — if 0 POs are on Rush because no agent has fired Rush, the card says "Active: 0" which is correct but unhelpful. **Fix**: tooltip explaining how to start a Rush PO manually (via New Request → set urgency to urgent).
+
+### Proposed fix shape
+
+- **Stage card "Owning Agent" → "Owning Role"** label in Off mode, with descriptor: "In Off mode, this role is yours to fulfill." Same visual chip, mode-aware label.
+- **Stage card expandable** in Off mode to reveal the manual inputs needed (mirrors Orders Task Module Sheet schema for that stage). Gives the user a concrete "here's what I need to do at this stage" checklist.
+- **"How to start a Rush PO manually"** popover tooltip on the WF-RSH playbook hero card. Same shape for WF-REC.
+
+---
+
 # 9. Shared Patterns
 
 Cross-page patterns that surface on multiple pages. Document once; reference from per-page sections.

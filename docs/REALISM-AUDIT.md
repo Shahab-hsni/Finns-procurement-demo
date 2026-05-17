@@ -98,6 +98,27 @@ Every page assumes the click succeeds. No network error, no permission denied, n
 
 **Production design:** error envelopes on every action (`{ kind: 'idle' | 'pending' | 'success' | 'network_error' | 'stale' | 'permission_denied' | 'conflict' }`); inline error pill with retry/refresh; empty states for cold-start situations.
 
+### 11. Manual baseline incomplete — operator can't drive without an agent in the loop
+**The hidden cost of an agent-first prototype.** Every page was built assuming agents are the default actor; manual flows exist as escape hatches (per-entity labor mode, Manual Takeover) but the **default** UI surfaces, copy, attributions, and action receipts all assume autonomous agent involvement. With the 3-mode Autonomy switch (`Off` / `Assist` / `Auto`, see `PLATFORM-MAP.md § 3a`), this becomes a first-class problem: in `Off` mode the system must work without any A-01..A-05 participation, only Atlas (chat copilot, never gated) and the sensing layer (warnings, alerts, watch-lists, ETA tracking — always on).
+
+**The audit lives in `core-pages.md` as a "Mode-Awareness · Manual Baseline Audit" subsection at the end of each page section** (§ 1.13 Orders, § 2.7 Overview, § 3.11 Inventory, § 4.7 New Request, § 5.16 Suppliers, § 6.9 Spending, § 7.13 Activity & Governance, § 8.8 Workflows). Per-page gaps + proposed fix shapes are documented there in full.
+
+**Cross-cutting fix shapes** (build once, reused across pages):
+- **Unified Action Log** — single store, `actorType: 'agent' | 'admin' | 'system'`, fed by every mutating action. Consumed by Activity Feed (canonical) + every other page's "Recent activity" / "Action Log" surface with appropriate filters. **Foundation for the manual baseline.**
+- **Mode-aware CTA component** — wraps action buttons; renders "Auto-execute queued" / "Suggested · Approve | Defer | Decline" / "Manual review" copy based on `useAutonomyMode()`. Same component on Overview's Triage Queue cards, Inventory's Critical SKU cards, Orders' Approve & Execute, Spending's Lock Savings, etc.
+- **Mode-aware Reasoning Chain renderer** — when `event.actorType === 'admin'`, render User identity card; when `'agent'`, render Agent identity card. Same shape, different actor.
+- **`assignedAgent` becomes optional** on `Order` / `FinnsSKU` / `FinnsSupplier` interfaces — allows `null` for self-managed entities. Chip hides when null OR when mode is Off.
+- **`handleSubmit` patterns read `useAutonomyMode()` + `defaultLaborMode()`** — new POs / restock requests / vendor onboardings created in Off/Assist land with `laborMode: 'manual'`.
+- **`finns-qc-failure` event dispatch parity** — the manual Stage-5-fail path on Orders must fire the same CustomEvent as the agent path, so Suppliers' QC Alerts banner lands consistently in all modes.
+
+**Concrete missing manual surfaces** that the audit surfaces:
+1. **Vendor Onboarding mini-wizard** (4 steps: Lead → KYC → Banking → First-PO terms). Today "Onboard New Vendor" redirects to New Request which is the wrong page. (See § 5 #12 below — pre-dates the mode audit, but is the #1 gap in the page-7-audit too.)
+2. **Multi-vendor RFQ Composer** modal reachable from Orders Stage 2 + New Request Step 2 + Suppliers vendor page. Today Source Bridge is 1-on-1 only — there's no way to ask N vendors for a quote from inside the platform.
+3. **"Add Manual Saving" entry** on Spending Category Detail — record renegotiation savings achieved without agent involvement.
+4. **Renegotiation Workspace** with opening position / vendor responses / rounds / red-line / signed amendment. Today the "Initiate Renegotiation" CTA is a one-click confetti animation (§ 5 #9).
+5. **Tabbed Activity & Governance left panel** (Activity / Agents / Policy / Disputes). Today only the Activity feed renders. Roster view + policy list view + dispute panel are all blocked on this. (See § 7 gaps below for detail.)
+6. **Manual-mode "Notes" surface** in Orders / Inventory / Suppliers right panels — replaces the empty Agent Reasoning slot for entities where no agent is acting.
+
 ---
 
 ## Per-page flags

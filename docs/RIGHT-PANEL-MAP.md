@@ -423,6 +423,29 @@ Examples:
 - Spending **Venue Mix** card mirrors the center grid's per-venue split.
 - Activity & Governance event cards carry a venue chip in the chip row.
 
+### Autonomy mode awareness in the right panel
+
+(Per Rule 7. See `PLATFORM-MAP.md § 3a` for the sensing-vs-acting model.)
+
+**Always rendered regardless of mode** (Atlas + sensing layer):
+- Atlas header + page-context subtitle on every page.
+- Atlas data summaries: Spending Pulse (New Request), Venue Consumption Split (Orders), Venue Mix (Spending), Vendor Reliability metrics (Suppliers + New Request), Market Benchmarking (Suppliers), Forecast Confidence (Spending), Capital Efficiency (Activity & Governance), Market Signal observation (Inventory), Logistics Risk Map (New Request).
+- Atlas chat input at the bottom.
+- Reasoning Chain display for historical events (Activity & Governance) — the chain stored at the time the event happened, regardless of current mode.
+
+**Hidden / changed in `Off` mode** (A-01..A-05 editorial layer):
+- "Suggested action" cards (Recurring Vendor card on New Request Step 2; Suggested Rule card on Activity & Governance Policy tab; Atlas Recommendation card on Dispute view).
+- Editorial narrative — "A-NN recommends…" / "A-01 has drafted the opening offer…" — replaced with raw fact rendering.
+- Agent identity badges + confidence scores on the right-panel reasoning chain for events that happened in Off mode (replaced with a User identity card).
+- "Suspend / Resume Agent" controls (no agent is acting; nothing to suspend).
+- The "Mission Brief Active" card on New Request Step 4 (replaced with manual continuation guidance).
+- The "Live Agent Activity" rotating pulse + "Autonomous Actions Today" feed on Overview.
+
+**Per-page mode-awareness audit lives in `core-pages.md`** under the **"Mode-Awareness · Manual Baseline Audit"** subsection of each page section:
+- § 1.13 Orders · § 2.7 Overview · § 3.11 Inventory · § 4.7 New Request · § 5.16 Suppliers · § 6.9 Spending · § 7.13 Activity & Governance · § 8.8 Workflows.
+
+Each subsection captures: sensing surfaces (always on), Atlas-curated data layer (always on), mode-aware CTA table (Auto / Assist / Off), real gaps with proposed fix shapes.
+
 ### Center-morph from right-panel action (rare pattern)
 
 A few right-panel actions trigger a **center** morph rather than a navigation:

@@ -95,14 +95,9 @@ export default function App() {
   }, []);
 
   // Cross-page navigation from deep links.
-  // Pages dispatch `finns-navigate-page` with optional context (evtId / agentId
-  // / orderId / workflowId). We promote the context to the URL hash before
-  // switching pages so the receiver's hash-reader picks it up.
-  //
-  // Backward-compat: also listen to legacy `buyamia-navigate-page` while old
-  // pages still emit it. Removed in Phase 4 once every emitter is migrated.
-  // The deprecated `decisionId` field is no longer promoted -- Decision
-  // Attribution Trail is cut from Finn's scope.
+  // Pages dispatch `finns-navigate-page` with optional context (evtId /
+  // agentId / orderId / workflowId). We promote the context to the URL hash
+  // before switching pages so the receiver's hash-reader picks it up.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{
@@ -121,11 +116,7 @@ export default function App() {
       if (detail.page) setCurrentPage(detail.page as Page);
     };
     window.addEventListener('finns-navigate-page', handler);
-    window.addEventListener('buyamia-navigate-page', handler); // legacy, removed in Phase 4
-    return () => {
-      window.removeEventListener('finns-navigate-page', handler);
-      window.removeEventListener('buyamia-navigate-page', handler);
-    };
+    return () => window.removeEventListener('finns-navigate-page', handler);
   }, []);
 
   // 8 nav items per Finn's PLATFORM-MAP.md. Activity & Governance is the

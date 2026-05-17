@@ -602,8 +602,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
       const { skuId } = (e as CustomEvent<{ skuId: string }>).detail ?? {};
       if (skuId) setFailedIntentIds(prev => new Set([...prev, skuId]));
     };
-    window.addEventListener('buyamia-restock-intent-failed', handler);
-    return () => window.removeEventListener('buyamia-restock-intent-failed', handler);
+    window.addEventListener('finns-restock-intent-failed', handler);
+    return () => window.removeEventListener('finns-restock-intent-failed', handler);
   }, []);
 
   // Restock-journey force-complete (Manual Takeover hook, mirrors Orders).

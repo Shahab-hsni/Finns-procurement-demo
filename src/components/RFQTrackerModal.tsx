@@ -1,0 +1,392 @@
+/**
+ * Finn's — RFQ Tracker (Phase 4h.2)
+ *
+ * Surfaces in-flight RFQs and the quotes coming back from vendors.
+ * Lets the user pick a winner — awarding emits an rfq-award action
+ * log entry + synthesises a PO so the awarded vendor's quote becomes
+ * a real procurement record.
+ *
+ * Reads from `lib/rfqStore.ts` via useRFQs(). Subscribes to mock
+ * quote arrivals (driven by setTimeout inside the store on RFQ
+ * creation) so the tracker fills up live during a session.
+ */
+
+import { useMemo, useState, useEffect } from 'react';
+import {
+  X, Send, ChevronDown, ChevronUp, CircleCheck, Clock, AlertTriangle,
+  Lock, Sparkles, Truck, Award, XCircle,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from './ui/button';
+import {
+  useRFQs, awardRFQ, cancelRFQ,
+  type RFQRecord, type RFQStatus, type RFQQuote,
+} from '../lib/rfqStore';
+import { logUserAction } from '../lib/actionLog';
+import { useAutonomyMode, AUTONOMY_LABEL } from '../lib/autonomy';
+
+interface RFQTrackerModalProps {
+  isDark: boolean;
+  isOpen: boolean;
+  onClose: () => void;
+  /** Optional handler — fires when the user clicks "Compose new" from inside the tracker. */
+  onComposeNew?: () => void;
+}
+
+const STATUS_META: Record<RFQStatus, { label: string; icon: typeof Clock; tone: 'amber' | 'blue' | 'green' | 'gray' | 'red' }> = {
+  awaiting:  { label: 'Awaiting',  icon: Clock,         tone: 'amber' },
+  partial:   { label: 'Partial',   icon: Clock,         tone: 'blue'  },
+  received:  { label: 'Received',  icon: CircleCheck,   tone: 'green' },
+  awarded:   { label: 'Awarded',   icon: Award,         tone: 'green' },
+  cancelled: { label: 'Cancelled', icon: XCircle,       tone: 'gray'  },
+  expired:   { label: 'Expired',   icon: AlertTriangle, tone: 'red'   },
+};
+
+const TONE_STYLE = (tone: 'amber' | 'blue' | 'green' | 'gray' | 'red', isDark: boolean): string => {
+  switch (tone) {
+    case 'amber': return isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700';
+    case 'blue':  return isDark ? 'bg-blue-500/15 text-blue-300'   : 'bg-blue-50 text-blue-700';
+    case 'green': return isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700';
+    case 'red':   return isDark ? 'bg-red-500/15 text-red-400'     : 'bg-red-50 text-red-700';
+    default:      return isDark ? 'bg-gray-800 text-gray-400'      : 'bg-gray-100 text-gray-600';
+  }
+};
+
+const fmtIdrShort = (n: number): string => {
+  if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000)     return `Rp ${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)         return `Rp ${(n / 1_000).toFixed(0)}rb`;
+  return `Rp ${n}`;
+};
+
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.round(ms / 1000);
+  if (s < 60)  return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60)  return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24)  return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d}d ago`;
+}
+
+export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew }: RFQTrackerModalProps) {
+  const rfqs = useRFQs();
+  const mode = useAutonomyMode();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Auto-expand the most recent active RFQ when opening fresh.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (expandedId) return;
+    const active = rfqs.find(r => r.status !== 'awarded' && r.status !== 'cancelled');
+    if (active) setExpandedId(active.id);
+  }, [isOpen, rfqs, expandedId]);
+
+  // Tick every 15s so "received Xm ago" labels stay fresh while the
+  // tracker is open. Cheap and bounded by the modal lifetime.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setInterval(() => setTick(t => t + 1), 15_000);
+    return () => clearInterval(t);
+  }, [isOpen]);
+
+  const grouped = useMemo(() => {
+    const active   = rfqs.filter(r => r.status === 'awaiting' || r.status === 'partial' || r.status === 'received');
+    const finished = rfqs.filter(r => r.status === 'awarded' || r.status === 'cancelled' || r.status === 'expired');
+    return { active, finished };
+  }, [rfqs]);
+
+  const handleAward = (rfq: RFQRecord, quote: RFQQuote) => {
+    const poId = `PO-${3050 + Math.floor(Math.random() * 200)}`;
+    awardRFQ(rfq.id, quote.vendorId, poId);
+    // Two action log entries: the award itself + a po-create for the synthesised PO.
+    logUserAction({
+      kind: 'rfq-award',
+      entity: { type: 'supplier', id: quote.vendorId },
+      summary: `Awarded ${rfq.id} → ${quote.vendorName} · ${fmtIdrShort(quote.totalIdr)} · ${quote.leadTimeDays}d lead`,
+      venue: rfq.venue,
+      details: rfq.items.map(it => `${it.qty}${it.unit} ${it.name}`).join(', '),
+      meta: {
+        rfqId: rfq.id,
+        winningVendorId: quote.vendorId,
+        winningVendorName: quote.vendorName,
+        totalIdr: quote.totalIdr,
+        leadTimeDays: quote.leadTimeDays,
+        synthesisedPoId: poId,
+      },
+    });
+    logUserAction({
+      kind: 'po-create',
+      entity: { type: 'po', id: poId },
+      summary: `Created ${poId} from ${rfq.id} · ${quote.vendorName} · ${fmtIdrShort(quote.totalIdr)}`,
+      venue: rfq.venue,
+      meta: { fromRfqId: rfq.id, vendorId: quote.vendorId, totalIdr: quote.totalIdr },
+    });
+    toast.success(`${quote.vendorName} awarded`, {
+      description: `${rfq.id} → ${poId} · ${fmtIdrShort(quote.totalIdr)}`,
+    });
+  };
+
+  const handleCancel = (rfq: RFQRecord) => {
+    cancelRFQ(rfq.id);
+    logUserAction({
+      kind: 'po-cancel',
+      entity: { type: 'po', id: rfq.id },
+      summary: `Cancelled ${rfq.id} · pre-PO`,
+      details: `Cancelled with ${rfq.quotes.length}/${rfq.vendorIds.length} quotes received.`,
+      meta: { rfqId: rfq.id },
+    });
+    toast.warning(`Cancelled ${rfq.id}`, { description: 'Quotes preserved for the record.' });
+  };
+
+  if (!isOpen) return null;
+
+  const panelBg     = isDark ? 'bg-[#1a1a1a]' : 'bg-white';
+  const panelBorder = isDark ? 'border-gray-800' : 'border-gray-200';
+  const textPrimary = isDark ? 'text-white' : 'text-gray-900';
+  const textMuted   = isDark ? 'text-gray-400' : 'text-gray-600';
+  const cardBg      = isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200';
+
+  const renderRFQ = (rfq: RFQRecord) => {
+    const meta = STATUS_META[rfq.status];
+    const StatusIcon = meta.icon;
+    const expanded = expandedId === rfq.id;
+    const minQuote = rfq.quotes.length > 0 ? Math.min(...rfq.quotes.map(q => q.totalIdr)) : null;
+    const isTerminal = rfq.status === 'awarded' || rfq.status === 'cancelled' || rfq.status === 'expired';
+
+    return (
+      <div key={rfq.id} className={`rounded-lg border ${cardBg}`}>
+        <button
+          onClick={() => setExpandedId(expanded ? null : rfq.id)}
+          className="w-full text-left px-3 py-2.5 flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-white text-gray-700 border border-gray-300'}`}>
+                {rfq.id}
+              </span>
+              <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${TONE_STYLE(meta.tone, isDark)}`}>
+                <StatusIcon className="h-2.5 w-2.5" />
+                {meta.label}
+              </span>
+              <span className={`text-[10px] ${textMuted}`}>
+                {rfq.quotes.length}/{rfq.vendorIds.length} quoted
+              </span>
+              {rfq.venue && (
+                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
+                  {rfq.venue}
+                </span>
+              )}
+            </div>
+            <p className={`text-[11px] mt-1 leading-snug ${textPrimary}`}>
+              {rfq.items.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}
+            </p>
+            <div className={`text-[10px] mt-1 flex items-center gap-2 flex-wrap ${textMuted}`}>
+              <span>Due {rfq.deadline}</span>
+              <span>·</span>
+              <span>Sent via {rfq.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}</span>
+              <span>·</span>
+              <span>{relativeTime(rfq.createdAt)}</span>
+              {minQuote != null && (
+                <>
+                  <span>·</span>
+                  <span className={isDark ? 'text-green-400' : 'text-green-700'}>
+                    Best {fmtIdrShort(minQuote)}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <span className={`shrink-0 mt-1 ${textMuted}`}>
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </span>
+        </button>
+
+        {expanded && (
+          <div className={`px-3 pb-3 pt-1 space-y-2 border-t ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+            {/* Vendor list with quote / pending status */}
+            <div>
+              <p className={`text-[10px] uppercase tracking-wide font-bold mb-1.5 ${textMuted}`}>
+                Vendors ({rfq.vendorIds.length})
+              </p>
+              <div className="space-y-1.5">
+                {rfq.vendorIds.map((vid, idx) => {
+                  const vendorName = rfq.vendorNames[idx] ?? vid;
+                  const quote = rfq.quotes.find(q => q.vendorId === vid);
+                  const isWinner = rfq.awardedVendorId === vid;
+                  const lowestId = minQuote != null
+                    ? rfq.quotes.find(q => q.totalIdr === minQuote)?.vendorId
+                    : null;
+                  const isLowest = quote && quote.vendorId === lowestId;
+
+                  return (
+                    <div key={vid} className={`flex items-center gap-2 p-2 rounded border ${
+                      isWinner
+                        ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/50' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                        : isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+                    }`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[11px] font-semibold ${textPrimary}`}>{vendorName}</span>
+                          {isWinner && (
+                            <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                              <Award className="h-2.5 w-2.5" /> Awarded
+                            </span>
+                          )}
+                          {!isWinner && isLowest && rfq.status !== 'awarded' && (
+                            <span className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-green-400' : 'text-green-700'}`}>
+                              Lowest
+                            </span>
+                          )}
+                        </div>
+                        {quote ? (
+                          <div className={`text-[10px] mt-0.5 flex items-center gap-2 flex-wrap ${textMuted}`}>
+                            <span className={`font-bold ${isDark ? 'text-green-400' : 'text-green-700'}`}>
+                              {fmtIdrShort(quote.totalIdr)}
+                            </span>
+                            <span className="inline-flex items-center gap-0.5">
+                              <Truck className="h-2.5 w-2.5" />
+                              {quote.leadTimeDays}d lead
+                            </span>
+                            <span>·</span>
+                            <span>{relativeTime(quote.receivedAt)}</span>
+                          </div>
+                        ) : (
+                          <div className={`text-[10px] mt-0.5 inline-flex items-center gap-1 ${textMuted}`}>
+                            <Clock className="h-2.5 w-2.5" /> Pending reply
+                          </div>
+                        )}
+                        {quote?.note && (
+                          <p className={`text-[10px] mt-1 italic ${textMuted}`}>"{quote.note}"</p>
+                        )}
+                      </div>
+                      {quote && !isTerminal && !isWinner && (
+                        <button
+                          onClick={() => handleAward(rfq, quote)}
+                          className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border transition-colors ${
+                            isLowest
+                              ? 'bg-[#87986a] border-[#87986a] text-white hover:bg-[#6b7a54]'
+                              : isDark
+                                ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                          }`}>
+                          <Award className="h-2.5 w-2.5" /> Award
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {rfq.notes && (
+              <div className={`text-[10px] p-2 rounded ${isDark ? 'bg-[#1a1a1a] text-gray-300' : 'bg-white text-gray-700 border border-gray-200'}`}>
+                <span className={`font-semibold ${textMuted}`}>Notes:</span> {rfq.notes}
+              </div>
+            )}
+
+            {/* Footer actions */}
+            <div className="flex items-center justify-between pt-1">
+              <div className={`text-[10px] ${textMuted}`}>
+                {rfq.awardedPoId
+                  ? <>Awarded → <span className="font-semibold">{rfq.awardedPoId}</span></>
+                  : isTerminal
+                    ? null
+                    : `Quotes auto-arrive as vendors reply.`}
+              </div>
+              {!isTerminal && (
+                <button
+                  onClick={() => handleCancel(rfq)}
+                  className={`text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border transition-colors ${
+                    isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/10' : 'border-red-300/70 text-red-600 hover:bg-red-50'
+                  }`}>
+                  <XCircle className="h-2.5 w-2.5" /> Cancel RFQ
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.55)' }}
+         onClick={onClose}>
+      <div className={`relative w-full max-w-3xl max-h-[88vh] rounded-2xl border shadow-2xl flex flex-col ${panelBg} ${panelBorder}`}
+           onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className={`shrink-0 flex items-start justify-between gap-3 p-5 border-b ${panelBorder}`}>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className={`text-base font-bold ${textPrimary}`}>Your RFQs</h2>
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+              }`}>
+                <Lock className="h-2.5 w-2.5" /> Internal Directory
+              </span>
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
+                Autonomy: {AUTONOMY_LABEL[mode]}
+              </span>
+            </div>
+            <p className={`text-xs mt-1 ${textMuted}`}>
+              In-flight quote requests and the vendor replies coming back. Award the winner to mint a PO.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {onComposeNew && (
+              <Button onClick={() => { onComposeNew(); onClose(); }}
+                      className="bg-[#87986a] hover:bg-[#6b7a54] text-white h-8 px-3 text-xs">
+                <Sparkles className="h-3.5 w-3.5 mr-1" /> Compose new
+              </Button>
+            )}
+            <button onClick={onClose}
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
+          {rfqs.length === 0 ? (
+            <div className={`text-center text-[11px] py-12 rounded-lg border border-dashed ${isDark ? 'border-gray-800 text-gray-500' : 'border-gray-300 text-gray-500'}`}>
+              No RFQs yet. Click <span className={`font-semibold ${textPrimary}`}>Compose new</span> above to send your first one.
+            </div>
+          ) : (
+            <>
+              {grouped.active.length > 0 && (
+                <section>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className={`text-[10px] uppercase tracking-wide font-bold ${textMuted}`}>
+                      Active ({grouped.active.length})
+                    </h3>
+                    <span className={`text-[10px] ${textMuted}`}>
+                      Mock quotes arrive 5–15s after sending.
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {grouped.active.map(renderRFQ)}
+                  </div>
+                </section>
+              )}
+              {grouped.finished.length > 0 && (
+                <section>
+                  <h3 className={`text-[10px] uppercase tracking-wide font-bold mb-2 ${textMuted}`}>
+                    Closed ({grouped.finished.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {grouped.finished.map(renderRFQ)}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

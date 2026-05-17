@@ -30,6 +30,7 @@ import { finnsSuppliers } from '../lib/mockData';
 import type { FinnsCategory, VenueTag } from '../lib/types';
 import { logUserAction } from '../lib/actionLog';
 import { useAutonomyMode, AUTONOMY_LABEL } from '../lib/autonomy';
+import { createRFQ } from '../lib/rfqStore';
 
 interface RFQComposerModalProps {
   isDark: boolean;
@@ -113,14 +114,36 @@ export function RFQComposerModal({ isDark, isOpen, onClose }: RFQComposerModalPr
     // Pick category from first item (best-effort).
     const category = items.find(i => i.category)?.category || undefined;
 
+    const rfqId = `RFQ-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
+
+    // Persist to the RFQ store (scheduled mock quote ingestion).
+    createRFQ({
+      id: rfqId,
+      deadline,
+      channel,
+      items: items.map(i => ({
+        name: i.name.trim(),
+        category: i.category || undefined,
+        qty: i.qty,
+        unit: i.unit,
+        // Rough target price seed — used for plausible mock quote noise.
+        targetPriceIdr: 50_000,
+      })),
+      notes: notes.trim() || undefined,
+      vendorIds: selectedVendorIds,
+      vendorNames,
+      venue: venueTag,
+    });
+
     logUserAction({
       kind: 'rfq-send',
       entity: { type: 'supplier', id: selectedVendorIds[0] },
-      summary: `Sent RFQ to ${vendorNames.length} vendor${vendorNames.length === 1 ? '' : 's'} · ${itemSummary.slice(0, 60)}${itemSummary.length > 60 ? '…' : ''}`,
+      summary: `Sent ${rfqId} to ${vendorNames.length} vendor${vendorNames.length === 1 ? '' : 's'} · ${itemSummary.slice(0, 60)}${itemSummary.length > 60 ? '…' : ''}`,
       category: category || undefined,
       venue: venueTag,
       details: `Vendors: ${vendorNames.join(', ')}. Deadline ${deadline}. Channel: ${channel}.${notes ? ` Notes: ${notes}` : ''}`,
       meta: {
+        rfqId,
         vendorIds: selectedVendorIds,
         itemCount: items.length,
         deadline,
@@ -129,8 +152,8 @@ export function RFQComposerModal({ isDark, isOpen, onClose }: RFQComposerModalPr
       },
     });
 
-    toast.success(`RFQ sent to ${vendorNames.length} vendor${vendorNames.length === 1 ? '' : 's'}`, {
-      description: `Quotes due ${deadline}. They'll surface here once received.`,
+    toast.success(`${rfqId} sent to ${vendorNames.length} vendor${vendorNames.length === 1 ? '' : 's'}`, {
+      description: `Track replies in Your RFQs. First quotes arrive in ~10s.`,
     });
 
     // Reset + close.

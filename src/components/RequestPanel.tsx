@@ -17,7 +17,9 @@ import type {
 } from "../lib/types";
 import { AgentCTA } from "./AgentCTA";
 import { RFQComposerModal } from "./RFQComposerModal";
+import { RFQTrackerModal } from "./RFQTrackerModal";
 import { useAutonomyMode } from "../lib/autonomy";
+import { useRFQs } from "../lib/rfqStore";
 
 interface RequestPanelProps {
   theme?: 'dark' | 'light';
@@ -102,6 +104,11 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   const [step, setStep] = useState(1);
   const autonomyMode = useAutonomyMode();
   const [rfqOpen, setRfqOpen] = useState(false);
+  const [rfqTrackerOpen, setRfqTrackerOpen] = useState(false);
+  const rfqRecords = useRFQs();
+  const activeRfqCount = rfqRecords.filter(r =>
+    r.status === 'awaiting' || r.status === 'partial' || r.status === 'received'
+  ).length;
 
   // Step 1 — Items
   const [requestName, setRequestName] = useState("Weekly produce restock");
@@ -614,18 +621,37 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
               <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{stepSubtitle[step]}</p>
               {step < 5 && <SourcingDAG />}
             </div>
-            {/* RFQ Composer trigger — manual sourcing surface (4h) */}
+            {/* RFQ Composer + Tracker triggers (4h / 4h.2) */}
             {step < 5 && (
-              <button onClick={() => setRfqOpen(true)}
-                title="Manually request quotes from multiple vendors before committing to a PO."
-                className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                  isDark
-                    ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10'
-                    : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
-                }`}>
-                <Sparkles className="h-3.5 w-3.5" />
-                Compose RFQ
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => setRfqTrackerOpen(true)}
+                  title="Open the RFQ tracker — see active quote requests, vendor replies, and award winners."
+                  className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    isDark
+                      ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}>
+                  <FileText className="h-3.5 w-3.5" />
+                  Your RFQs
+                  {activeRfqCount > 0 && (
+                    <span className={`ml-0.5 text-[9px] font-bold px-1 py-0 rounded-full ${
+                      isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                    }`}>
+                      {activeRfqCount}
+                    </span>
+                  )}
+                </button>
+                <button onClick={() => setRfqOpen(true)}
+                  title="Manually request quotes from multiple vendors before committing to a PO."
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    isDark
+                      ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10'
+                      : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                  }`}>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Compose RFQ
+                </button>
+              </div>
             )}
           </div>
 
@@ -1029,6 +1055,14 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
 
       {/* RFQ Composer modal (manual sourcing — 4h) */}
       <RFQComposerModal isDark={isDark} isOpen={rfqOpen} onClose={() => setRfqOpen(false)} />
+
+      {/* RFQ Tracker modal (4h.2) */}
+      <RFQTrackerModal
+        isDark={isDark}
+        isOpen={rfqTrackerOpen}
+        onClose={() => setRfqTrackerOpen(false)}
+        onComposeNew={() => setRfqOpen(true)}
+      />
     </div>
   );
 }

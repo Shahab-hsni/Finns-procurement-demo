@@ -8,6 +8,7 @@ import {
   Sparkles, ChevronRight, Plus, Trash2, CheckCircle,
   Package, MapPin, Users, Zap, FileText, ShieldCheck,
   AlertTriangle, Lock, Truck, X, Flame, ScrollText,
+  Clock, Award, Mail, MessageCircle,
 } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
 import { toast } from "sonner";
@@ -19,7 +20,9 @@ import { AgentCTA } from "./AgentCTA";
 import { RFQComposerModal } from "./RFQComposerModal";
 import { RFQTrackerModal } from "./RFQTrackerModal";
 import { useAutonomyMode } from "../lib/autonomy";
-import { useRFQs } from "../lib/rfqStore";
+import { useRFQs, awardRFQ, cancelRFQ, type RFQQuote } from "../lib/rfqStore";
+import { createPO, updatePO, type RuntimePO } from "../lib/poStore";
+import { logUserAction } from "../lib/actionLog";
 
 interface RequestPanelProps {
   theme?: 'dark' | 'light';
@@ -126,8 +129,30 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   const [newItemVenues, setNewItemVenues] = useState<VenueTag[]>(['BC']);
   const [playbook, setPlaybook] = useState<PlaybookId>('WF-STD');
 
-  // Step 2 — Vendors
+  // Step 2 — Sourcing (5a)
+  // Two paths: 'pick' (default) lets the user choose vendors directly
+  // from the directory; 'rfq' opens the RFQ Composer inline and shows
+  // a live waiting view until the user awards a winner.
   const [selectedVendors, setSelectedVendors] = useState<string[]>([finnsSuppliers[1]?.id ?? '']);
+  type SourcingPath = 'pick' | 'rfq';
+  const [sourcingPath, setSourcingPath] = useState<SourcingPath>('pick');
+  const [wizardRfqId, setWizardRfqId]   = useState<string | null>(null);
+  interface AwardedQuote {
+    vendorId: string;
+    vendorName: string;
+    totalIdr: number;
+    leadTimeDays: number;
+    channel: 'whatsapp' | 'email';
+    receivedAt: string;
+    rfqId: string;
+    poId: string;          // PO created at award time; updated again at Step 5 Submit
+    amContact: string;     // account manager display label
+    note?: string;
+  }
+  const [awardedQuote, setAwardedQuote] = useState<AwardedQuote | null>(null);
+  const wizardRfq = wizardRfqId
+    ? rfqRecords.find(r => r.id === wizardRfqId) ?? null
+    : null;
 
   // Step 3 — Delivery
   const [targetVenues, setTargetVenues] = useState<VenueTag[]>(['BC', 'RC']);
@@ -271,12 +296,98 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     setTargetVenues(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
   }
 
+  // ── Step 5 — final wizard Submit ──────────────────────────────
+  // Two paths converge here:
+  //   1. Direct vendor (sourcingPath === 'pick') — no PO exists yet.
+  //      Mint one with the wizard data + selected vendor.
+  //   2. RFQ award (sourcingPath === 'rfq' && awardedQuote) — the PO
+  //      was created at Award time. Update it with delivery details.
+  // Both routes navigate to Orders deep-linked to the PO so the user
+  // can run Approve & Execute (Stage 2 → 3) from one place.
   function handleSubmit() {
     const meta = PLAYBOOK_META[playbook];
     const playbookLabel = finnsPlaybooks.find(p => p.id === playbook)?.name ?? 'Standard';
-    const poId = `PO-30${String(Math.floor(Math.random() * 90) + 50)}`;
+
+    // Compose human-readable items + ETA.
+    const itemSummary = items.map(it =>
+      `${it.name} ${it.qty}${it.unit}${it.venues?.length ? ` · ${it.venues.join(' + ')}` : ''}`
+    );
+    const venueLabel = targetVenues.length === 0
+      ? 'BC'
+      : targetVenues.length === 1
+        ? targetVenues[0]
+        : 'Multi';
+    const totalIdr = items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
+
+    let poId: string;
+    if (awardedQuote) {
+      // ── RFQ path: PO exists, fill in delivery details ──
+      poId = awardedQuote.poId;
+      updatePO(poId, {
+        items: itemSummary,
+        humanStatus: 'Quote awarded · awaiting your approval',
+        humanDescription: `Awarded from ${awardedQuote.rfqId} · delivery to ${targetVenues.join(' + ') || 'BC'} on ${neededBy}.`,
+        eta: `${neededBy} · ${awardedQuote.leadTimeDays}d lead`,
+        workflowTemplate: playbook,
+      });
+      logUserAction({
+        kind: 'po-stage-advance',
+        entity: { type: 'po', id: poId },
+        summary: `Authorized ${poId} · ${awardedQuote.vendorName} · Rp ${(awardedQuote.totalIdr / 1_000_000).toFixed(2)}M (from RFQ ${awardedQuote.rfqId})`,
+        venue: venueLabel === 'BC' || venueLabel === 'RC' || venueLabel === 'ST' || venueLabel === 'SP' ? venueLabel : 'Multi',
+        details: `Delivery to ${targetVenues.join(', ')} on ${neededBy}. Quote received via ${awardedQuote.channel === 'whatsapp' ? 'WhatsApp' : 'email'} from ${awardedQuote.amContact}.`,
+        meta: {
+          poId,
+          rfqId: awardedQuote.rfqId,
+          vendorId: awardedQuote.vendorId,
+          totalIdr: awardedQuote.totalIdr,
+          path: 'rfq',
+          playbook,
+        },
+      });
+    } else {
+      // ── Direct path: mint a fresh PO ──
+      poId = `PO-${3050 + Math.floor(Math.random() * 200)}`;
+      const primaryVendorId = selectedVendors[0];
+      const primaryVendor   = finnsSuppliers.find(v => v.id === primaryVendorId);
+      const supplierName    = primaryVendor?.name ?? 'Vendor (TBD)';
+      const amContact       = primaryVendor
+        ? `${primaryVendor.accountManager.name} · ${primaryVendor.accountManager.whatsapp}`
+        : 'TBD';
+      const po: RuntimePO = {
+        id: poId,
+        supplier: supplierName,
+        items: itemSummary,
+        amount: totalIdr,
+        group: 'needs-action',
+        actionKind: 'approve',
+        humanAction: 'Approve',
+        humanStatus: 'Awaiting your approval',
+        humanDescription: `${meta.agent} (Sourcing) · ${playbookLabel} playbook. Delivery to ${targetVenues.join(' + ') || 'BC'} on ${neededBy}.`,
+        eta: `${neededBy}`,
+        dagStage: 1,
+        agentReasoning: `Vendor picked directly from the approved directory. ${primaryVendor ? `${primaryVendor.name} (composite ${primaryVendor.metrics.composite}, on-time ${primaryVendor.metrics.onTime}%, lead ${primaryVendor.metrics.leadTimeDays}d).` : ''} Estimated total: Rp ${(totalIdr / 1_000_000).toFixed(2)}M. Vendor confirmation will arrive via ${primaryVendor?.accountManager.whatsapp ? 'WhatsApp' : 'email'} once the PO is issued.`,
+        agentAgent: `${meta.agent} (Sourcing)`,
+        assignedAgent: { id: 5, role: 'Sourcing' },
+        workflowTemplate: playbook,
+        status: 'live',
+        createdAt: new Date().toISOString(),
+        quoteChannel: 'none',
+        quoteFrom: amContact,
+      };
+      createPO(po);
+      logUserAction({
+        kind: 'po-create',
+        entity: { type: 'po', id: poId },
+        summary: `Authorized ${poId} · ${supplierName} · Rp ${(totalIdr / 1_000_000).toFixed(2)}M (direct vendor pick)`,
+        venue: venueLabel === 'BC' || venueLabel === 'RC' || venueLabel === 'ST' || venueLabel === 'SP' ? venueLabel : 'Multi',
+        details: `Delivery to ${targetVenues.join(', ')} on ${neededBy}. Vendor: ${supplierName}.`,
+        meta: { poId, vendorId: primaryVendorId, totalIdr, path: 'direct', playbook },
+      });
+    }
+
     toast.success(`${poId} authorized · routed to Orders`, {
-      description: `Running on ${playbook} (${playbookLabel}). ${meta.agent} (Sourcing) will pick it up at Stage 2. Stage 5 QC remains human-gated.`,
+      description: `Running on ${playbook} (${playbookLabel}). Hit Approve & Execute in Orders to advance to Stage 3.`,
     });
     setStep(5);
     setTimeout(() => {
@@ -285,6 +396,117 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       }
       onNavigate?.('orders');
     }, 1400);
+  }
+
+  // ── In-wizard RFQ handlers (5a) ───────────────────────────────
+  function handleAwardInWizard(quote: RFQQuote) {
+    if (!wizardRfq) return;
+    const poId = `PO-${3050 + Math.floor(Math.random() * 200)}`;
+    awardRFQ(wizardRfq.id, quote.vendorId, poId);
+
+    const channelLabel = wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email';
+    const channel: 'whatsapp' | 'email' = wizardRfq.channel === 'whatsapp' ? 'whatsapp' : 'email';
+    const vendorRecord = finnsSuppliers.find(s => s.id === quote.vendorId);
+    const amContact = vendorRecord
+      ? `${vendorRecord.accountManager.name} · ${vendorRecord.accountManager.whatsapp}`
+      : quote.vendorName;
+    const itemSummary = wizardRfq.items.map(it => `${it.qty}${it.unit} ${it.name}`);
+
+    const others = wizardRfq.quotes.filter(q => q.vendorId !== quote.vendorId);
+    const nextBest = others.length > 0
+      ? others.reduce((min, q) => q.totalIdr < min ? q.totalIdr : min, Number.POSITIVE_INFINITY)
+      : null;
+    const savingIdr = nextBest != null && nextBest !== Number.POSITIVE_INFINITY
+      ? nextBest - quote.totalIdr
+      : 0;
+    const reasoning = [
+      `Awarded via ${wizardRfq.id}. Winning quote came in via ${channelLabel} from ${amContact}.`,
+      others.length > 0
+        ? savingIdr > 0
+          ? `Beat ${others.length} other quote${others.length === 1 ? '' : 's'} — Rp ${(savingIdr / 1_000_000).toFixed(2)}M cheaper than next-best.`
+          : `${others.length} other quote${others.length === 1 ? ' was' : 's were'} more competitive on lead time / terms; price is locked here.`
+        : 'No other vendors bid — sole responder.',
+      `${quote.leadTimeDays}d lead.${quote.note ? ` Vendor note: "${quote.note}"` : ''}`,
+    ].join(' ');
+
+    const po: RuntimePO = {
+      id: poId,
+      supplier: quote.vendorName,
+      items: itemSummary,
+      amount: quote.totalIdr,
+      group: 'needs-action',
+      actionKind: 'approve',
+      humanAction: 'Approve',
+      humanStatus: 'Awarded quote · awaiting delivery details + your approval',
+      humanDescription: `Drafted from ${wizardRfq.id}. Delivery details pending Step 3 of the wizard.`,
+      eta: `${quote.leadTimeDays}d after approval`,
+      etaMinutes: quote.leadTimeDays * 24 * 60,
+      dagStage: 1,
+      agentReasoning: reasoning,
+      agentAgent: 'A-01 (Sourcing)',
+      assignedAgent: { id: 5, role: 'Sourcing' },
+      workflowTemplate: playbook,
+      status: 'live',
+      createdAt: new Date().toISOString(),
+      quoteChannel: channel,
+      quoteFrom: amContact,
+      quoteReceivedAt: quote.receivedAt,
+      fromRfqId: wizardRfq.id,
+      saving: savingIdr > 0 ? { time: '2h', cost: Math.round(savingIdr) } : undefined,
+      financeInsight: savingIdr > 0
+        ? `Locked Rp ${(savingIdr / 1_000_000).toFixed(2)}M vs the next-best quote.`
+        : undefined,
+    };
+    createPO(po);
+
+    logUserAction({
+      kind: 'rfq-award',
+      entity: { type: 'supplier', id: quote.vendorId },
+      summary: `Awarded ${wizardRfq.id} → ${quote.vendorName} · Rp ${(quote.totalIdr / 1_000_000).toFixed(2)}M · ${quote.leadTimeDays}d lead`,
+      venue: wizardRfq.venue,
+      meta: {
+        rfqId: wizardRfq.id,
+        winningVendorId: quote.vendorId,
+        winningVendorName: quote.vendorName,
+        totalIdr: quote.totalIdr,
+        leadTimeDays: quote.leadTimeDays,
+        synthesisedPoId: poId,
+        channel: wizardRfq.channel,
+        fromWizard: true,
+      },
+    });
+    logUserAction({
+      kind: 'po-create',
+      entity: { type: 'po', id: poId },
+      summary: `Drafted ${poId} from ${wizardRfq.id} · ${quote.vendorName} · quote via ${channelLabel}`,
+      venue: wizardRfq.venue,
+      meta: { fromRfqId: wizardRfq.id, vendorId: quote.vendorId, totalIdr: quote.totalIdr, channel: wizardRfq.channel },
+    });
+
+    setAwardedQuote({
+      vendorId:    quote.vendorId,
+      vendorName:  quote.vendorName,
+      totalIdr:    quote.totalIdr,
+      leadTimeDays: quote.leadTimeDays,
+      channel,
+      receivedAt:  quote.receivedAt,
+      rfqId:       wizardRfq.id,
+      poId,
+      amContact,
+      note:        quote.note,
+    });
+    setSelectedVendors([quote.vendorId]);
+    toast.success(`${quote.vendorName} awarded · ${poId} drafted`, {
+      description: `Vendor + amount locked. Next: delivery details.`,
+    });
+    setStep(3);
+  }
+
+  function handleCancelWizardRfq() {
+    if (!wizardRfqId) return;
+    cancelRFQ(wizardRfqId);
+    setWizardRfqId(null);
+    toast.warning(`Cancelled RFQ`, { description: 'Back to vendor selection.' });
   }
 
   const cardClass = `rounded-lg p-6 mb-6 ${isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-gray-200'}`;
@@ -621,11 +843,12 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
               <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{stepSubtitle[step]}</p>
               {step < 5 && <SourcingDAG />}
             </div>
-            {/* RFQ Composer + Tracker triggers (4h / 4h.2) */}
+            {/* RFQ Tracker trigger (4h.2). The Compose button moved
+                into Step 2 — see Step 2 "Compare quotes" path. */}
             {step < 5 && (
               <div className="flex items-center gap-1.5 shrink-0">
                 <button onClick={() => setRfqTrackerOpen(true)}
-                  title="Open the RFQ tracker — see active quote requests, vendor replies, and award winners."
+                  title="Open the RFQ tracker — see active quote requests, vendor replies, and historical awards."
                   className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                     isDark
                       ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
@@ -641,27 +864,17 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     </span>
                   )}
                 </button>
-                <button onClick={() => setRfqOpen(true)}
-                  title="Manually request quotes from multiple vendors before committing to a PO."
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                    isDark
-                      ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10'
-                      : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
-                  }`}>
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Compose RFQ
-                </button>
               </div>
             )}
           </div>
 
-          {/* Off-mode RFQ hint */}
+          {/* Off-mode hint — points the user at Step 2's RFQ path. */}
           {autonomyMode === 'off' && step < 5 && (
             <div className={`mt-3 p-2.5 rounded-lg border text-[11px] flex items-center gap-2 ${
               isDark ? 'bg-amber-500/8 border-amber-500/25 text-amber-300/90' : 'bg-amber-50 border-amber-200 text-amber-700'
             }`}>
               <span className="font-bold">Agents are off — </span>
-              <span>use <strong>Compose RFQ</strong> above to source manually from the approved directory.</span>
+              <span>at Step 2 use the <strong>Compare quotes (RFQ)</strong> path to source manually.</span>
             </div>
           )}
 
@@ -835,58 +1048,219 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
               </>
             )}
 
-            {/* ── STEP 2: Vendors ──────────────────────────────────── */}
+            {/* ── STEP 2: Sourcing (5a) ─────────────────────────────────
+                Two paths converge at "vendor chosen + amount known":
+                  (a) pick a vendor directly from the directory
+                  (b) send an RFQ to several vendors, wait for replies,
+                      award the winner. Award auto-advances to Step 3
+                      with vendor + amount + lead time locked in.
+                When wizardRfqId is set the path picker is hidden — the
+                only way out is Award (advance) or Cancel RFQ (reset). */}
             {step === 2 && (
               <>
-                <div className={cardClass}>
-                  <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Choose Vendors</h2>
-                  <AgentCTA
-                    isDark={isDark}
-                    variant="inline"
-                    className="mb-2"
-                    agentLabel="A-01 · Sourcing Agent"
-                    reasoning="A-01 (Sourcing) ranks the directory by composite, on-time, and cold-chain SLA. Pick one or more — the first selected becomes the primary."
-                    offModeMessage="Pick one or more vendors from your approved directory. The first selected becomes the primary. Sort by composite, on-time, or cold-chain SLA using the metrics on each row."
-                  />
-                  <div className="mt-4 space-y-2">
-                    {finnsSuppliers.map(v => {
-                      const selected = selectedVendors.includes(v.id);
-                      const isPrimary = selected && selectedVendors[0] === v.id;
-                      return (
-                        <button key={v.id} onClick={() => toggleVendor(v.id)}
-                          className={`w-full text-left p-3 rounded-lg border transition-colors ${selected ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)}`}>
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`text-xs font-semibold ${labelClass}`}>{v.name}</span>
-                              {isPrimary && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${SAGE.badge(isDark)}`}>Primary</span>}
-                              <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.region} · {v.type}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{v.metrics.composite}</span>
-                              <VenueChips venues={v.venuesServed} isDark={isDark} />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 mt-1.5">
-                            <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>On-time {v.metrics.onTime}%</span>
-                            <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Cold-chain {v.metrics.coldChain}%</span>
-                            <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Lead {v.metrics.leadTimeDays}d</span>
-                            <span className={`ml-auto text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.categories.join(', ')}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
+                {/* Path picker — only visible when no RFQ is in flight */}
+                {!wizardRfqId && (
+                  <div className={cardClass}>
+                    <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>How are you sourcing this?</h2>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => setSourcingPath('pick')}
+                        className={`text-left p-3 rounded-lg border transition-colors ${
+                          sourcingPath === 'pick' ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)
+                        }`}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Users className={`h-4 w-4 ${sourcingPath === 'pick' ? SAGE.icon(isDark) : (isDark ? 'text-gray-500' : 'text-gray-500')}`} />
+                          <span className={`text-xs font-bold ${labelClass}`}>I know my vendor</span>
+                        </div>
+                        <p className={`text-[10px] leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          Pick directly from the approved directory. Fastest path when you already have a preferred supplier.
+                        </p>
+                      </button>
+                      <button
+                        onClick={() => setSourcingPath('rfq')}
+                        className={`text-left p-3 rounded-lg border transition-colors ${
+                          sourcingPath === 'rfq' ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)
+                        }`}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Mail className={`h-4 w-4 ${sourcingPath === 'rfq' ? SAGE.icon(isDark) : (isDark ? 'text-gray-500' : 'text-gray-500')}`} />
+                          <span className={`text-xs font-bold ${labelClass}`}>Compare quotes (RFQ)</span>
+                        </div>
+                        <p className={`text-[10px] leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          WhatsApp / email several vendors. Quotes arrive here live — pick the winner to lock in your vendor.
+                        </p>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
+                {/* ── Path A: Pick directly ───────────────────────────── */}
+                {!wizardRfqId && sourcingPath === 'pick' && (
+                  <div className={cardClass}>
+                    <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Approved Directory</h2>
+                    <AgentCTA
+                      isDark={isDark}
+                      variant="inline"
+                      className="mb-2"
+                      agentLabel="A-01 · Sourcing Agent"
+                      reasoning="A-01 ranks the directory by composite, on-time, and cold-chain SLA. Pick one or more — the first selected becomes the primary. After approval the PO is forwarded to the vendor via their preferred channel (WhatsApp first, email if formal)."
+                      offModeMessage="Pick one or more vendors from your approved directory. The first selected becomes the primary. Sort by composite, on-time, or cold-chain SLA using the metrics on each row. After approval the PO is sent via WhatsApp or email."
+                    />
+                    <div className="mt-4 space-y-2">
+                      {finnsSuppliers.map(v => {
+                        const selected = selectedVendors.includes(v.id);
+                        const isPrimary = selected && selectedVendors[0] === v.id;
+                        return (
+                          <button key={v.id} onClick={() => toggleVendor(v.id)}
+                            className={`w-full text-left p-3 rounded-lg border transition-colors ${selected ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)}`}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-xs font-semibold ${labelClass}`}>{v.name}</span>
+                                {isPrimary && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${SAGE.badge(isDark)}`}>Primary</span>}
+                                <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.region} · {v.type}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{v.metrics.composite}</span>
+                                <VenueChips venues={v.venuesServed} isDark={isDark} />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>On-time {v.metrics.onTime}%</span>
+                              <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Cold-chain {v.metrics.coldChain}%</span>
+                              <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Lead {v.metrics.leadTimeDays}d</span>
+                              <span className={`ml-auto text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.categories.join(', ')}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Path B: Compose RFQ (pre-send) ──────────────────── */}
+                {!wizardRfqId && sourcingPath === 'rfq' && (
+                  <div className={cardClass}>
+                    <h2 className={`text-sm font-semibold mb-2 ${labelClass}`}>Send an RFQ</h2>
+                    <p className={`text-[11px] mb-3 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                      The composer opens with your <span className="font-semibold">{items.length} item{items.length === 1 ? '' : 's'}</span> from Step 1 pre-filled. Pick vendors, set a deadline + channel (WhatsApp / email), send. Quotes return here as vendors reply.
+                    </p>
+                    <Button onClick={() => setRfqOpen(true)} className={SAGE.primary(isDark)}>
+                      <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Open RFQ Composer
+                    </Button>
+                  </div>
+                )}
+
+                {/* ── Path B: Waiting for quotes ──────────────────────── */}
+                {wizardRfqId && wizardRfq && !awardedQuote && (
+                  <div className={cardClass}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                      <h2 className={`text-sm font-semibold ${labelClass}`}>
+                        Quotes coming in · {wizardRfq.id}
+                      </h2>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        wizardRfq.quotes.length === wizardRfq.vendorIds.length
+                          ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                          : isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {wizardRfq.quotes.length}/{wizardRfq.vendorIds.length} quoted
+                      </span>
+                    </div>
+                    <p className={`text-[11px] mb-3 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Sent via <strong>{wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}</strong> · deadline {wizardRfq.deadline}. First replies usually land within 10–30 seconds (demo).
+                    </p>
+                    <div className="space-y-2">
+                      {wizardRfq.vendorIds.map((vid, idx) => {
+                        const vendorName = wizardRfq.vendorNames[idx] ?? vid;
+                        const quote = wizardRfq.quotes.find(q => q.vendorId === vid);
+                        const lowestTotal = wizardRfq.quotes.length > 0
+                          ? Math.min(...wizardRfq.quotes.map(q => q.totalIdr))
+                          : null;
+                        const isLowest = quote && quote.totalIdr === lowestTotal;
+                        return (
+                          <div key={vid} className={`flex items-center gap-2 p-3 rounded-lg border ${
+                            isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+                          }`}>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-xs font-semibold ${labelClass}`}>{vendorName}</span>
+                                {isLowest && (
+                                  <span className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-green-400' : 'text-green-700'}`}>
+                                    Lowest
+                                  </span>
+                                )}
+                              </div>
+                              {quote ? (
+                                <div className={`text-[10px] mt-0.5 flex items-center gap-2 flex-wrap ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                  <span className={`font-bold ${isDark ? 'text-green-400' : 'text-green-700'}`}>
+                                    Rp {(quote.totalIdr / 1_000_000).toFixed(2)}M
+                                  </span>
+                                  <span className="inline-flex items-center gap-0.5">
+                                    <Truck className="h-2.5 w-2.5" />
+                                    {quote.leadTimeDays}d lead
+                                  </span>
+                                  <span>·</span>
+                                  <span className={`inline-flex items-center gap-0.5 ${
+                                    wizardRfq.channel === 'whatsapp'
+                                      ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
+                                      : isDark ? 'text-blue-300' : 'text-blue-700'
+                                  }`}>
+                                    via {wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className={`text-[10px] mt-0.5 inline-flex items-center gap-1 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                                  <Clock className="h-2.5 w-2.5" />
+                                  Waiting on {wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'} reply
+                                </div>
+                              )}
+                              {quote?.note && (
+                                <p className={`text-[10px] mt-1 italic ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>"{quote.note}"</p>
+                              )}
+                            </div>
+                            {quote && (
+                              <button
+                                onClick={() => handleAwardInWizard(quote)}
+                                className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded font-bold transition-colors ${
+                                  isLowest
+                                    ? 'bg-[#87986a] text-white hover:bg-[#6b7a54]'
+                                    : isDark
+                                      ? 'border border-gray-700 text-gray-300 hover:bg-gray-800'
+                                      : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                }`}>
+                                <Award className="h-3 w-3" /> Award &amp; continue
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {wizardRfq.notes && (
+                      <p className={`text-[10px] mt-3 p-2 rounded ${isDark ? 'bg-[#1a1a1a] text-gray-400' : 'bg-gray-50 text-gray-600 border border-gray-200'}`}>
+                        <strong>Your notes to vendors:</strong> {wizardRfq.notes}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Wizard nav */}
                 <div className="flex justify-between gap-2 mt-6">
                   <Button variant="outline" onClick={() => setStep(1)}
                     className={isDark ? 'bg-transparent border-gray-700 text-gray-300 hover:bg-gray-800' : ''}>
                     ← Back
                   </Button>
-                  <Button disabled={selectedVendors.length === 0} onClick={() => setStep(3)}
-                    className={SAGE.primary(isDark)}>
-                    Next: Delivery <ChevronRight className="h-3 w-3 ml-1" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {wizardRfqId && (
+                      <Button variant="outline" onClick={handleCancelWizardRfq}
+                        className={`${isDark ? 'bg-transparent border-red-500/40 text-red-400 hover:bg-red-500/10' : 'bg-transparent border-red-300/70 text-red-600 hover:bg-red-50'}`}>
+                        <X className="h-3 w-3 mr-1" /> Cancel RFQ
+                      </Button>
+                    )}
+                    {!wizardRfqId && sourcingPath === 'pick' && (
+                      <Button disabled={selectedVendors.length === 0} onClick={() => setStep(3)}
+                        className={SAGE.primary(isDark)}>
+                        Next: Delivery <ChevronRight className="h-3 w-3 ml-1" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </>
             )}
@@ -894,6 +1268,25 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             {/* ── STEP 3: Delivery ─────────────────────────────────── */}
             {step === 3 && (
               <>
+                {/* Award context banner — visible when arrived here via RFQ */}
+                {awardedQuote && (
+                  <div className={`p-3 rounded-lg border ${
+                    isDark ? 'bg-[#87986a]/10 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                  }`}>
+                    <div className="flex items-start gap-2">
+                      <Award className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                      <div className="min-w-0">
+                        <p className={`text-[11px] font-semibold ${labelClass}`}>
+                          Awarded from {awardedQuote.rfqId} · {awardedQuote.vendorName}
+                        </p>
+                        <p className={`text-[10px] mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          Rp {(awardedQuote.totalIdr / 1_000_000).toFixed(2)}M · {awardedQuote.leadTimeDays}d lead · quote received via {awardedQuote.channel === 'whatsapp' ? 'WhatsApp' : 'email'} from {awardedQuote.amContact}. Fill in delivery details below.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className={cardClass}>
                   <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Target Venues</h2>
                   <p className={hintClass}>Which Finn's venues receive this delivery. Multi-venue splits the drop accordingly.</p>
@@ -1054,7 +1447,22 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       </div>
 
       {/* RFQ Composer modal (manual sourcing — 4h) */}
-      <RFQComposerModal isDark={isDark} isOpen={rfqOpen} onClose={() => setRfqOpen(false)} />
+      <RFQComposerModal
+        isDark={isDark}
+        isOpen={rfqOpen}
+        onClose={() => setRfqOpen(false)}
+        onSent={(rfqId) => {
+          // Only adopt the new RFQ as the wizard's active one when the
+          // user opened the composer from Step 2's "Compare quotes" path.
+          if (sourcingPath === 'rfq' && !wizardRfqId) {
+            setWizardRfqId(rfqId);
+            if (step !== 2) setStep(2);
+          }
+        }}
+        prefillItems={sourcingPath === 'rfq' && !wizardRfqId
+          ? items.map(i => ({ name: i.name, category: i.category, qty: i.qty, unit: i.unit }))
+          : undefined}
+      />
 
       {/* RFQ Tracker modal (4h.2 / 4h.3) */}
       <RFQTrackerModal

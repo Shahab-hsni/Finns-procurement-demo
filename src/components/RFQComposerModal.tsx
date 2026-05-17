@@ -19,7 +19,7 @@
  * Trigger: "Compose RFQ" button in the New Request page header.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { X, Plus, Trash2, Send, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
@@ -36,6 +36,17 @@ interface RFQComposerModalProps {
   isDark: boolean;
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * Optional. Fires after Send (after the RFQ is persisted) with the
+   * new rfq id. Used by the New Request wizard to scope its Step 2
+   * "waiting for quotes" view to a specific RFQ.
+   */
+  onSent?: (rfqId: string) => void;
+  /**
+   * Optional pre-fill — items from the wizard's Step 1 land here so
+   * the user doesn't re-type them inside the modal.
+   */
+  prefillItems?: Array<{ name: string; category: string; qty: number; unit: string }>;
 }
 
 interface RFQLineItem {
@@ -60,9 +71,19 @@ const newLineItem = (): RFQLineItem => ({
   unit: 'kg',
 });
 
-export function RFQComposerModal({ isDark, isOpen, onClose }: RFQComposerModalProps) {
+export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems }: RFQComposerModalProps) {
   const mode = useAutonomyMode();
-  const [items, setItems]           = useState<RFQLineItem[]>([newLineItem()]);
+  const [items, setItems]           = useState<RFQLineItem[]>(() =>
+    prefillItems && prefillItems.length > 0
+      ? prefillItems.map(p => ({
+          id: `li-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: p.name,
+          category: (p.category as FinnsCategory) || '',
+          qty: p.qty,
+          unit: p.unit,
+        }))
+      : [newLineItem()]
+  );
   const [selectedVendorIds, setSelectedVendorIds] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter]       = useState<FinnsCategory | 'all'>('all');
   const [deadline, setDeadline]     = useState<string>(() => {
@@ -72,6 +93,21 @@ export function RFQComposerModal({ isDark, isOpen, onClose }: RFQComposerModalPr
   });
   const [notes, setNotes]           = useState<string>('');
   const [channel, setChannel]       = useState<'whatsapp' | 'email'>('whatsapp');
+
+  // Re-seed items if the modal is reopened with fresh prefillItems.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (prefillItems && prefillItems.length > 0) {
+      setItems(prefillItems.map(p => ({
+        id: `li-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: p.name,
+        category: (p.category as FinnsCategory) || '',
+        qty: p.qty,
+        unit: p.unit,
+      })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   // ── Filtered vendor directory ──────────────────────────────
   const filteredVendors = useMemo(() => {
@@ -153,8 +189,13 @@ export function RFQComposerModal({ isDark, isOpen, onClose }: RFQComposerModalPr
     });
 
     toast.success(`${rfqId} sent to ${vendorNames.length} vendor${vendorNames.length === 1 ? '' : 's'}`, {
-      description: `Track replies in Your RFQs. First quotes arrive in ~10s.`,
+      description: onSent
+        ? `Quotes will appear in your current request as vendors reply.`
+        : `Track replies in Your RFQs. First quotes arrive in ~10s.`,
     });
+
+    // Notify caller (e.g. the wizard) before closing so it can capture the id.
+    onSent?.(rfqId);
 
     // Reset + close.
     setItems([newLineItem()]);

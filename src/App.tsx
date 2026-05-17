@@ -7,7 +7,6 @@ import { SpendingPage } from "./components/SpendingPage";
 import { SuppliersPage } from "./components/SuppliersPage";
 import { AIActivityPage } from "./components/AIActivityPage";
 import { WorkflowsPage } from "./components/workflows/WorkflowsPage";
-import { GovernancePage } from "./components/governance/GovernancePage";
 import { UserFlowDemoPage } from "./components/demo/UserFlowDemoPage";
 import { FlowChartPage } from "./components/demo/FlowChartPage";
 import { GlobalFooter } from "./components/GlobalFooter";
@@ -35,16 +34,16 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 }
 
 // ── Page types ──
-// Activity & Governance is split across two routes during the transition.
-// Phase 3h merges them at `/activity` and drops the `governance` route.
+// Phase 3h merged AI Activity + Governance: the canonical route is
+// 'ai-activity'. Legacy 'governance' deep-links resolve to the same page.
 type AppPage =
   | 'overview'
   | 'orders'
   | 'inventory'
   | 'spending'
   | 'suppliers'
-  | 'ai-activity'      // becomes the canonical "Activity & Governance" route after Phase 3h
-  | 'governance'       // removed after Phase 3h merge
+  | 'ai-activity'      // canonical "Activity & Governance" route
+  | 'governance'       // legacy alias — resolves to AIActivityPage
   | 'workflows'
   | 'request';
 type DemoPage = 'flow-demo' | 'flow-chart';
@@ -129,8 +128,8 @@ export default function App() {
     };
   }, []);
 
-  // 9 nav items during transition. Phase 3h collapses AI Activity + Governance
-  // into a single "Activity & Governance" tab pointing at the `/activity` route.
+  // 8 nav items per Finn's PLATFORM-MAP.md. Activity & Governance is the
+  // merged page; the legacy 'governance' route still resolves to it.
   const navItems: { id: AppPage; label: string }[] = [
     { id: 'overview',    label: 'Overview' },
     { id: 'inventory',   label: 'Inventory' },
@@ -138,8 +137,7 @@ export default function App() {
     { id: 'orders',      label: 'Orders' },
     { id: 'suppliers',   label: 'Suppliers' },
     { id: 'spending',    label: 'Spending' },
-    { id: 'ai-activity', label: 'Activity' },
-    { id: 'governance',  label: 'Governance' },
+    { id: 'ai-activity', label: 'Activity & Governance' },
     { id: 'workflows',   label: 'Workflows' },
   ];
 
@@ -158,9 +156,8 @@ export default function App() {
       case 'suppliers':
         return <SuppliersPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
       case 'ai-activity':
+      case 'governance':   // legacy alias -- renders the merged Activity & Governance page
         return <AIActivityPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
-      case 'governance':
-        return <GovernancePage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
       case 'workflows':
         return <WorkflowsPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
       case 'flow-demo':

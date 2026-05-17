@@ -13,8 +13,6 @@ import { AUTONOMY_LABELS } from '../lib/types';
 import type { AutonomyLevel } from '../lib/types';
 import { theme as themeTokens } from '../lib/theme';
 import { toast } from 'sonner@2.0.3';
-import { getTrailReturn, type TrailReturnMarker } from '../lib/trailReturn';
-import { TrailReturnPill } from './TrailReturnPill';
 
 interface AIActivityPageProps {
   theme: 'dark' | 'light';
@@ -487,12 +485,6 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
   const [undoMode, setUndoMode] = useState<UndoMode>('per-class');
   const [ledgerApproved, setLedgerApproved] = useState<boolean>(false);
   const [highlightEventId, setHighlightEventId] = useState<string | null>(null);
-  const [trailReturn, setTrailReturnState] = useState<TrailReturnMarker | null>(null);
-
-  // Read the Trail-Return marker on mount.
-  useEffect(() => {
-    setTrailReturnState(getTrailReturn());
-  }, []);
 
   // Deep-link hash reader — #evt=eventId selects that event in the right panel.
   // Falls back to an amber toast when the event id is not in the seeded ledger
@@ -541,6 +533,8 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
   }, []);
 
   // Open the agent's directory profile in Governance.
+  // Self-navigate to focus an agent — Activity & Governance is now merged,
+  // so we stay on this page and scroll/highlight via hash.
   const openAgentGovernance = useCallback((agentKey: string) => {
     const meta = AGENTS[agentKey];
     if (!meta) return;
@@ -548,8 +542,8 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
     if (typeof window !== 'undefined') {
       window.location.hash = `agent-${numericId.padStart(2, '0')}`;
     }
-    onNavigate?.('governance');
-  }, [onNavigate]);
+    // No cross-page navigation needed — we're already on Activity & Governance.
+  }, []);
 
   const toggleAgentSuspension = useCallback((agentKey: string) => {
     const meta = AGENTS[agentKey];
@@ -1608,13 +1602,6 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
           100% { box-shadow: 0 0 0 0 rgba(135,152,106,0); }
         }
       `}</style>
-      {trailReturn && (
-        <TrailReturnPill
-          marker={trailReturn}
-          isDark={isDark}
-          onReturn={() => { setTrailReturnState(null); onNavigate?.('orders'); }}
-        />
-      )}
       <ThreePanelLayout
         isDark={isDark}
         left={leftPanel}

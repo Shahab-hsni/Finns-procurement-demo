@@ -295,10 +295,10 @@ export const finnsPlaybooks: Playbook[] = [
     savingsVsBaseline: 14,
     stages: [
       { stage: 1, name: 'Request',                  owningAgent: 'A-02', description: 'Demand signal raised — par breach, scheduled trigger, or human request.', throughputPerHour: 12 },
-      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'RFQ sent to ≥3 vendors. Quotes validated against 30-day market median.', throughputPerHour: 10 },
-      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Policy checks: spend cap, vendor trust, duplicate detection. Above threshold → human gate.', throughputPerHour: 14 },
-      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Vendor confirms shipment. ETA tracked. Late/risk signals surfaced.', throughputPerHour: 8 },
-      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Delivery received at target venue. QC check: pass → completed; fail → dispute.', throughputPerHour: 6 },
+      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'RFQ broadcast to ≥3 vendors via WhatsApp (or email for formal vendors). Quotes return as chat / email replies, validated against 30-day market median.', throughputPerHour: 10 },
+      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Policy checks: spend cap, vendor trust, duplicate detection. Above threshold → human gate. PO PDF sent back to vendor via their preferred channel.', throughputPerHour: 14 },
+      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Vendor confirms shipment via WhatsApp (driver photo + plate number typical). ETA tracked. Late/risk signals surfaced.', throughputPerHour: 8 },
+      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Delivery received at target venue. Receiving lead pings A-05 via WhatsApp with QC photo. Pass → completed; fail → dispute.', throughputPerHour: 6 },
     ],
   },
   {
@@ -312,10 +312,10 @@ export const finnsPlaybooks: Playbook[] = [
     savingsVsBaseline: 4,
     stages: [
       { stage: 1, name: 'Request',                  owningAgent: 'A-02', description: 'Urgency=urgent OR par floor breach detected.', throughputPerHour: 18 },
-      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'Skips RFQ. Direct to preferred vendor. Price up to 12% over market tolerated.', throughputPerHour: 20 },
-      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Streamlined policy check. Auto-approves under standard spend cap.', throughputPerHour: 22 },
-      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Expedited shipping flag set.', throughputPerHour: 16 },
-      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Standard QC at receiving venue.', throughputPerHour: 12 },
+      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'Skips RFQ. Direct WhatsApp / call to preferred vendor. Quote confirmed verbally then backed by a follow-up WhatsApp message. Price up to 12% over market tolerated.', throughputPerHour: 20 },
+      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Streamlined policy check. Auto-approves under standard spend cap. PO confirmation pinged to vendor via WhatsApp.', throughputPerHour: 22 },
+      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Expedited shipping flag set. Live driver location pings via WhatsApp every 30 min.', throughputPerHour: 16 },
+      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Receiving lead photo-confirms on WhatsApp the moment goods land. Standard QC at receiving venue.', throughputPerHour: 12 },
     ],
   },
   {
@@ -329,10 +329,10 @@ export const finnsPlaybooks: Playbook[] = [
     savingsVsBaseline: 8,
     stages: [
       { stage: 1, name: 'Request',                  owningAgent: 'A-02', description: 'Scheduled trigger fires (weekly / biweekly / monthly).', throughputPerHour: 4 },
-      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'Existing vendor contract — no RFQ.', throughputPerHour: 30 },
-      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Auto-approved up to active spend cap. Paused if cap hit.', throughputPerHour: 28 },
-      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Standard tracking.', throughputPerHour: 10 },
-      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Standard QC at receiving venue.', throughputPerHour: 8 },
+      { stage: 2, name: 'Quote / Vendor Confirmed', owningAgent: 'A-01', description: 'Standing WhatsApp agreement with the vendor — no new RFQ. Email used only when invoice / receipt is needed for finance.', throughputPerHour: 30 },
+      { stage: 3, name: 'PO Approved',              owningAgent: 'A-04', description: 'Auto-approved up to active spend cap. Paused if cap hit. Confirmation forwarded to vendor WhatsApp.', throughputPerHour: 28 },
+      { stage: 4, name: 'In Transit',               owningAgent: 'A-05', description: 'Standard tracking. Vendor sends a WhatsApp ping when the truck leaves.', throughputPerHour: 10 },
+      { stage: 5, name: 'Delivered & Checked',      owningAgent: 'A-05', description: 'Standard QC at receiving venue. Receiving lead WhatsApps the QC photo to close the loop.', throughputPerHour: 8 },
     ],
   },
 ];

@@ -238,19 +238,19 @@ const CALENDAR_EVENTS: CalendarEvent[] = [
   {
     id: 'EVT-005', title: 'CV Indo Sayur — Weekly Produce', date: '2026-05-17', time: '06:00',
     type: 'delivery', status: 'in-transit', supplier: 'CV Indo Sayur', amount: 4_800_000, venues: ['BC', 'SP'], poRef: 'PO-3042',
-    agentReasoning: 'Recurring weekly produce — auto-approved by Spend Watchdog under standing recurring schedule. Pak Made confirmed 06:00 drop at BC kitchen.',
+    agentReasoning: 'Recurring weekly produce — auto-approved by Spend Watchdog under standing recurring schedule. Pak Made confirmed the 06:00 drop at BC kitchen via WhatsApp last night.',
     estimatedSaving: 0, dagStage: 3,
   },
   {
     id: 'EVT-006', title: 'Halal Cert Renewal — Sumber Dairy', date: '2026-05-28',
     type: 'compliance', status: 'pending',
-    agentReasoning: 'Halal cert expires May 28. Vendor Comms (A-03) has the renewal pack ready to send to Sumber. Needs your sign-off to dispatch.',
+    agentReasoning: 'Halal cert expires May 28. Vendor Comms (A-03) has the renewal pack ready to email to Sumber (formal cert docs go by email — WhatsApp follow-up after). Needs your sign-off to dispatch.',
     estimatedSaving: 0, dagStage: 1,
   },
   {
     id: 'EVT-007', title: 'BC Saturday Stock Build (event prep)', date: '2026-05-16', time: '23:59',
     type: 'restock', status: 'action-needed', amount: 18_900_000, venues: ['SP'], poRef: 'PO-3047',
-    agentReasoning: 'Splash hosting Saturday event — Eka Packaging takeaway boxes needed. Quote came in 18% over market; dispute open in Activity & Governance.',
+    agentReasoning: 'Splash hosting Saturday event — Eka Packaging takeaway boxes needed. Quote emailed in at 18% over market; dispute open in Activity & Governance.',
     estimatedSaving: 0, dagStage: 1, failedStage: 1,
   },
   {
@@ -268,31 +268,31 @@ const CALENDAR_EVENTS: CalendarEvent[] = [
   {
     id: 'EVT-010', title: 'Krakatoa Coldstore — Pork + Chicken Bulk', date: '2026-05-13',
     type: 'delivery', status: 'completed', supplier: 'Krakatoa Coldstore', amount: 22_000_000, venues: ['BC', 'RC'], poRef: 'PO-2990',
-    agentReasoning: 'Delivered and verified. Logistics Agent QC passed — cold chain intact, quality score 92. Inventory updated.',
+    agentReasoning: 'Delivered and verified. Receiving lead WhatsApped the QC photos at 08:14 — cold chain intact, quality score 92. Inventory updated.',
     estimatedSaving: 380_000, dagStage: 4,
   },
   {
     id: 'EVT-011', title: 'Bali Fresh Farms — Herb Pre-Order', date: '2026-05-15', time: '15:00',
     type: 'restock', status: 'completed', supplier: 'Bali Fresh Farms', amount: 960_000, venues: ['BC', 'ST'],
-    agentReasoning: 'Pre-order for weekend tasting menu confirmed. Same-day delivery slot locked.',
+    agentReasoning: 'Pre-order for weekend tasting menu confirmed by Bu Made on WhatsApp. Same-day delivery slot locked.',
     estimatedSaving: 90_000, dagStage: 4,
   },
   {
     id: 'EVT-012', title: 'Eka Packaging Invoice Overdue', date: '2026-05-14',
     type: 'payment', status: 'overdue', supplier: 'Eka Packaging', amount: 5_400_000,
-    agentReasoning: 'Invoice 48h past net-30 terms. Late fee of 1.5% accruing daily. Vendor Comms (A-03) sent 2 follow-up reminders — manual escalation recommended.',
+    agentReasoning: 'Invoice 48h past net-30 terms. Late fee of 1.5% accruing daily. Vendor Comms (A-03) sent 2 WhatsApp reminders + 1 email — vendor read but did not reply. Manual escalation recommended.',
     estimatedSaving: 0, dagStage: 4,
   },
   {
     id: 'EVT-013', title: 'Quarterly Review — Bali Fresh Farms', date: '2026-05-21', time: '10:00',
     type: 'meeting', status: 'pending', supplier: 'Bali Fresh Farms',
-    agentReasoning: 'Sourcing Agent (A-01) arranged quarterly review. Agenda: seasonal pricing lock for Q3, organic herb line for Stake, delivery frequency adjustment.',
+    agentReasoning: 'Sourcing Agent (A-01) arranged quarterly review over a WhatsApp call. Agenda: seasonal pricing lock for Q3, organic herb line for Stake, delivery frequency adjustment. Bu Made will email the signed Q3 terms after the call.',
     estimatedSaving: 0, dagStage: 0,
   },
   {
     id: 'EVT-014', title: 'Kopi Bali — Biweekly Coffee All Venues', date: '2026-05-19',
     type: 'restock', status: 'pending', amount: 1_275_000, venues: ['BC', 'RC', 'ST', 'SP'],
-    agentReasoning: 'Restock Agent (A-02) scheduled routine biweekly coffee restock. Consumption trend up 8% — recommends increasing par by 5kg next cycle.',
+    agentReasoning: 'Restock Agent (A-02) scheduled routine biweekly coffee restock via the standing WhatsApp agreement. Consumption trend up 8% — recommends increasing par by 5kg next cycle (would need a fresh WhatsApp ping to the supplier to confirm).',
     estimatedSaving: 70_000, dagStage: 0,
   },
 ];

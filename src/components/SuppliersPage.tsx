@@ -2351,6 +2351,24 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               <div className={t.card}>
                 <div className={`text-xs font-medium ${t.textPrimary}`}>{activeSupplier.accountManager}</div>
                 <div className={`text-[10px] ${t.textMuted}`}>+{activeSupplier.waPhone}</div>
+                <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                  <span className={`text-[9px] font-bold uppercase tracking-wide ${t.textMuted}`}>
+                    Reachable via
+                  </span>
+                  <span className={`inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                    isDark ? 'bg-[#25D366]/15 text-[#7dd9a4]' : 'bg-[#25D366]/10 text-[#25D366]'
+                  }`}>
+                    <MessageCircle className="h-2.5 w-2.5" /> WhatsApp
+                  </span>
+                  <span className={`inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                    isDark ? 'bg-blue-500/15 text-blue-300' : 'bg-blue-50 text-blue-700'
+                  }`}>
+                    <Mail className="h-2.5 w-2.5" /> Email
+                  </span>
+                </div>
+                <p className={`text-[9px] mt-1.5 ${t.textMuted}`}>
+                  No vendor portal — all updates land here through chat or email.
+                </p>
               </div>
             </div>
           </>

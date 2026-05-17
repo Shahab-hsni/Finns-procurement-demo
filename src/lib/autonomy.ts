@@ -1,19 +1,35 @@
 /**
  * Finn's — Autonomy Mode
  *
- * Three global modes that govern how agents act across the platform.
- * Atlas (chat copilot) is always on regardless of mode.
+ * Three global modes that govern how the OPERATING AGENTS act across
+ * the platform.
  *
- *   off       — A-01..A-05 all suspended. Every action manual. Atlas
- *               can still answer questions but does not surface
- *               recommendations.
- *   assist    — Agents surface suggestions everywhere but never auto-
- *               execute. PO default labor mode flips to 'manual'.
- *   auto      — Agents act within policy rules; human gates only at
- *               policy thresholds. Default.
+ *   Atlas is NOT an operating agent and is NEVER gated by this mode.
+ *   Atlas reads page context, summarizes data, and answers questions
+ *   in chat. It does not generate recommendations or execute actions
+ *   on its own.
  *
- * Per-entity overrides (per-PO Labor Switch, per-agent suspend) still
- * apply on top of the global mode.
+ *   A-01..A-05 (Sourcing / Restock / Vendor Comms / Spend Watchdog /
+ *   Logistics) are the operating agents. Their behaviour is:
+ *     • Observing is always on (sensing layer: par checks, ETA
+ *       tracking, compliance-doc expiry, vendor SLA dips, etc.).
+ *     • Recommending + acting is gated by mode.
+ *
+ *   off    — Agents observe but don't act. Every action requires you.
+ *            Alerts and watch-lists keep rendering. Atlas chat + Atlas
+ *            data summaries remain available -- only agent-authored
+ *            recommendations + receipts are suppressed.
+ *   assist — Agents observe + suggest. You approve every action.
+ *            Recommendations surface with "Approve · Defer · Decline"
+ *            CTAs instead of auto-execute.
+ *   auto   — Agents observe + act within policy. You review exceptions.
+ *            Default. Agents auto-restock, auto-route POs, auto-send
+ *            vendor confirmations within the spend-cap / vendor-trust /
+ *            duplicate-detect guardrails.
+ *
+ * Per-entity overrides (per-PO Labor Switch, per-SKU labor mode, per-
+ * vendor labor mode, per-agent suspend) layer on top of the global
+ * mode.
  */
 
 import { useEffect, useState } from 'react';
@@ -27,9 +43,9 @@ export const AUTONOMY_LABEL: Record<AutonomyMode, string> = {
 };
 
 export const AUTONOMY_TAGLINE: Record<AutonomyMode, string> = {
-  off:    'A-01..A-05 paused. Atlas chat only.',
-  assist: 'Agents suggest. You drive.',
-  auto:   'Agents act within policy. You review.',
+  off:    'Agents observe but don\'t act. You handle every action.',
+  assist: 'Agents observe + suggest. You approve every action.',
+  auto:   'Agents observe + act within policy. You review exceptions.',
 };
 
 const STORAGE_KEY = 'finns-autonomy-mode';
@@ -69,4 +85,18 @@ export function useAutonomyMode(): AutonomyMode {
 /** Default labor mode for new entities (PO / SKU / Supplier). */
 export function defaultLaborMode(mode: AutonomyMode): 'agent' | 'manual' {
   return mode === 'auto' ? 'agent' : 'manual';
+}
+
+/** True if agents may take actions autonomously. False in off + assist. */
+export function agentsMayAct(mode: AutonomyMode): boolean {
+  return mode === 'auto';
+}
+
+/** True if agents may surface suggestions / recommendations (always true). */
+export function agentsMaySuggest(mode: AutonomyMode): boolean {
+  return mode !== 'off' ? true : false;
+  // Note: even in 'off', sensing still runs (alerts, watch lists). What's
+  // suppressed is agent-authored *recommendations* ("I suggest restocking
+  // from PT Bali Seafood"). Raw threshold flags ("Tuna at 1.9 days cover")
+  // are sensing, not suggestion — always shown.
 }

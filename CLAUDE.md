@@ -62,11 +62,13 @@ These decisions are locked. Anything that contradicts them is a violation of sco
 
 - **8 pages**: Overview · Inventory · New Request · Orders · Suppliers · Spending · Activity & Governance · Workflows
 - **6 agents** (flat roster, no cohorts): Atlas + A-01 Sourcing + A-02 Restock + A-03 Vendor Comms + A-04 Spend Watchdog + A-05 Logistics
+- **3 Autonomy modes** (global, in the header pill): `Off` · `Assist` · `Auto`. Sensing layer (alerts, watch-lists, par checks, ETA tracking, compliance-doc expiry, vendor SLA dips) is **always on**. Only the action layer is gated. Atlas is **never gated** — it reads page context, summarizes data, and chats with the Admin in all modes. See `lib/autonomy.ts` for the canonical definitions.
 - **5-stage order journey**: Request → Quote/Vendor Confirmed → PO Approved → In Transit → Delivered & Checked
 - **3 playbooks**: `WF-STD` Standard · `WF-RSH` Rush · `WF-REC` Recurring
 - **5-step request wizard**: Items → Vendors → Delivery → Review → Done
 - **4 venues** tagged on every SKU and PO: `BC` Beach Club · `RC` Recreation Club · `ST` Stake · `SP` Splash Waterpark. **No scope switcher** in the global nav.
 - **Currency**: IDR primary, USD secondary on imports.
+- **Manual baseline rule**: every flow, every data entry, every verification must work without any agent participation. Agents (A-01..A-05) are layered help on top of a manual baseline — they are not the baseline itself. If a flow cannot be completed in `Off` mode, that's a missing manual surface and a bug.
 
 ### Patterns explicitly removed from the upstream Buyamia iteration
 

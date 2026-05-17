@@ -548,6 +548,36 @@ On mount and on every `hashchange`, Orders inspects `window.location.hash`:
 
 ---
 
+## 1.13 Mode-Awareness · Manual Baseline Audit
+
+The Orders page must be fully usable in `Off` mode — a Procurement Manager with no agents running needs to be able to progress every PO from Request through Delivered & Checked. See `PLATFORM-MAP.md § 3a` for the global model.
+
+### Sensing surfaces (always on)
+
+- Left panel order groupings (NEEDS YOUR ACTION / AUTONOMOUS FLOW) — derived from PO state, not agent decisions.
+- 5-stage DAG rendering — pure state display.
+- ⌘K palette, Audit Mode + all filters, Source Bridge, ETA tracking, late-delivery warnings, QC fail alerts.
+- Atlas right panel — header, page-context subtitle, data summaries (vendor reliability, venue consumption split, batch logic), chat input. Never gated.
+
+### Mode-aware CTAs (action layer)
+
+| Surface | Auto | Assist | Off |
+|---------|------|--------|-----|
+| Single Order Journey primary CTA (Stage 2 awaiting approval) | "Approve & Execute" → A-04 auto-approves within policy | "Approve & Execute" → confirms A-01's quote suggestion | "Approve & Execute" → opens a Review modal where user enters approval notes |
+| "Managed by · Agent A-NN →" link on header | Routes to Activity & Governance | Same | Hidden — no agent assigned in pure Off mode |
+| Stage advance (manual mode) | Agent fills the Task Module | Agent drafts inputs for human confirmation | Human types every input |
+| Repeat Order (⋯ menu, Stage 5) | One-click clone, agent dispatches | One-click clone, manual confirmation | Opens Draft Sheet pre-filled, user reviews + submits |
+
+### Real gaps (open backlog)
+
+1. **PO `laborMode` is hardcoded `'agent'` for every new PO** created from RequestPanel's `handleSubmit`. In Off mode the PO should land as `'manual'` so it doesn't auto-progress. Fix: read `useAutonomyMode()` + `defaultLaborMode()` from `lib/autonomy.ts`.
+2. **The "Managed by · Agent A-NN" header chip** assumes an operating agent is assigned to every PO. In Off mode there's no agent — the chip should either hide or render "Self-managed."
+3. **Task Module Sheet copy** still uses agent-flavored hints (`"Atlas will mirror to ERP"`). In Off mode the Active Handshake delegation buttons should hide entirely.
+4. **Stage 2 "Quote received" stage history** is synthesized via `synthesizeStageHistory` and attributes every action to an agent. For POs progressed manually, the stage history rows should show user actor + free-text note instead of fabricated agent activity.
+5. **No "Send RFQ" surface inside Orders.** Today the only way to ask a vendor for a quote is via Source Bridge (1-on-1 message). In Off mode, when a PO is at Stage 2 and the user needs to gather quotes from 3 vendors, the user has to open Source Bridge 3 times manually. Should be a multi-vendor RFQ composer at Stage 2 in manual mode.
+
+---
+
 # 2. Overview Page
 
 The Overview page is the **morning landing** — the first thing the Procurement Manager sees on opening the platform. It surfaces what needs attention today and lets the user drill into critical actions or browse the logistics calendar.
@@ -686,6 +716,41 @@ See `RIGHT-PANEL-MAP.md § 1`. Summary:
 1. User toggles Calendar view → month grid
 2. Clicks a delivery event → center shows Event Detail
 3. Clicks "Open in Orders" → routes to Orders with `#order=PO-XXXX`
+
+---
+
+## 2.7 Mode-Awareness · Manual Baseline Audit
+
+Overview is the morning landing — it must be useful in `Off` mode for a Procurement Manager who is driving everything manually. See `PLATFORM-MAP.md § 3a` for the global model.
+
+### Sensing surfaces (always on)
+
+- **Triage Queue** (Requires Review) — derived from threshold checks (POs needing approval, QC-fail orders, disputed POs, manual-takeover POs). Never empty just because agents are off.
+- **System Alerts** — par breaches, expiring compliance docs, payment due, cold-chain SLA dips. Pure data thresholds.
+- **Calendar** + all event types + Event Detail morph — observation only.
+- **Monthly Spending Trend** chart with confidence band — historical data + forecast (forecast is sensing, not action).
+- **4 KPI cards** — Month's Spend, Active Orders, Low Stock, Savings MTD. Even Savings MTD is a backward-looking metric; always shown.
+- **Atlas right panel** — header, page-context subtitle, Atlas data summaries (Spending Pulse, Venue Mix, Forecast Confidence cards), chat input. Never gated.
+
+### Mode-aware CTAs (action layer)
+
+| Surface | Auto | Assist | Off |
+|---------|------|--------|-----|
+| Critical action card primary CTA | "Auto-approve queued in 4 min · cancel" | "Suggested: Approve PO-3041" with Approve / Defer | Manual review modal with action buttons |
+| Low-stock alert | "Auto-restock queued · A-02 dispatching in 30 min" | "Suggested restock: 12kg from PT Bali Seafood" + Approve / Defer | "Stock below par — **Open New Request**" |
+| Quick Approve button on system alert | One-click | One-click (confirms agent's proposal) | Opens a small confirm sheet (human is the source of truth) |
+| Right-panel **Live Agent Activity** | Always rotating | Always rotating | **Empty** (no agents acting) |
+| Right-panel **Autonomous Actions Today** | Shown | Shown | **Empty** |
+| Right-panel **Autonomy Goal** | Shown ("8 more approvals until higher autonomy") | Shown | **Hidden** (no ladder in Off mode) |
+| Right-panel **This Week's Impact** | Manual + agent actions | Same | Manual-only count + hours saved |
+
+### Real gaps (open backlog)
+
+1. **Right panel has no "Recent activity" feed** that includes manual actions. In Off mode the Live Agent Activity / Autonomous Actions sections go empty even though the user has been working. Fix: a unified Action Log tagged with actor (`'you' | 'A-01' | ...`), rendered with mode-aware filtering.
+2. **Quick Approve assumes auto-execute.** In Assist/Off mode it should open a small confirm sheet capturing the human's reasoning rather than firing instantly.
+3. **CTA copy on every flagged item is hardcoded** to "auto-restock queued" / agent-flavored language. Should switch based on `useAutonomyMode()`.
+4. **No manual-source for Triage Queue items.** Today the queue is filled from `CRITICAL_ACTIONS` mock data that assumes agent-flagged origin. Should derive from raw conditions (par breach, compliance expiry, deadline approaching) so the same items show in all modes.
+5. **No "Pin this" / "Add to today's priorities"** affordance — the user can't curate their own queue.
 
 ---
 
@@ -880,6 +945,50 @@ See `RIGHT-PANEL-MAP.md § 3`. Three distinct modes:
 
 ---
 
+## 3.11 Mode-Awareness · Manual Baseline Audit
+
+Inventory must be fully usable in `Off` mode — every SKU adjustment, par floor change, restock decision must be doable without an operating agent. See `PLATFORM-MAP.md § 3a` for the global model.
+
+### Sensing surfaces (always on)
+
+- **Stock Heartbeat groupings** (Critical / Watch / Healthy) — threshold-based, pure data.
+- **Velocity Map** chart (consumption forecast vs actual, burn-rate bars, venue split).
+- **PAR Watch** widget on Item Workspace (digital twin slider).
+- **Item Journey** 5-stage DAG of the latest PO — read-only state display.
+- **Pipeline Visibility** — list of open POs for the selected SKU.
+- **Failed Intent banner** — when a restock-from-Inventory got dismissed, the SKU surfaces an amber alert. Pure data signal.
+- **Audit Mode** + all filters + ⌘K palette.
+- **Atlas right panel** — header, page-context subtitle, data summaries (Market Signal observation card, ROI of Autonomy backward-looking metric, venue consumption split), chat input. Never gated.
+
+### Pure manual UIs (always work)
+
+- Adjust Stock modal (manual count, +/-, note).
+- Set as Par Floor (digital twin slider → lock).
+- Catalog Management modal (Add / Edit / Archive SKUs).
+- Restock Now button — opens New Request prefilled.
+- Add to Draft — append a SKU to the current draft PO.
+- Open PO in Orders deep link.
+
+### Mode-aware CTAs (action layer)
+
+| Surface | Auto | Assist | Off |
+|---------|------|--------|-----|
+| Critical SKU card | "Auto-restock queued by A-02 · ETA 30 min" | "Suggested restock: 12kg · A-02 drafted PO" + Approve / Defer | "Stock below par. **Open New Request →**" — pure manual CTA |
+| Restock Decision Tree | A-02 reasoning ends "→ auto-queued" | Reasoning ends "→ proposed for review" | Reasoning **hidden**; only raw facts shown (burn rate, par, days of cover) |
+| Right-panel Action Log | Agent actions ("A-02 restocked SKU-0421") | Mix: agent suggestions + your approvals | Your actions only ("You adjusted SKU-0421 to 8kg") |
+| **Auto-Reordered** badge on SKU card | Shown when applicable | Hidden (suggestions don't get badges) | Hidden |
+| Per-SKU labor mode toggle (Agent / Manual) | Useful override | Useful override | **Hidden** — global mode already enforces manual |
+
+### Real gaps (open backlog)
+
+1. **Right-panel Action Log is agent-only.** Doesn't log manual actions. Same fix shape as Overview: unified actor-tagged log filtered by mode.
+2. **Stage Trace modal synthesizes agent-attributed history.** For POs progressed manually, stage rows should show user actor + free-text note rather than fabricated agent activity.
+3. **Critical SKU card hardcoded copy** ("auto-restock queued") doesn't switch based on mode.
+4. **Per-SKU labor toggle visible in Off mode** even though it has no effect.
+5. **"Auto-Reordered" badge** drops silently in Off mode without alternative status indicator.
+
+---
+
 # 4. New Request Page
 
 The 5-step sourcing wizard. The center panel morphs entirely per step. Express modes (re-order / restock) pre-fill state and may jump straight to Review.
@@ -1038,6 +1147,43 @@ Express-mode opening line on first Atlas message:
 1. In Step 1 of a restock-express run, user dismisses the inventory banner
 2. `finns-restock-intent-failed` dispatched
 3. Inventory page shows amber alert on that SKU on next visit
+
+---
+
+## 4.7 Mode-Awareness · Manual Baseline Audit
+
+New Request is the entry point for every procurement. It must work end-to-end in `Off` mode — every input typed by hand, no agent recommendations, the resulting PO landing in manual mode on Orders. See `PLATFORM-MAP.md § 3a` for the global model.
+
+### Sensing surfaces + manual mechanics (always on)
+
+- The 5-step wizard mechanics: every input (request name, line items, venue tags, vendor checkbox, date picker, recurring frequency) is typed/clicked by the user. No autopilot path through the wizard.
+- **Vendor cards** in Step 2 — `finnsSuppliers` data, reliability scores from data.
+- **Spending Pulse** card on Step 1 (right panel) — budget bar showing this-request impact. Data calc.
+- **Logistics Risk Map** on Step 3 — known monsoon / port-congestion / Bali-local conditions. Observation.
+- **Venue Lane Preferences** (BC receives 06:00–10:00, ST evening only) — static rules per venue.
+- **Step 4 audit checklist** rows (spend cap headroom, vendor trust floor, par alignment) — threshold checks against current state.
+- **Express-mode hash deep links** (#restock=, #intent=express&mode=reorder, #intent=express&mode=blank) — user-initiated from another page; always work.
+- **Atlas right panel** — header, step-aware subtitle ("Step 2 · Vendors"), data summaries (vendor metrics, risk map, audit checklist), chat input. Never gated.
+
+### Mode-aware CTAs (action layer)
+
+| Surface | Auto | Assist | Off |
+|---------|------|--------|-----|
+| Step 1 Strategic Intent card | "Describe why — A-01 picks vendors / playbook downstream" | Same | "Describe why — clearer intent → clearer follow-up tasks for your team" |
+| Step 2 Recurring Vendor card | "PT Indo Sayur runs your weekly produce — switch to WF-REC?" | Same prompt | **Hidden** (A-01 recommendation, not raw data) |
+| Step 4 Mission Brief Active | "5 stages mapped, A-01 will start at Stage 2 on authorize" | "A-01 will surface the quote for your approval at each gate" | "5 stages mapped — you'll progress them manually from Orders" |
+| Step 4 Authorize CTA | "Authorize · Deploy Agent →" | "Authorize · Queue for review →" | **"Authorize · Create PO →"** (no deployment language) |
+| Step 5 Done splash | "PO routed to Orders. A-01 on Stage 2 now." | "PO routed to Orders. A-01 will surface the quote for your approval." | "PO created. Continue manually from Orders." |
+| Express-mode opening Atlas message | "I've validated this re-order. Prices stable. A-01 ready to deploy." | "I've validated this re-order. Recommend reviewing." | "Re-ordering from PO-XXXX. Inputs cloned — review and submit." |
+| New PO `laborMode` after Authorize | `'agent'` | `'manual'` (so Orders surfaces it for human progression) | `'manual'` |
+
+### Real gaps (open backlog)
+
+1. **`agentNotes` / "Sourcing Agent" language is hardcoded throughout the wizard's right panel** (Strategic Intent, Mission Brief, Step 5 confirmation). No mode-awareness yet. Fix: read `useAutonomyMode()` + flip copy strings.
+2. **`handleSubmit` hardcodes new PO `laborMode: 'agent'`.** Should use `defaultLaborMode(mode)` from `lib/autonomy.ts` so POs created in Off/Assist land as manual.
+3. **No "manual continuation" guidance after Authorize.** In Off mode, the user is routed to Orders but has no breadcrumb explaining the next manual steps. Add an Off-mode "what to do next" card on Step 5.
+4. **No RFQ dispatch surface inside the wizard.** Step 2 picks vendors but doesn't compose the RFQ. In Auto mode A-01 auto-fires it; in Off mode the user has no way to ask vendors for a quote from inside New Request. Either inline composer in Step 2 or routed to Suppliers → Source Bridge after Authorize. **Biggest manual gap on this page.**
+5. **Mission Brief preview** (`deployedWorkflow` flag) is a half-feature even in Auto mode — needs proper wiring or removal.
 
 ---
 

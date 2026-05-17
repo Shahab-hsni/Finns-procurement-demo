@@ -11,6 +11,7 @@
 1. [Platform Topology](#1-platform-topology)
 2. [Personas](#2-personas)
 3. [The Agent Roster](#3-the-agent-roster)
+3a. [Autonomy Modes (sensing vs acting)](#3a-autonomy-modes-sensing-vs-acting)
 4. [Venue Tagging](#4-venue-tagging)
 5. [Edge Taxonomy — How Pages Talk to Each Other](#5-edge-taxonomy--how-pages-talk-to-each-other)
 6. [Hash-Context Contract](#6-hash-context-contract)
@@ -73,7 +74,7 @@ Finn's runs on **6 named agents** (flat roster, no cohorts).
 
 | ID | Name | Role |
 |----|------|------|
-| — | **Atlas** | The chat copilot. Present on every page in the right panel. Synthesizes the work of the other agents into plain-English context, answers questions, and offers AI-suggested next actions. Atlas does not mutate domain data on its own. |
+| — | **Atlas** | The chat copilot. Present on every page in the right panel. **Never gated by Autonomy mode** — Atlas always reads page context, summarizes data, and answers questions in chat. Atlas does not generate independent recommendations or take actions; that's the role of A-01..A-05. |
 | A-01 | **Sourcing Agent** | Picks vendors for new requests, validates quotes against market prices, surfaces alternative suppliers. |
 | A-02 | **Restock Agent** | Watches par levels and consumption velocity, proposes restocks before stockout, prioritizes by venue demand. |
 | A-03 | **Vendor Comms Agent** | Drafts and sends WhatsApp / Telegram messages to suppliers via the Source Bridge. Handles 1-on-1 and broadcast announcements. |
@@ -83,6 +84,64 @@ Finn's runs on **6 named agents** (flat roster, no cohorts).
 Agents appear by ID in the order journey (`Managed by · Agent A-02`), in the Activity & Governance ledger, in inventory cards, on vendor dossiers, and as chip mentions in Atlas reasoning.
 
 Hash format for deep links: `#agent-01` … `#agent-05` (zero-padded). Atlas has no profile page and no hash.
+
+---
+
+## 3a. Autonomy Modes (sensing vs acting)
+
+Finn's runs on a **3-level Autonomy switch** in the global header pill (top-right of the app shell): **Off · Assist · Auto**. The mode is global, persists in `localStorage` (key: `finns-autonomy-mode`), and is broadcast via the `finns-autonomy-changed` CustomEvent so pages can react.
+
+### The principle
+
+**Sensing is always on. Acting is gated.**
+
+- **Sensing layer** (never gated, never goes dark):
+  - Threshold checks: par breaches, low-stock alerts, days-of-cover countdowns
+  - State observation: in-transit ETAs, cold-chain monitoring, compliance-doc expiry, vendor SLA dips
+  - Data calculations: spend trends, forecasts, savings ledgers
+  - Watch-lists, "Requires Review" queues, "Needs Action" flags
+  - Atlas's chat + page-context data summaries
+
+- **Action layer** (gated by mode):
+  - Auto-creating POs (Restock Agent)
+  - Auto-accepting quotes (Sourcing Agent)
+  - Auto-sending vendor messages (Vendor Comms Agent)
+  - Auto-approving POs against policy (Spend Watchdog)
+  - Auto-advancing journey stages (Logistics)
+  - Agent-authored recommendations ("A-02 suggests restocking 12kg")
+
+### The 3 modes
+
+| Mode | Sensing | Recommendations | Actions |
+|------|---------|-----------------|---------|
+| **Off**    | ✅ on | ❌ suppressed | ❌ suppressed |
+| **Assist** | ✅ on | ✅ shown with Approve · Defer · Decline CTAs | ❌ requires human confirm for every action |
+| **Auto** (default) | ✅ on | ✅ shown | ✅ executed within policy rules |
+
+### Atlas exemption
+
+Atlas is **never gated**. In all 3 modes Atlas:
+- Reads the current page context
+- Pulls relevant data summaries (vendor metrics, spending pulse, logistics risk map, etc.)
+- Responds to chat queries
+- Surfaces what A-01..A-05 *have observed* (always available — that's the sensing layer)
+
+What Atlas **does not** do regardless of mode: generate its own recommendations or take actions. Atlas is read-only by design.
+
+### Per-entity overrides
+
+The global Autonomy mode is the default. Per-entity controls override it where present:
+
+| Override | Scope | Effect |
+|----------|-------|--------|
+| Per-PO **Labor Switch** (Orders) | Single PO | `Agent` vs `Manual`. Overrides global Auto to make this one PO manual (and vice-versa in Off/Assist). |
+| Per-SKU **labor mode** (Inventory) | Single SKU | Same shape as Labor Switch for restock-related actions. |
+| Per-vendor **labor mode** (Suppliers) | Single supplier | Same shape for sourcing actions. |
+| Per-agent **Suspend / Resume** (Activity & Governance) | One of A-01..A-05 | Pauses that specific agent globally. Survives mode flips. |
+
+### Manual baseline rule
+
+Every flow on every page must be completable in **Off** mode. If a user cannot finish a procurement-related task without an agent taking an action, that's a missing manual surface (a gap, not a design choice). See `core-pages.md` per-page **Mode-Awareness** subsections for the current audit.
 
 ---
 

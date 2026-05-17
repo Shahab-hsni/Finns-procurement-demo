@@ -16,6 +16,7 @@ These rules apply to **every** right panel in the platform. If you propose a des
 4. **Reactive to the center.** The right panel's content morphs based on what is selected/active in the center panel — not based on left-panel selection alone. Center is the trigger; right is the reaction. *(Exception: Activity & Governance, where the left panel's tab choice reshapes both center and right.)*
 5. **Header subtitle adapts.** Every right panel has an Atlas/agent header whose subtitle reflects context (e.g. "Agent model · PO-XXXX", "Comparative Delta · A vs B", "Step 2 · Vendors").
 6. **No standalone navigation.** The right panel never owns primary page navigation. Cross-page links from the right panel always carry hash context and are AI-suggested (e.g. "Open in Activity", "View Source").
+7. **Atlas is never gated by Autonomy mode; A-01..A-05 recommendations are.** Atlas's header, page-context subtitle, data summaries (vendor metrics, spending pulse, logistics risk map, supply weather, etc.), and chat input are **always rendered** in all 3 modes. What gets suppressed in `Off` mode is content authored by the operating agents — recommendations ("A-02 suggests restocking 12kg"), receipts of autonomous actions ("Autonomous Actions Today: 6"), and the "auto-execute" CTAs ("Auto-restock queued · cancel in 4m"). Sensing surfaces (raw threshold flags like "Tuna at 1.9 days cover", market signal observations) stay on because they're observations, not recommendations.
 
 ---
 

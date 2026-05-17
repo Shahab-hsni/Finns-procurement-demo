@@ -282,13 +282,15 @@ function AutonomyToggle({ isDark }: { isDark: boolean }) {
     if (next === mode) return;
     setAutonomyMode(next);
     // Surface a small toast so the mode change is unmissable.
+    // Sensing (alerts, watch lists, par checks, ETA tracking) is always
+    // on -- only the action layer is gated.
     if (next === 'off') {
       toast.warning(`Autonomy: ${AUTONOMY_LABEL[next]}`, {
-        description: AUTONOMY_TAGLINE[next] + ' Existing in-flight POs continue under their per-PO labor mode.',
+        description: AUTONOMY_TAGLINE[next] + ' Alerts and watch-lists keep rendering -- agents just stop touching things.',
       });
     } else if (next === 'assist') {
       toast.info(`Autonomy: ${AUTONOMY_LABEL[next]}`, {
-        description: AUTONOMY_TAGLINE[next] + ' New requests default to manual; agents will surface suggestions.',
+        description: AUTONOMY_TAGLINE[next] + ' Recommendations surface with Approve / Defer / Decline.',
       });
     } else {
       toast.success(`Autonomy: ${AUTONOMY_LABEL[next]}`, {

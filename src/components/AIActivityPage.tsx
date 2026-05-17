@@ -16,6 +16,7 @@ import { toast } from 'sonner@2.0.3';
 import { useActionLog, type ActorType, type ActionLogEntry } from '../lib/actionLog';
 import { useAutonomyMode } from '../lib/autonomy';
 import { AgentCTA } from './AgentCTA';
+import { finnsAgents, finnsPolicyRules, finnsDisputes } from '../lib/mockData';
 
 interface AIActivityPageProps {
   theme: 'dark' | 'light';
@@ -622,6 +623,15 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
     limit: 20,
   });
 
+  // ── Left-panel tab state (Phase 4d) ──────────────────────────────
+  type LeftTab = 'activity' | 'agents' | 'policy' | 'disputes';
+  const [leftTab, setLeftTab] = useState<LeftTab>('activity');
+  const [suspendedAgentSet, setSuspendedAgentSet] = useState<Set<string>>(new Set());
+  const openDisputeCount = useMemo(
+    () => finnsDisputes.filter(d => d.status === 'open' || d.status === 'escalated').length,
+    [],
+  );
+
   // Deep-link hash reader — #evt=eventId selects that event in the right panel.
   // Falls back to an amber toast when the event id is not in the seeded ledger
   // (some upstream callers — e.g. the Orders Decision Attribution Trail —
@@ -838,8 +848,9 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
 
   // ── LEFT PANEL — Control Plane ──────────────────────────────────
 
-  const leftPanel = (
-    <div className="flex flex-col h-full">
+  // ── Activity tab body — the existing Control Plane content ───────
+  const activityTabBody = (
+    <>
       <div className={t.section}>
         <div className="flex items-center gap-2">
           <Gauge className={`h-4 w-4 ${t.sageIcon}`} strokeWidth={1.5} />
@@ -1037,6 +1048,263 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
             72% progress to Level {Math.min(globalAutonomy + 1, 5) as AutonomyLevel}: {AUTONOMY_LABELS[Math.min(globalAutonomy + 1, 5) as AutonomyLevel]}
           </p>
         </div>
+      </div>
+    </>
+  );
+
+  // ── Agents tab body — 6-agent roster status (Phase 4d) ───────────
+  const agentsTabBody = (
+    <div className="p-4 space-y-3">
+      <div>
+        <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Agent Roster</h2>
+        <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
+          The 5 operating agents. Atlas (chat copilot) isn't gated and isn't shown here.
+        </p>
+      </div>
+      <div className="space-y-2">
+        {finnsAgents.map(a => {
+          const suspended = suspendedAgentSet.has(a.id);
+          const bandColor =
+            a.performanceBand === 'green'
+              ? isDark ? 'text-green-400' : 'text-green-600'
+              : a.performanceBand === 'amber'
+                ? isDark ? 'text-amber-400' : 'text-amber-700'
+                : isDark ? 'text-red-400' : 'text-red-600';
+          return (
+            <div key={a.id}
+                 className={`p-2.5 rounded-lg border ${
+                   suspended
+                     ? isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50/60 border-amber-200'
+                     : isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200'
+                 }`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+                      {a.id}
+                    </span>
+                    <span className={`text-[11px] font-semibold ${t.textPrimary}`}>{a.name}</span>
+                    <span className={`text-[9px] font-bold uppercase tracking-wide ${bandColor}`}>
+                      ● {a.performanceBand}
+                    </span>
+                  </div>
+                  <p className={`text-[10px] mt-1 leading-relaxed ${t.textSecondary}`}>{a.description}</p>
+                </div>
+                <button
+                  onClick={() => setSuspendedAgentSet(prev => {
+                    const next = new Set(prev);
+                    next.has(a.id) ? next.delete(a.id) : next.add(a.id);
+                    toast.info(`${a.id} ${next.has(a.id) ? 'suspended' : 'resumed'}`, {
+                      description: next.has(a.id)
+                        ? 'In-flight autonomous actions paused. Suggestions still surface.'
+                        : 'Resumed within current Autonomy mode policy.',
+                    });
+                    return next;
+                  })}
+                  className={`shrink-0 text-[9px] font-bold px-2 py-1 rounded border transition-colors ${
+                    suspended
+                      ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                      : isDark ? 'border-gray-700 text-gray-400 hover:text-amber-400 hover:border-amber-500/40' : 'border-gray-300 text-gray-500 hover:text-amber-700 hover:border-amber-300'
+                  }`}>
+                  {suspended ? <><PlayCircle className="h-2.5 w-2.5 inline -mt-0.5 mr-0.5" /> Resume</> : <><PauseCircle className="h-2.5 w-2.5 inline -mt-0.5 mr-0.5" /> Suspend</>}
+                </button>
+              </div>
+              <div className={`mt-2 pt-2 border-t flex items-center justify-between text-[9px] ${isDark ? 'border-gray-800 text-gray-500' : 'border-gray-200 text-gray-500'}`}>
+                <span>{a.tasksCompletedToday} task{a.tasksCompletedToday === 1 ? '' : 's'} today</span>
+                <span>{a.recentDecisions.length} recent decision{a.recentDecisions.length === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── Policy tab body — rule list (Phase 4d) ───────────────────────
+  const policyTabBody = (
+    <div className="p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Policy Rules</h2>
+          <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
+            Hard gates that A-04 (Spend Watchdog) enforces on every PO.
+          </p>
+        </div>
+        <button
+          onClick={() => toast.info('New rule', { description: 'Production: opens a Rule Composer — template, scope, threshold, applies-to, active toggle, audit row. Lands in a follow-up phase.' })}
+          className={`text-[10px] font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
+            isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+          }`}>
+          + New rule
+        </button>
+      </div>
+      <div className="space-y-2">
+        {finnsPolicyRules.map(rule => (
+          <div key={rule.id}
+               className={`p-2.5 rounded-lg border ${
+                 rule.active
+                   ? isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200'
+                   : isDark ? 'bg-[#1a1a1a] border-gray-800 opacity-60' : 'bg-white border-gray-200 opacity-60'
+               }`}>
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
+                    {rule.id}
+                  </span>
+                  <span className={`text-[11px] font-semibold ${t.textPrimary}`}>{rule.name}</span>
+                </div>
+                <p className={`text-[9px] mt-0.5 ${t.textMuted}`}>
+                  Scope: {rule.scope} · Template: {rule.template} · {rule.triggers} trigger{rule.triggers === 1 ? '' : 's'}
+                </p>
+              </div>
+              <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                rule.active
+                  ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                  : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {rule.active ? 'Active' : 'Off'}
+              </span>
+            </div>
+            <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+              Created by {rule.createdBy} · {rule.createdAt}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                onClick={() => toast.info(`Edit ${rule.id}`, { description: 'Production: opens the rule composer pre-filled. Lands in a follow-up phase.' })}
+                className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
+                <Pencil className="h-2.5 w-2.5" /> Edit
+              </button>
+              <button
+                onClick={() => toast.info(`${rule.active ? 'Disabled' : 'Enabled'} ${rule.id}`, { description: 'Live toggle would flip the rule and fire a rule-toggle action log entry. Stubbed for now.' })}
+                className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
+                {rule.active ? <PauseCircle className="h-2.5 w-2.5" /> : <PlayCircle className="h-2.5 w-2.5" />}
+                {rule.active ? 'Disable' : 'Enable'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // ── Disputes tab body — open + recent disputes (Phase 4d) ────────
+  const disputesTabBody = (
+    <div className="p-4 space-y-3">
+      <div>
+        <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Disputes</h2>
+        <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
+          Open quality / SLA / override cases. Approve, reject, or escalate.
+        </p>
+      </div>
+      {finnsDisputes.length === 0 ? (
+        <div className={`text-[11px] py-6 text-center rounded-lg border border-dashed ${
+          isDark ? 'border-gray-800 text-gray-500' : 'border-gray-300 text-gray-500'
+        }`}>
+          No open disputes.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {finnsDisputes.map(d => {
+            const priColor =
+              d.priority === 'high'   ? isDark ? 'text-red-400'    : 'text-red-600'
+              : d.priority === 'medium' ? isDark ? 'text-amber-400' : 'text-amber-700'
+                                        : isDark ? 'text-gray-400'   : 'text-gray-600';
+            const statusColor =
+              d.status === 'escalated' ? isDark ? 'bg-red-500/15 text-red-400'      : 'bg-red-50 text-red-700'
+              : d.status === 'open'    ? isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'
+                                        : isDark ? 'bg-gray-800 text-gray-400'     : 'bg-gray-100 text-gray-600';
+            return (
+              <div key={d.id}
+                   className={`p-2.5 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
+                        {d.id}
+                      </span>
+                      <span className={`text-[11px] font-semibold ${t.textPrimary}`}>{d.refPoId}</span>
+                      <span className={`text-[9px] font-bold uppercase tracking-wide ${priColor}`}>● {d.priority}</span>
+                    </div>
+                    <p className={`text-[10px] mt-1 leading-relaxed ${t.textSecondary}`}>{d.reason}</p>
+                  </div>
+                  <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${statusColor}`}>
+                    {d.status}
+                  </span>
+                </div>
+                <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+                  Raised by {d.raisedBy}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => toast.success(`Approved ${d.id}`, { description: `Override accepted. Logged to action log.` })}
+                    className={`text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border ${isDark ? 'border-green-500/40 text-green-400 hover:bg-green-500/10' : 'border-green-300/70 text-green-600 hover:bg-green-50'}`}>
+                    <Check className="h-2.5 w-2.5" /> Approve
+                  </button>
+                  <button
+                    onClick={() => toast.warning(`Rejected ${d.id}`, { description: `Override denied. Logged to action log.` })}
+                    className={`text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border ${isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/10' : 'border-red-300/70 text-red-600 hover:bg-red-50'}`}>
+                    <X className="h-2.5 w-2.5" /> Reject
+                  </button>
+                  <button
+                    onClick={() => toast.info(`Escalated ${d.id}`, { description: 'Routed to F&B Director for sign-off.' })}
+                    className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
+                    Escalate
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Left-panel shell with tab strip ──────────────────────────────
+  const TAB_DEFS: { id: LeftTab; label: string; icon: typeof Gauge; count?: number }[] = [
+    { id: 'activity', label: 'Activity', icon: Gauge },
+    { id: 'agents',   label: 'Agents',   icon: Bot,    count: finnsAgents.length },
+    { id: 'policy',   label: 'Policy',   icon: Shield, count: finnsPolicyRules.length },
+    { id: 'disputes', label: 'Disputes', icon: Scale,  count: openDisputeCount },
+  ];
+
+  const leftPanel = (
+    <div className="flex flex-col h-full">
+      {/* Tab strip */}
+      <div className={`shrink-0 flex border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+        {TAB_DEFS.map(tab => {
+          const Icon = tab.icon;
+          const active = leftTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setLeftTab(tab.id)}
+              className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold transition-colors border-b-2 ${
+                active
+                  ? isDark ? 'text-[#a3b085] border-[#87986a]' : 'text-[#6b7a54] border-[#87986a]'
+                  : isDark ? 'text-gray-500 border-transparent hover:text-gray-300' : 'text-gray-500 border-transparent hover:text-gray-700'
+              }`}>
+              <Icon className="h-3 w-3" />
+              {tab.label}
+              {tab.count != null && tab.count > 0 && (
+                <span className={`ml-0.5 text-[9px] px-1 py-0 rounded-full font-bold ${
+                  active
+                    ? isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                    : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {/* Body */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {leftTab === 'activity' && activityTabBody}
+        {leftTab === 'agents'   && agentsTabBody}
+        {leftTab === 'policy'   && policyTabBody}
+        {leftTab === 'disputes' && disputesTabBody}
       </div>
     </div>
   );

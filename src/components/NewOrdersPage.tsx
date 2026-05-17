@@ -610,8 +610,9 @@ function makeHistoricalOrders(): Order[] {
 
 const HISTORICAL_ORDERS: Order[] = makeHistoricalOrders();
 
-// Combined ledger used by Audit Mode.
-const ALL_ORDERS: Order[] = [...ORDERS, ...HISTORICAL_ORDERS];
+// Seeded ledger used by Audit Mode. Runtime POs (from RFQ awards)
+// are merged in at the component level (see NewOrdersPage body).
+const SEEDED_ALL_ORDERS: Order[] = [...SEEDED_ORDERS, ...HISTORICAL_ORDERS];
 
 // Decision Attribution Trail removed for Finn's scope.
 // Audit lineage now lives inline on event cards in Activity & Governance.
@@ -732,6 +733,12 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const runtimePOs = useRuntimePOs();
   const ORDERS: Order[] = useMemo(
     () => [...runtimePOs.map(runtimePOToOrder), ...SEEDED_ORDERS],
+    [runtimePOs],
+  );
+  // Same merge for the audit-mode ledger so historical + live + runtime
+  // POs all flow through one read path inside the component.
+  const ALL_ORDERS: Order[] = useMemo(
+    () => [...runtimePOs.map(runtimePOToOrder), ...SEEDED_ALL_ORDERS],
     [runtimePOs],
   );
   // Keep a lookup of runtime PO ids → original RuntimePO for surfacing

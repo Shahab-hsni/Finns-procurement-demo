@@ -8,7 +8,7 @@ import {
   Sparkles, ChevronRight, Plus, Trash2, CheckCircle,
   Package, MapPin, Users, Zap, FileText, ShieldCheck,
   AlertTriangle, Lock, Truck, X, Flame, ScrollText,
-  Clock, Award, Mail, MessageCircle,
+  Clock, Award, Mail, MessageCircle, StickyNote,
 } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ import { useRFQs, awardRFQ, cancelRFQ, type RFQQuote } from "../lib/rfqStore";
 import { createPO, updatePO, type RuntimePO } from "../lib/poStore";
 import { logUserAction } from "../lib/actionLog";
 import { detectItem, suggestVendorsForItems } from "../lib/itemIntel";
+import { readEntityNote, useEntityNote } from "../lib/entityNotes";
 
 interface RequestPanelProps {
   theme?: 'dark' | 'light';
@@ -102,6 +103,64 @@ const PLAYBOOK_META: Record<PlaybookId, { icon: typeof Zap; tagline: string; age
   'WF-RSH': { icon: Zap,        tagline: 'Skip RFQ. Direct to preferred vendor. Up to 12% premium tolerated.', agent: 'A-01' },
   'WF-REC': { icon: FileText,   tagline: 'Scheduled recurring order from a contracted vendor. Auto-approve under spend cap.', agent: 'A-02' },
 };
+
+// ── Vendor Note Panel (5d) ────────────────────────────────────────
+// Read-only surface for the currently-selected vendor's team note.
+// Note content lives in lib/entityNotes (same store the Suppliers
+// page's ManualNotes component writes to). When no note exists, an
+// empty-state encourages adding one via Suppliers.
+function VendorNotePanel({
+  vendorId, vendorName, isDark, onNavigate,
+}: {
+  vendorId: string;
+  vendorName: string;
+  isDark: boolean;
+  onNavigate?: (page: string) => void;
+}) {
+  const note = useEntityNote('supplier', vendorId);
+  const REL_TIME = (iso: string): string => {
+    const ms = Date.now() - new Date(iso).getTime();
+    const min = Math.round(ms / 60_000);
+    if (min < 60) return `${min}m ago`;
+    const hr  = Math.round(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const d   = Math.round(hr / 24);
+    if (d < 7)  return `${d}d ago`;
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  return (
+    <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
+      <div className="flex items-center gap-1.5 mb-2">
+        <StickyNote className={`h-3 w-3 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+        <span className={`text-[9px] font-bold uppercase ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>Team notes</span>
+        {note && (
+          <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+            edited {REL_TIME(note.updatedAt)}
+          </span>
+        )}
+        {onNavigate && (
+          <button onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.location.hash = `vendor=${vendorId}`;
+            }
+            onNavigate('suppliers');
+          }} className={`ml-auto text-[10px] font-semibold ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
+            {note ? 'Edit →' : 'Add note →'}
+          </button>
+        )}
+      </div>
+      {note ? (
+        <p className={`text-[10px] leading-relaxed whitespace-pre-wrap ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+          {note.text}
+        </p>
+      ) : (
+        <p className={`text-[10px] leading-relaxed ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+          No team notes on {vendorName} yet. Add context from past experiences (delivery quirks, who to call after hours, what they prefer to be paid in) on the Suppliers page — it'll show here next time anyone picks this vendor.
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) {
   const isDark = theme === 'dark';
@@ -729,27 +788,34 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
           )}
 
           {step === 2 && primaryVendor && (
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
-              <div className="flex items-center gap-1.5 mb-2">
-                <Users className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
-                <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Vendor Reliability</span>
-              </div>
-              <p className={`text-[11px] font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{primaryVendor.name}</p>
-              {([['Composite', primaryVendor.metrics.composite], ['On-time', primaryVendor.metrics.onTime], ['Cold-chain', primaryVendor.metrics.coldChain]] as const).map(([k, v]) => (
-                <div key={k} className="mb-1.5">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{k}</span>
-                    <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{v}%</span>
-                  </div>
-                  <div className={`h-1.5 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                    <div className="h-1.5 rounded-full bg-[#87986a]" style={{ width: `${v}%` }} />
-                  </div>
+            <>
+              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Users className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
+                  <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Vendor Reliability</span>
                 </div>
-              ))}
-              <p className={`text-[9px] mt-2 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
-                Account manager: {primaryVendor.accountManager.name} · WhatsApp {primaryVendor.accountManager.whatsapp}
-              </p>
-            </div>
+                <p className={`text-[11px] font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{primaryVendor.name}</p>
+                {([['Composite', primaryVendor.metrics.composite], ['On-time', primaryVendor.metrics.onTime], ['Cold-chain', primaryVendor.metrics.coldChain]] as const).map(([k, v]) => (
+                  <div key={k} className="mb-1.5">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{k}</span>
+                      <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{v}%</span>
+                    </div>
+                    <div className={`h-1.5 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                      <div className="h-1.5 rounded-full bg-[#87986a]" style={{ width: `${v}%` }} />
+                    </div>
+                  </div>
+                ))}
+                <p className={`text-[9px] mt-2 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                  Account manager: {primaryVendor.accountManager.name} · WhatsApp {primaryVendor.accountManager.whatsapp}
+                </p>
+              </div>
+
+              {/* 5d — team note from prior admins, read from entityNotes.
+                  Editable on Suppliers page; surfaced here read-only so the
+                  user picking a vendor sees what teammates noted before. */}
+              <VendorNotePanel vendorId={primaryVendor.id} vendorName={primaryVendor.name} isDark={isDark} onNavigate={onNavigate} />
+            </>
           )}
 
           {step === 3 && (
@@ -1233,6 +1299,18 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                       <Sparkles className="h-2.5 w-2.5" /> Match
                                     </span>
                                   )}
+                                  {/* 5d — team note exists indicator */}
+                                  {(() => {
+                                    const n = readEntityNote('supplier', v.id);
+                                    return n ? (
+                                      <span title="Team note exists — see right panel"
+                                            className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                              isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                            }`}>
+                                        <StickyNote className="h-2.5 w-2.5" /> Note
+                                      </span>
+                                    ) : null;
+                                  })()}
                                   <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.region} · {v.type}</span>
                                 </div>
                                 <div className="flex items-center gap-2">

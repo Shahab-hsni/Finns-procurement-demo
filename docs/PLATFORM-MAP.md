@@ -198,6 +198,80 @@ Some pages deep-link with a URL hash. Receivers read the hash on mount **and** o
 
 ---
 
+## 6a. Unified Action Log
+
+Single source of truth for every mutating action across the platform. Lives at `src/lib/actionLog.ts`. Foundation for the manual baseline (`REALISM-AUDIT.md` pattern 11) — without a single log of actions, Off-mode users have no audit trail of their own work.
+
+### Schema
+
+Every entry carries:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `id` | `act-NNNNNN` | Auto-generated, monotonic. |
+| `at` | ISO string | Action timestamp. |
+| `actorType` | `'agent' \| 'admin' \| 'system'` | Who took the action. |
+| `actorId` | `'admin' \| 'A-01'..'A-05' \| 'system'` | Discriminator within actorType. |
+| `actorLabel` | string | Display name: 'You' / 'Sourcing Agent' / 'System'. |
+| `kind` | `ActionKind` (closed union) | Canonical action name (e.g. `po-approve`, `sku-adjust`, `rule-create`, `vendor-message`). |
+| `entity?` | `{ type, id }` | What the action operated on, when applicable. |
+| `summary` | string | One-line for feed display. |
+| `category?` | `FinnsCategory` | For category-filtered views. |
+| `venue?` | `VenueTag \| 'Multi'` | For venue-filtered views. |
+| `outcome` | `'success' \| 'pending' \| 'failed' \| 'overridden'` | |
+| `details?` | string | Longer text or structured note. |
+| `meta?` | `Record<string, unknown>` | Free-form metadata (prior value, amount, etc.). |
+
+### Storage
+
+- In-memory module-level array + `localStorage` backing (key: `finns-action-log`).
+- Capped at 200 most recent entries; older silently dropped from the tail.
+- Module-level (not React state) so agent dispatchers, timer-based emitters, and event handlers can write without a component being mounted.
+- Components subscribe via `useActionLog(filter?)` — re-renders on the `finns-action-log-changed` CustomEvent.
+
+### API
+
+```ts
+// Emitters
+logUserAction(input)              // shorthand: actorType 'admin' + actorId 'admin' + label 'You'
+logAgentAction(agentId, label, input)
+logSystemAction(input)
+logAction(input)                  // lower-level: fully-specified actor
+
+// Readers
+readActionLog(filter?)            // synchronous one-shot read
+useActionLog(filter?)             // React hook; subscribes to changes
+
+// Dev / testing
+resetActionLog()                  // re-seed to the SEEDED_HISTORY fixture
+```
+
+### Consumers
+
+| Page | What it reads |
+|------|---------------|
+| **Activity & Governance** | Canonical Activity Feed. No filter (all 3 actorTypes). Adds the actor-filter chip (You / Atlas / Agents / All / System). |
+| **Overview** | "Recent activity" section in the right panel — most recent N entries, mode-aware filtering. |
+| **Inventory** | Right-panel Action Log scoped to `entityType: 'sku'`. |
+| **Suppliers** | Per-vendor Action Log scoped to `entityType: 'supplier', entityId: <SUP-NNN>`. |
+| **Spending** | LEDGER merge: entries with `kind: 'savings-lock' \| 'savings-manual-add'` join the existing ledger view, filtered by `category`. |
+
+### Mode-aware filters
+
+The actor filter is the primary mode-awareness lens:
+
+- **Off mode** primary view: `actorType: 'admin'` — your own work.
+- **Assist mode** primary view: all three actorTypes — see what agents proposed + what you approved + raw system events.
+- **Auto mode** primary view: all three — agent-driven activity dominates.
+
+The store itself is mode-agnostic; mode only changes which slice each page surfaces by default.
+
+### Atlas + chat
+
+Atlas reads the action log when answering "What did I do today?" / "Show me recent agent activity" / "What's the audit trail for PO-3041?" — filtered by the page-context entity. Never gated.
+
+---
+
 ## 7. The Pages
 
 ### 7.1 Overview

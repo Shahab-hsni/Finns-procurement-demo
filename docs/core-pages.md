@@ -17,7 +17,7 @@
 6. [Spending Page](#6-spending-page)
 7. [Activity & Governance Page](#7-activity--governance-page)
 8. [Workflows Page](#8-workflows-page)
-9. [Shared Patterns](#9-shared-patterns)
+9. [Shared Patterns](#9-shared-patterns) — Atlas · ⌘K · Source Bridge · Audit Mode · Hash-Context · Toasts · Tooltips · Tours · Venue Tags · **Unified Action Log** · Removed Patterns
 
 ---
 
@@ -2356,7 +2356,73 @@ Each page has a guided driver.js tour that auto-starts on first visit and can be
 
 ---
 
-## 9.10 Removed Patterns (do not reintroduce)
+## 9.10 Unified Action Log
+
+Single shared store of every mutating action across the platform. Lives at `src/lib/actionLog.ts`. Foundation for the manual baseline — without one log of admin + agent + system actions, Off-mode users have no audit trail of their own work, and Assist/Auto users have no record of which agent did what.
+
+**Full architectural spec in `PLATFORM-MAP.md § 6a`** (schema, storage, API, mode-aware filters, Atlas integration). This entry covers only how individual pages interact with it.
+
+### Emitters — every page that mutates state must call one
+
+| Page | Action | Emit via | Kind |
+|------|--------|----------|------|
+| Orders | Approve & Execute | `logUserAction` (Off) or `logAgentAction('A-01', …)` (Auto) | `po-approve` |
+| Orders | Hold / Cancel | `logUserAction` | `po-hold` / `po-cancel` |
+| Orders | Resolve dispute | `logUserAction` | `dispute-resolve` |
+| Inventory | Adjust on-hand | `logUserAction` | `sku-adjust` |
+| Inventory | Edit par / lead time / etc. | `logUserAction` | `sku-edit` |
+| Inventory | Archive SKU | `logUserAction` | `sku-archive` |
+| New Request | Submit request | `logUserAction` | `request-submit` |
+| Suppliers | Add vendor | `logUserAction` | `vendor-add` |
+| Suppliers | Send message via Source Bridge | `logUserAction` or `logAgentAction('A-03', …)` | `vendor-message` |
+| Suppliers | Negotiate / accept terms | `logUserAction` | `vendor-negotiate` |
+| Spending | Lock saving | `logUserAction` | `savings-lock` |
+| Spending | Manual saving entry | `logUserAction` | `savings-manual-add` |
+| Activity & Governance | Create / edit / disable policy rule | `logUserAction` | `rule-create` / `rule-edit` / `rule-disable` |
+| Activity & Governance | Open / resolve dispute | `logUserAction` | `dispute-open` / `dispute-resolve` |
+| Workflows | Save playbook edit | `logUserAction` | `playbook-edit` |
+| App header | Autonomy mode change | `logUserAction` | `autonomy-mode-change` |
+
+System-emitted (always-on sensing layer, no actor gating): `alert-raised`, `eta-slip-detected`, `compliance-expiry`, `par-breach`, `vendor-sla-dip`.
+
+### Consumers — every page's "recent activity" reads from the log
+
+| Page | Reads | Filter |
+|------|-------|--------|
+| Overview | Right-panel "Recent activity" | last 10, no filter (all 3 actorTypes) |
+| Inventory | Right-panel "Recent activity for {SKU}" | `entity: { type: 'sku', id }` |
+| Suppliers | "Vendor activity" tab in Storefront / Intel panel | `entity: { type: 'supplier', id }` |
+| Spending | LEDGER merges saving entries | `kind: ['savings-lock', 'savings-manual-add']`, filtered by `category` |
+| Activity & Governance | Canonical Activity Feed | actor-filter chip drives `actorType` filter |
+| Atlas chat | Page-context queries ("what did I do today?") | filtered by page entity + last N hours |
+
+### Mode-aware view defaults
+
+| Mode | Activity & Governance default filter | Overview "Recent activity" default |
+|------|--------------------------------------|------------------------------------|
+| Off | `actorType: 'admin'` (Your actions) | `actorType: 'admin'` |
+| Assist | All actorTypes | All |
+| Auto | All actorTypes | All |
+
+The store itself is mode-agnostic — every action is logged regardless of mode. Mode only shapes the **default view**; the user can always switch the filter chip to see other actors.
+
+### Persistence
+
+- `localStorage` key: `finns-action-log`
+- Change event: `finns-action-log-changed` (CustomEvent on `window`)
+- Capped at 200 entries; older silently dropped
+- Seeded with 18 historical entries (May 7–16, 2026) so consumers have data on first load
+
+### Don't
+
+- ❌ Do **not** read or write the underlying localStorage key directly — go through `actionLog.ts`
+- ❌ Do **not** call `logAction` from a render path; only from event handlers / effects
+- ❌ Do **not** persist the entry list in component state — use `useActionLog(filter)`
+- ❌ Do **not** add a new `ActionKind` without updating the table above
+
+---
+
+## 9.11 Removed Patterns (do not reintroduce)
 
 The following patterns existed in the earlier Buyamia iteration and have been removed for Finn's. Documented here so they aren't re-added by accident.
 

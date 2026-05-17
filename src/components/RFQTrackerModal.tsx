@@ -24,6 +24,8 @@ import {
 } from '../lib/rfqStore';
 import { logUserAction } from '../lib/actionLog';
 import { useAutonomyMode, AUTONOMY_LABEL } from '../lib/autonomy';
+import { createPO, type RuntimePO, type QuoteChannel } from '../lib/poStore';
+import { finnsSuppliers } from '../lib/mockData';
 
 interface RFQTrackerModalProps {
   isDark: boolean;
@@ -31,6 +33,8 @@ interface RFQTrackerModalProps {
   onClose: () => void;
   /** Optional handler — fires when the user clicks "Compose new" from inside the tracker. */
   onComposeNew?: () => void;
+  /** Navigation hook — used by "View in Orders" after an award. */
+  onNavigate?: (page: string) => void;
 }
 
 const STATUS_META: Record<RFQStatus, { label: string; icon: typeof Clock; tone: 'amber' | 'blue' | 'green' | 'gray' | 'red' }> = {
@@ -71,7 +75,7 @@ function relativeTime(iso: string): string {
   return `${d}d ago`;
 }
 
-export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew }: RFQTrackerModalProps) {
+export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavigate }: RFQTrackerModalProps) {
   const rfqs = useRFQs();
   const mode = useAutonomyMode();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -102,7 +106,76 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew }: RFQTr
   const handleAward = (rfq: RFQRecord, quote: RFQQuote) => {
     const poId = `PO-${3050 + Math.floor(Math.random() * 200)}`;
     awardRFQ(rfq.id, quote.vendorId, poId);
-    // Two action log entries: the award itself + a po-create for the synthesised PO.
+
+    const channelLabel = rfq.channel === 'whatsapp' ? 'WhatsApp' : 'email';
+    const quoteChannel: QuoteChannel = rfq.channel === 'whatsapp' ? 'whatsapp' : 'email';
+
+    // Find account-manager contact for the awarded vendor — Bali context:
+    // the quote came via the AM's WhatsApp/Telegram, so we tag the PO with it.
+    const vendorRecord = finnsSuppliers.find(s => s.id === quote.vendorId);
+    const amContact = vendorRecord
+      ? `${vendorRecord.accountManager.name} · ${vendorRecord.accountManager.whatsapp}`
+      : quote.vendorName;
+
+    // Build the human-readable item summary used in the PO list.
+    const itemSummary = rfq.items.map(it => `${it.qty}${it.unit} ${it.name}`);
+
+    // Compute an ETA label from the quoted lead time. Today + leadTime days.
+    const etaDate = new Date();
+    etaDate.setDate(etaDate.getDate() + quote.leadTimeDays);
+    const etaLabel = etaDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    // Compute saving vs the next-best quote (if any) for the agent reasoning.
+    const others = rfq.quotes.filter(q => q.vendorId !== quote.vendorId);
+    const nextBest = others.length > 0
+      ? others.reduce((min, q) => q.totalIdr < min ? q.totalIdr : min, Number.POSITIVE_INFINITY)
+      : null;
+    const savingIdr = nextBest != null && nextBest !== Number.POSITIVE_INFINITY
+      ? nextBest - quote.totalIdr
+      : 0;
+
+    const reasoning = [
+      `Awarded via ${rfq.id}. Winning quote came in via ${channelLabel} from ${amContact}.`,
+      others.length > 0
+        ? savingIdr > 0
+          ? `Beat ${others.length} other quote${others.length === 1 ? '' : 's'} — Rp ${(savingIdr / 1_000_000).toFixed(2)}M cheaper than next-best.`
+          : `${others.length} other quote${others.length === 1 ? ' was' : 's were'} more competitive on lead time / terms; price is locked here.`
+        : 'No other vendors bid — sole responder.',
+      `${quote.leadTimeDays}d lead.${quote.note ? ` Vendor note: "${quote.note}"` : ''}`,
+    ].join(' ');
+
+    // ── Mint the runtime PO at Stage 1 (Quote/Vendor Confirmed) ──
+    const po: RuntimePO = {
+      id: poId,
+      supplier: quote.vendorName,
+      items: itemSummary,
+      amount: quote.totalIdr,
+      group: 'needs-action',
+      actionKind: 'approve',
+      humanAction: 'Approve',
+      humanStatus: 'Awarded quote · awaiting your approval',
+      humanDescription: `Awarded from ${rfq.id} · ${rfq.items.length} line item${rfq.items.length === 1 ? '' : 's'}.`,
+      eta: `${etaLabel} · ${quote.leadTimeDays}d after approval`,
+      etaMinutes: quote.leadTimeDays * 24 * 60,
+      dagStage: 1,
+      agentReasoning: reasoning,
+      agentAgent: 'A-01 (Sourcing)',
+      assignedAgent: { id: 5, role: 'Sourcing' },     // legacy id 5 → A-01
+      workflowTemplate: 'WF-STD',
+      status: 'live',
+      createdAt: new Date().toISOString(),
+      quoteChannel,
+      quoteFrom: amContact,
+      quoteReceivedAt: quote.receivedAt,
+      fromRfqId: rfq.id,
+      saving: savingIdr > 0 ? { time: '2h', cost: Math.round(savingIdr) } : undefined,
+      financeInsight: savingIdr > 0
+        ? `Locked Rp ${(savingIdr / 1_000_000).toFixed(2)}M vs the next-best quote.`
+        : undefined,
+    };
+    createPO(po);
+
+    // Two action log entries: the award itself + a po-create for the new PO.
     logUserAction({
       kind: 'rfq-award',
       entity: { type: 'supplier', id: quote.vendorId },
@@ -116,17 +189,30 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew }: RFQTr
         totalIdr: quote.totalIdr,
         leadTimeDays: quote.leadTimeDays,
         synthesisedPoId: poId,
+        channel: rfq.channel,
       },
     });
     logUserAction({
       kind: 'po-create',
       entity: { type: 'po', id: poId },
-      summary: `Created ${poId} from ${rfq.id} · ${quote.vendorName} · ${fmtIdrShort(quote.totalIdr)}`,
+      summary: `Created ${poId} from ${rfq.id} · ${quote.vendorName} · ${fmtIdrShort(quote.totalIdr)} · quote via ${channelLabel}`,
       venue: rfq.venue,
-      meta: { fromRfqId: rfq.id, vendorId: quote.vendorId, totalIdr: quote.totalIdr },
+      meta: { fromRfqId: rfq.id, vendorId: quote.vendorId, totalIdr: quote.totalIdr, channel: rfq.channel },
     });
-    toast.success(`${quote.vendorName} awarded`, {
-      description: `${rfq.id} → ${poId} · ${fmtIdrShort(quote.totalIdr)}`,
+
+    // Success toast with a route-on-click button.
+    toast.success(`${quote.vendorName} awarded · ${poId} created`, {
+      description: `Open in Orders to authorize and execute. Quote arrived via ${channelLabel}.`,
+      action: onNavigate
+        ? {
+            label: 'View in Orders',
+            onClick: () => {
+              if (typeof window !== 'undefined') window.location.hash = `order=${poId}`;
+              onClose();
+              onNavigate('orders');
+            },
+          }
+        : undefined,
     });
   };
 
@@ -251,11 +337,20 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew }: RFQTr
                               {quote.leadTimeDays}d lead
                             </span>
                             <span>·</span>
+                            <span className={`inline-flex items-center gap-0.5 ${
+                              rfq.channel === 'whatsapp'
+                                ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
+                                : isDark ? 'text-blue-300' : 'text-blue-700'
+                            }`}>
+                              via {rfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}
+                            </span>
+                            <span>·</span>
                             <span>{relativeTime(quote.receivedAt)}</span>
                           </div>
                         ) : (
                           <div className={`text-[10px] mt-0.5 inline-flex items-center gap-1 ${textMuted}`}>
-                            <Clock className="h-2.5 w-2.5" /> Pending reply
+                            <Clock className="h-2.5 w-2.5" />
+                            Waiting on {rfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'} reply
                           </div>
                         )}
                         {quote?.note && (

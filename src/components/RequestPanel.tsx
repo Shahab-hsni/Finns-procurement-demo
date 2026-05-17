@@ -1056,12 +1056,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       {/* RFQ Composer modal (manual sourcing — 4h) */}
       <RFQComposerModal isDark={isDark} isOpen={rfqOpen} onClose={() => setRfqOpen(false)} />
 
-      {/* RFQ Tracker modal (4h.2) */}
+      {/* RFQ Tracker modal (4h.2 / 4h.3) */}
       <RFQTrackerModal
         isDark={isDark}
         isOpen={rfqTrackerOpen}
         onClose={() => setRfqTrackerOpen(false)}
         onComposeNew={() => setRfqOpen(true)}
+        onNavigate={onNavigate}
       />
     </div>
   );

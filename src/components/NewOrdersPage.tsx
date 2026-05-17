@@ -20,6 +20,7 @@ import { workflowTemplates } from '../lib/mockData';
 import { logUserAction, type ActionKind } from '../lib/actionLog';
 import { AgentCTA } from './AgentCTA';
 import { ManualNotes } from './ManualNotes';
+import { useRuntimePOs, type RuntimePO } from '../lib/poStore';
 
 interface OrdersPageProps {
   theme: 'dark' | 'light';
@@ -257,7 +258,7 @@ function pickWorkflow(seed: number, hint?: 'rush' | 'recurring'): string {
 // ── Finn's seeded live orders ─────────────────────────────────────
 // Numeric `assignedAgent.id` keeps the legacy slot (mapped to A-NN by
 // LEGACY_AGENT_MAP). amount is IDR. dagStage uses the 5-stage range (0-4).
-const ORDERS: Order[] = [
+const SEEDED_ORDERS: Order[] = [
   {
     id: 'PO-3041', supplier: 'PT Bali Seafood Lestari',
     items: ['Yellowfin Tuna sashimi 8kg · ST', 'Yellowfin Tuna food-grade 22kg · BC', 'Prawns 14kg · BC + ST + RC'],
@@ -692,9 +693,54 @@ const ACTION_META: Record<ActionKind, { icon: typeof Zap; label: string; color: 
 };
 
 // ── Component ─────────────────────────────────────────────────────────
+// ── Runtime → Order shape adapter ────────────────────────────────
+// RuntimePO carries the same fields, but as an exported interface from
+// poStore. Re-shape into the page-local `Order` type so the render
+// path doesn't need to branch.
+function runtimePOToOrder(po: RuntimePO): Order {
+  return {
+    id: po.id,
+    supplier: po.supplier,
+    items: po.items,
+    amount: po.amount,
+    amountUsd: po.amountUsd,
+    group: po.group,
+    actionKind: po.actionKind,
+    humanAction: po.humanAction,
+    humanStatus: po.humanStatus,
+    humanDescription: po.humanDescription,
+    eta: po.eta,
+    etaMinutes: po.etaMinutes,
+    dagStage: po.dagStage,
+    agentReasoning: po.agentReasoning,
+    agentAgent: po.agentAgent,
+    assignedAgent: po.assignedAgent,
+    financeInsight: po.financeInsight,
+    saving: po.saving,
+    createdAt: po.createdAt,
+    completedAt: po.completedAt,
+    status: po.status,
+    workflowTemplate: po.workflowTemplate,
+  };
+}
+
 export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const isDark = theme === 'dark';
   const t = themeTokens(isDark);
+
+  // Runtime POs (e.g. from RFQ Award) merge in front of the seeded list.
+  const runtimePOs = useRuntimePOs();
+  const ORDERS: Order[] = useMemo(
+    () => [...runtimePOs.map(runtimePOToOrder), ...SEEDED_ORDERS],
+    [runtimePOs],
+  );
+  // Keep a lookup of runtime PO ids → original RuntimePO for surfacing
+  // the Bali channel context on the right panel.
+  const runtimePOById = useMemo(() => {
+    const m = new Map<string, RuntimePO>();
+    runtimePOs.forEach(p => m.set(p.id, p));
+    return m;
+  }, [runtimePOs]);
 
   const [selectedIds, setSelectedIds]       = useState<Set<string>>(new Set());
   const [chatInput, setChatInput]           = useState('');
@@ -3251,6 +3297,45 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             </div>
           </div>
         )}
+
+        {/* ── Single: Quote source · Bali channel context (Phase 4h.3) ── */}
+        {selectedOrder && !isBatch && (() => {
+          const runtime = runtimePOById.get(selectedOrder.id);
+          if (!runtime || runtime.quoteChannel === 'none' || !runtime.quoteFrom) return null;
+          const channelLabel = runtime.quoteChannel === 'whatsapp' ? 'WhatsApp' : 'Email';
+          const received = runtime.quoteReceivedAt
+            ? new Date(runtime.quoteReceivedAt).toLocaleString('en-US', {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+              })
+            : null;
+          const channelTone = runtime.quoteChannel === 'whatsapp'
+            ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
+            : isDark ? 'text-blue-300' : 'text-blue-700';
+          return (
+            <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <MessageCircle className={`h-3.5 w-3.5 ${channelTone}`} />
+                <span className={`text-[10px] font-semibold uppercase tracking-wide ${channelTone}`}>
+                  Quote received via {channelLabel}
+                </span>
+              </div>
+              <div className={`p-3 rounded-lg border ${
+                isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <p className={`text-[11px] font-semibold ${t.textPrimary}`}>{runtime.quoteFrom}</p>
+                {received && (
+                  <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>{received}</p>
+                )}
+                {runtime.fromRfqId && (
+                  <p className={`text-[10px] mt-1 ${t.textMuted}`}>
+                    Awarded from <span className={`font-semibold ${t.textPrimary}`}>{runtime.fromRfqId}</span>
+                    {' '}· vendor's reply is the source of truth — no portal handshake exists for this seller.
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Single: Agent reasoning (mode-aware via AgentCTA) ── */}
         {selectedOrder && !isBatch && (

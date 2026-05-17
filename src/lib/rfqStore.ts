@@ -269,15 +269,16 @@ function scheduleMockQuotes(rfqId: string): void {
       const current = store[rfqId];
       if (!current) return;
       if (current.status === 'awarded' || current.status === 'cancelled') return;
+      const channelLabel = r.channel === 'whatsapp' ? 'WhatsApp' : 'email';
       // 15% no-bid.
       if (Math.random() < 0.15) {
         logSystemAction({
           kind: 'rfq-quote-received',
           entity: { type: 'supplier', id: vendorId },
-          summary: `${vendorName} passed on ${rfqId} — no bid`,
+          summary: `${vendorName} replied via ${channelLabel} — no bid on ${rfqId}`,
           venue: r.venue,
           outcome: 'overridden',
-          meta: { rfqId, vendorId, vendorName, passed: true },
+          meta: { rfqId, vendorId, vendorName, channel: r.channel, passed: true },
         });
         return;
       }
@@ -301,10 +302,10 @@ function scheduleMockQuotes(rfqId: string): void {
       logSystemAction({
         kind: 'rfq-quote-received',
         entity: { type: 'supplier', id: vendorId },
-        summary: `${vendorName} quoted ${rfqId} · Rp ${(totalIdr / 1_000_000).toFixed(2)}M · ${leadTimeDays}d`,
+        summary: `${vendorName} replied via ${channelLabel} · Rp ${(totalIdr / 1_000_000).toFixed(2)}M · ${leadTimeDays}d`,
         venue: r.venue,
         details: note,
-        meta: { rfqId, vendorId, totalIdr, leadTimeDays },
+        meta: { rfqId, vendorId, vendorName, totalIdr, leadTimeDays, channel: r.channel },
       });
     }, delayMs);
   });

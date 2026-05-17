@@ -69,6 +69,7 @@ These decisions are locked. Anything that contradicts them is a violation of sco
 - **4 venues** tagged on every SKU and PO: `BC` Beach Club · `RC` Recreation Club · `ST` Stake · `SP` Splash Waterpark. **No scope switcher** in the global nav.
 - **Currency**: IDR primary, USD secondary on imports.
 - **Manual baseline rule**: every flow, every data entry, every verification must work without any agent participation. Agents (A-01..A-05) are layered help on top of a manual baseline — they are not the baseline itself. If a flow cannot be completed in `Off` mode, that's a missing manual surface and a bug.
+- **Bali vendor channel rule**: Finn's vendors in Bali do **not** have portals. They communicate via WhatsApp (primary) or email (formal). Every surface where information flows between Finn's and a vendor — quotes, confirmations, PO acknowledgments, dispute discussion, renegotiation rounds, delivery updates — must make the channel explicit ("via WhatsApp", "via email") so the user always knows the source of truth is a chat thread, not a synced portal record. A separate sellers dashboard is on the roadmap but should not be assumed by any current surface.
 
 ### Patterns explicitly removed from the upstream Buyamia iteration
 

@@ -247,61 +247,95 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
 
-          {/* Line items */}
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <Label className={`text-[10px] uppercase tracking-wide font-bold ${textMuted}`}>Items requesting quotes on</Label>
-              <button onClick={addItem}
-                      className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border transition-colors ${
-                        isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                      }`}>
-                <Plus className="h-3 w-3" /> Add line item
-              </button>
-            </div>
-            <div className="space-y-2">
-              {items.map(it => (
-                <div key={it.id}
-                     className={`flex items-center gap-2 p-2.5 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
-                  <Input
-                    placeholder="Item name (e.g. Yellowfin tuna sashimi grade)"
-                    value={it.name}
-                    onChange={e => updateItem(it.id, { name: e.target.value })}
-                    className={`flex-1 text-xs ${inputClass}`}
-                  />
-                  <select
-                    value={it.category}
-                    onChange={e => updateItem(it.id, { category: e.target.value as FinnsCategory })}
-                    className={`text-xs px-2 py-1.5 rounded border ${inputClass} w-28`}>
-                    <option value="">Category</option>
-                    {FINNS_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={it.qty}
-                    onChange={e => updateItem(it.id, { qty: Number(e.target.value) || 0 })}
-                    className={`w-16 text-xs ${inputClass}`}
-                  />
-                  <select
-                    value={it.unit}
-                    onChange={e => updateItem(it.id, { unit: e.target.value })}
-                    className={`text-xs px-2 py-1.5 rounded border ${inputClass} w-20`}>
-                    {COMMON_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                  <button
-                    onClick={() => removeItem(it.id)}
-                    disabled={items.length === 1}
-                    className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-colors ${
-                      items.length === 1
-                        ? isDark ? 'text-gray-700 cursor-not-allowed' : 'text-gray-300 cursor-not-allowed'
-                        : isDark ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'
-                    }`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+          {/* Line items — when opened from the wizard (prefillItems is set)
+              the items come from Step 1 and are rendered read-only here.
+              The user goes back to Step 1 to edit them, not into this modal. */}
+          {(() => {
+            const wizardMode = !!prefillItems && prefillItems.length > 0;
+            return (
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <Label className={`text-[10px] uppercase tracking-wide font-bold ${textMuted}`}>
+                    {wizardMode ? `Items from Step 1 (${items.length})` : 'Items requesting quotes on'}
+                  </Label>
+                  {wizardMode ? (
+                    <span className={`text-[9px] ${textMuted}`}>Edit on Step 1 if you need to change them</span>
+                  ) : (
+                    <button onClick={addItem}
+                            className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border transition-colors ${
+                              isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                            }`}>
+                      <Plus className="h-3 w-3" /> Add line item
+                    </button>
+                  )}
                 </div>
-              ))}
-            </div>
-          </section>
+                {wizardMode ? (
+                  // Read-only summary list — compact, no inputs.
+                  <div className={`p-2.5 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+                    <ul className="space-y-1">
+                      {items.map(it => (
+                        <li key={it.id} className="flex items-center gap-2 text-[11px]">
+                          <span className={`shrink-0 inline-flex items-center justify-center w-12 text-[10px] font-mono ${textMuted}`}>
+                            {it.qty}{it.unit}
+                          </span>
+                          <span className={`flex-1 truncate ${textPrimary}`}>{it.name}</span>
+                          {it.category && (
+                            <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
+                              {it.category}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {items.map(it => (
+                      <div key={it.id}
+                           className={`flex items-center gap-2 p-2.5 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+                        <Input
+                          placeholder="Item name (e.g. Yellowfin tuna sashimi grade)"
+                          value={it.name}
+                          onChange={e => updateItem(it.id, { name: e.target.value })}
+                          className={`flex-1 text-xs ${inputClass}`}
+                        />
+                        <select
+                          value={it.category}
+                          onChange={e => updateItem(it.id, { category: e.target.value as FinnsCategory })}
+                          className={`text-xs px-2 py-1.5 rounded border ${inputClass} w-28`}>
+                          <option value="">Category</option>
+                          {FINNS_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={it.qty}
+                          onChange={e => updateItem(it.id, { qty: Number(e.target.value) || 0 })}
+                          className={`w-16 text-xs ${inputClass}`}
+                        />
+                        <select
+                          value={it.unit}
+                          onChange={e => updateItem(it.id, { unit: e.target.value })}
+                          className={`text-xs px-2 py-1.5 rounded border ${inputClass} w-20`}>
+                          {COMMON_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                        <button
+                          onClick={() => removeItem(it.id)}
+                          disabled={items.length === 1}
+                          className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-colors ${
+                            items.length === 1
+                              ? isDark ? 'text-gray-700 cursor-not-allowed' : 'text-gray-300 cursor-not-allowed'
+                              : isDark ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'
+                          }`}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })()}
 
           {/* Vendor selection */}
           <section>

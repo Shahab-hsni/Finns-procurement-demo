@@ -173,14 +173,12 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     r.status === 'awaiting' || r.status === 'partial' || r.status === 'received'
   ).length;
 
-  // Step 1 — Items
-  const [requestName, setRequestName] = useState("Weekly produce restock");
+  // Step 1 — Items. Empty by default; populated only when the wizard
+  // is entered through an express deep-link (restock from Inventory,
+  // reorder from Orders, etc.) — see the expressMode effect below.
+  const [requestName, setRequestName] = useState("");
   const [description, setDescription] = useState("");
-  const [items, setItems] = useState<LineItem[]>([
-    { id: '1', name: 'Tomatoes, vine-ripened', category: 'Produce', qty: 20, unit: 'kg', unitPriceIdr: 18_000, venues: ['BC', 'RC'] },
-    { id: '2', name: 'Mixed greens (rocket, lettuce)', category: 'Produce', qty: 15, unit: 'kg', unitPriceIdr: 22_000, venues: ['BC', 'ST'] },
-    { id: '3', name: 'Lime, key', category: 'Produce', qty: 10, unit: 'kg', unitPriceIdr: 24_000, venues: ['BC', 'RC', 'SP'] },
-  ]);
+  const [items, setItems] = useState<LineItem[]>([]);
   const [newItemName, setNewItemName] = useState("");
   const [newItemCategory, setNewItemCategory] = useState<FinnsCategory>('Produce');
   const [newItemQty, setNewItemQty] = useState("1");
@@ -449,10 +447,12 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     } : it));
   }
 
+  // 5f — single-vendor select on the "I know my vendor" path. Picking
+  // a row replaces any prior selection. Clicking the already-selected
+  // vendor clears the selection (so the user can change their mind).
+  // Multi-vendor split orders aren't a thing here — one PO, one vendor.
   function toggleVendor(id: string) {
-    setSelectedVendors(prev =>
-      prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]
-    );
+    setSelectedVendors(prev => prev[0] === id ? [] : [id]);
   }
 
   function toggleTargetVenue(v: VenueTag) {
@@ -1106,29 +1106,9 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
               <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{stepSubtitle[step]}</p>
               {step < 5 && <SourcingDAG />}
             </div>
-            {/* RFQ Tracker trigger (4h.2). The Compose button moved
-                into Step 2 — see Step 2 "Compare quotes" path. */}
-            {step < 5 && (
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button onClick={() => setRfqTrackerOpen(true)}
-                  title="Open the RFQ tracker — see active quote requests, vendor replies, and historical awards."
-                  className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                    isDark
-                      ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}>
-                  <FileText className="h-3.5 w-3.5" />
-                  Your RFQs
-                  {activeRfqCount > 0 && (
-                    <span className={`ml-0.5 text-[9px] font-bold px-1 py-0 rounded-full ${
-                      isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
-                    }`}>
-                      {activeRfqCount}
-                    </span>
-                  )}
-                </button>
-              </div>
-            )}
+            {/* Compose + Tracker triggers moved into Step 2 — the
+                wizard is the only place where RFQs originate or get
+                acted on. Page header stays clean. */}
           </div>
 
           {/* Mode-aware banner (5c). One row, mode-tinted, always visible
@@ -1283,7 +1263,9 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       <Input placeholder="Unit" value={newItemUnit}
                         onChange={e => { setNewItemUnit(e.target.value); setOverridden(o => ({ ...o, unit: true })); }}
                         className={`col-span-2 ${inputClass} mt-0`} />
-                      <Input placeholder="Unit price (Rp)" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)} type="number"
+                      <Input placeholder="Budget hint per unit (Rp) — optional"
+                        title="Reference price you'd be happy paying per unit. Used as a budget signal in RFQs and to estimate the order total in Step 4 — it is NOT what the vendor will charge."
+                        value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)} type="number"
                         className={`col-span-8 ${inputClass} mt-0`} />
                       <div className="col-span-4 flex items-center gap-2">
                         <VenueChips venues={newItemVenues} isDark={isDark}
@@ -1367,7 +1349,24 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 {/* Path picker — only visible when no RFQ is in flight */}
                 {!wizardRfqId && (
                   <div className={cardClass}>
-                    <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>How are you sourcing this?</h2>
+                    <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                      <h2 className={`text-sm font-semibold ${labelClass}`}>How are you sourcing this?</h2>
+                      <button onClick={() => setRfqTrackerOpen(true)}
+                        title="See all past + active RFQs across requests."
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold transition-colors ${
+                          isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'
+                        }`}>
+                        <FileText className="h-3 w-3" />
+                        View all RFQs
+                        {activeRfqCount > 0 && (
+                          <span className={`ml-0.5 text-[9px] font-bold px-1 py-0 rounded-full ${
+                            isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                          }`}>
+                            {activeRfqCount}
+                          </span>
+                        )}
+                      </button>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => setSourcingPath('pick')}
@@ -1427,8 +1426,8 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       variant="inline"
                       className="mb-2"
                       agentLabel="A-01 · Sourcing Agent"
-                      reasoning={`A-01 ranks the directory by overlap with your items + composite + SLA. ${suggested.length > 0 ? `Top ${suggested.length} match your categories.` : ''} Pick one or more — the first selected becomes the primary. After approval the PO is forwarded via the vendor's preferred channel (WhatsApp first, email if formal).`}
-                      offModeMessage="Pick one or more vendors from your approved directory. The first selected becomes the primary. Sort by composite, on-time, or cold-chain SLA using the metrics on each row. After approval the PO is sent via WhatsApp or email."
+                      reasoning={`A-01 ranks the directory by overlap with your items + composite + SLA. ${suggested.length > 0 ? `Top ${suggested.length} match your categories.` : ''} One PO = one vendor — click a row to pick. After approval the PO is forwarded via the vendor's preferred channel (WhatsApp first, email if formal).`}
+                      offModeMessage="Pick one vendor from your approved directory. Sort by composite, on-time, or cold-chain SLA using the metrics on each row. After approval the PO is sent via WhatsApp or email. One PO = one vendor."
                     />
                     <div className="mt-4 space-y-2">
                       {ordered.map((v, idx) => {
@@ -1450,7 +1449,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                               <div className="flex items-center justify-between gap-2 flex-wrap">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className={`text-xs font-semibold ${labelClass}`}>{v.name}</span>
-                                  {isPrimary && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${SAGE.badge(isDark)}`}>Primary</span>}
+                                  {isPrimary && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${SAGE.badge(isDark)}`}>Selected</span>}
                                   {isSuggested && !isPrimary && (
                                     <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
                                       isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'

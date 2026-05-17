@@ -1,23 +1,17 @@
-import React, { useState, useRef, useEffect } from "react";
-import { ProductSidebar } from "./components/ProductSidebar";
+import React, { useState, useEffect } from "react";
 import { RequestPanel } from "./components/RequestPanel";
-import { IntelligencePanel } from "./components/IntelligencePanel";
-// Core pages
 import { OverviewPage } from "./components/OverviewPage";
 import { NewOrdersPage } from "./components/NewOrdersPage";
 import { NewInventoryPage } from "./components/NewInventoryPage";
 import { SpendingPage } from "./components/SpendingPage";
 import { SuppliersPage } from "./components/SuppliersPage";
 import { AIActivityPage } from "./components/AIActivityPage";
-// Agent modules
 import { WorkflowsPage } from "./components/workflows/WorkflowsPage";
 import { GovernancePage } from "./components/governance/GovernancePage";
-// Demo (not part of production)
 import { UserFlowDemoPage } from "./components/demo/UserFlowDemoPage";
 import { FlowChartPage } from "./components/demo/FlowChartPage";
-// Shared
 import { GlobalFooter } from "./components/GlobalFooter";
-import { Moon, Sun, Bell, ChevronDown, Bot } from "lucide-react";
+import { Moon, Sun, Bell } from "lucide-react";
 import { Toaster } from "sonner@2.0.3";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
@@ -41,23 +35,24 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 }
 
 // ── Page types ──
-type CorePage = 'overview' | 'orders' | 'inventory' | 'spending' | 'suppliers' | 'ai-activity' | 'request';
-type AgentPage = 'workflows' | 'governance';
+// Activity & Governance is split across two routes during the transition.
+// Phase 3h merges them at `/activity` and drops the `governance` route.
+type AppPage =
+  | 'overview'
+  | 'orders'
+  | 'inventory'
+  | 'spending'
+  | 'suppliers'
+  | 'ai-activity'      // becomes the canonical "Activity & Governance" route after Phase 3h
+  | 'governance'       // removed after Phase 3h merge
+  | 'workflows'
+  | 'request';
 type DemoPage = 'flow-demo' | 'flow-chart';
-type Page = CorePage | AgentPage | DemoPage;
-
-const AGENT_PAGES: AgentPage[] = ['workflows', 'governance'];
-
-const AGENT_NAV: { id: AgentPage; label: string }[] = [
-  { id: 'workflows', label: 'Workflows' },
-  { id: 'governance', label: 'Activity & Governance' },
-];
+type Page = AppPage | DemoPage;
 
 export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [currentPage, setCurrentPage] = useState<Page>('overview');
-  const [agentsOpen, setAgentsOpen] = useState(false);
-  const agentsRef = useRef<HTMLDivElement>(null);
   const isDark = theme === 'dark';
 
   // Simulate agent processing bursts (Kernel + Event Bus active)
@@ -100,66 +95,58 @@ export default function App() {
     };
   }, []);
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (agentsRef.current && !agentsRef.current.contains(e.target as Node)) {
-        setAgentsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  // Cross-page navigation from deep links (e.g. Decision Ledger → AI Activity).
-  // If the event carries a decisionId / evtId / agentId / orderId we set it as
-  // the URL hash before switching pages so the receiving page's hash-reader
-  // can pick up the context.
+  // Cross-page navigation from deep links.
+  // Pages dispatch `finns-navigate-page` with optional context (evtId / agentId
+  // / orderId / workflowId). We promote the context to the URL hash before
+  // switching pages so the receiver's hash-reader picks it up.
+  //
+  // Backward-compat: also listen to legacy `buyamia-navigate-page` while old
+  // pages still emit it. Removed in Phase 4 once every emitter is migrated.
+  // The deprecated `decisionId` field is no longer promoted -- Decision
+  // Attribution Trail is cut from Finn's scope.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{
         page: string;
-        decisionId?: string;
         evtId?: string;
         agentId?: string;
         orderId?: string;
+        workflowId?: string;
       }>).detail ?? {} as Record<string, string>;
       if (typeof window !== 'undefined') {
-        if (detail.decisionId)      window.location.hash = `decision=${detail.decisionId}`;
-        else if (detail.evtId)      window.location.hash = `evt=${detail.evtId}`;
-        else if (detail.agentId)    window.location.hash = `agent-${String(detail.agentId).padStart(2, '0')}`;
-        else if (detail.orderId)    window.location.hash = `order=${detail.orderId}`;
+        if (detail.evtId)            window.location.hash = `evt=${detail.evtId}`;
+        else if (detail.agentId)     window.location.hash = `agent-${String(detail.agentId).padStart(2, '0')}`;
+        else if (detail.orderId)     window.location.hash = `order=${detail.orderId}`;
+        else if (detail.workflowId)  window.location.hash = `workflow=${detail.workflowId}`;
       }
       if (detail.page) setCurrentPage(detail.page as Page);
     };
-    window.addEventListener('buyamia-navigate-page', handler);
-    return () => window.removeEventListener('buyamia-navigate-page', handler);
+    window.addEventListener('finns-navigate-page', handler);
+    window.addEventListener('buyamia-navigate-page', handler); // legacy, removed in Phase 4
+    return () => {
+      window.removeEventListener('finns-navigate-page', handler);
+      window.removeEventListener('buyamia-navigate-page', handler);
+    };
   }, []);
 
-  const coreNavItems: { id: CorePage; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'orders', label: 'Orders' },
-    { id: 'inventory', label: 'Inventory' },
-    { id: 'spending', label: 'Spending' },
-    { id: 'suppliers', label: 'Suppliers' },
-    { id: 'ai-activity', label: 'AI Activity' },
-    { id: 'request', label: 'New Request' },
+  // 9 nav items during transition. Phase 3h collapses AI Activity + Governance
+  // into a single "Activity & Governance" tab pointing at the `/activity` route.
+  const navItems: { id: AppPage; label: string }[] = [
+    { id: 'overview',    label: 'Overview' },
+    { id: 'inventory',   label: 'Inventory' },
+    { id: 'request',     label: 'New Request' },
+    { id: 'orders',      label: 'Orders' },
+    { id: 'suppliers',   label: 'Suppliers' },
+    { id: 'spending',    label: 'Spending' },
+    { id: 'ai-activity', label: 'Activity' },
+    { id: 'governance',  label: 'Governance' },
+    { id: 'workflows',   label: 'Workflows' },
   ];
 
   const pageTheme = isDark ? 'dark' : 'light';
-  const isAgentPage = AGENT_PAGES.includes(currentPage as AgentPage);
-  const isRequestPage = currentPage === 'request';
-
-  const activeAgentLabel = AGENT_NAV.find((a) => a.id === currentPage)?.label;
 
   const renderPageContent = () => {
     switch (currentPage) {
-      // ── Agent pages ──
-      case 'workflows':
-        return <WorkflowsPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
-      case 'governance':
-        return <GovernancePage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
-      // ── Core pages ──
       case 'overview':
         return <OverviewPage theme={pageTheme} />;
       case 'orders':
@@ -172,6 +159,10 @@ export default function App() {
         return <SuppliersPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
       case 'ai-activity':
         return <AIActivityPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
+      case 'governance':
+        return <GovernancePage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
+      case 'workflows':
+        return <WorkflowsPage theme={pageTheme} onNavigate={(page) => setCurrentPage(page as Page)} />;
       case 'flow-demo':
         return <UserFlowDemoPage theme={pageTheme} />;
       case 'flow-chart':
@@ -196,8 +187,6 @@ export default function App() {
   const navInactive = isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800';
   const iconBtn = isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-700';
   const logoText = isDark ? 'text-white' : 'text-gray-900';
-  const panelBorder = isDark ? 'border-gray-800' : 'border-gray-200';
-  const dropdownBg = isDark ? 'bg-[#252525] border-gray-700' : 'bg-white border-gray-200';
 
   return (
     <ErrorBoundary>
@@ -207,18 +196,17 @@ export default function App() {
         <div className={`h-14 ${topBarBg} border-b ${topBarBorder} flex items-center justify-between px-4 shrink-0`}>
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 bg-gradient-to-br from-[#87986a] to-[#6b7a54] rounded-lg flex items-center justify-center">
-              <span className="text-white text-sm">B</span>
+              <span className="text-white text-sm">F</span>
             </div>
-            <span className={`${logoText} font-medium text-sm`}>Buyamia</span>
+            <span className={`${logoText} font-medium text-sm`}>Finn's</span>
           </div>
 
-          {/* Two-tier navigation */}
+          {/* Flat single-row navigation (no Agents dropdown) */}
           <nav className={`flex items-center gap-0.5 rounded-full px-1 py-0.5 border ${navBg}`}>
-            {/* Core pages */}
-            {coreNavItems.map((item) => (
+            {navItems.map((item) => (
               <button
                 key={item.id}
-                onClick={() => { setCurrentPage(item.id); setAgentsOpen(false); }}
+                onClick={() => setCurrentPage(item.id)}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
                   currentPage === item.id
                     ? 'bg-[#87986a] text-white shadow-sm'
@@ -228,45 +216,10 @@ export default function App() {
                 {item.label}
               </button>
             ))}
-
-            {/* Agents dropdown */}
-            <div className="relative" ref={agentsRef}>
-              <button
-                onClick={() => setAgentsOpen(!agentsOpen)}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
-                  isAgentPage
-                    ? 'bg-[#87986a] text-white shadow-sm'
-                    : navInactive
-                }`}
-              >
-                <Bot className="h-3.5 w-3.5" />
-                {isAgentPage ? activeAgentLabel : 'Agents'}
-                <ChevronDown className={`h-3 w-3 transition-transform ${agentsOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {/* Dropdown flyout */}
-              {agentsOpen && (
-                <div className={`absolute top-full right-0 mt-2 w-52 rounded-xl border shadow-xl py-1.5 z-50 ${dropdownBg}`}>
-                  {AGENT_NAV.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => { setCurrentPage(item.id); setAgentsOpen(false); }}
-                      className={`w-full text-left px-4 py-2 text-xs transition-colors ${
-                        currentPage === item.id
-                          ? isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
-                          : isDark ? 'text-gray-300 hover:bg-gray-800' : 'text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           </nav>
 
           <div className="flex items-center gap-1">
-            {/* Draft-in-progress pill — Kill Access lite */}
+            {/* Draft-in-progress pill */}
             {hasDraft && currentPage !== 'request' && draftMeta && (
               <button
                 onClick={() => setCurrentPage('request')}
@@ -279,7 +232,7 @@ export default function App() {
                   <span className="absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-70 animate-ping" />
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500" />
                 </span>
-                Draft in progress · Step {draftMeta.step}/6
+                Draft in progress · Step {draftMeta.step}/5
               </button>
             )}
             <button className={`relative p-2 rounded-full ${iconBtn} transition-colors`}>
@@ -312,17 +265,5 @@ export default function App() {
         />
       </div>
     </ErrorBoundary>
-  );
-}
-
-// Temporary placeholder for pages not yet built/restored
-function PlaceholderPage({ name, isDark }: { name: string; isDark: boolean }) {
-  return (
-    <div className={`flex items-center justify-center h-full ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-      <div className="text-center">
-        <div className="text-lg font-medium mb-1">{name}</div>
-        <div className="text-xs">Coming soon — restoring from previous build</div>
-      </div>
-    </div>
   );
 }

@@ -16,7 +16,6 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
-import { setTrailReturn, getTrailReturn, clearTrailReturn } from '../lib/trailReturn';
 import { workflowTemplates } from '../lib/mockData';
 
 interface OrdersPageProps {
@@ -28,12 +27,33 @@ interface OrdersPageProps {
 type LaborMode = 'agent' | 'manual';
 
 interface AssignedAgent {
-  id: number;     // e.g. 7 → "Agent #07"
-  role: string;   // e.g. "Logistics", "Exception Handler"
+  id: number;     // legacy numeric slot; mapped to Finn's A-01..A-05 in agentBadge
+  role: string;   // e.g. "Logistics", "Sourcing", "Restock"
 }
 
+// Translate legacy Buyamia numeric agent IDs to the 6-agent Finn's roster.
+// Defaults to A-02 (Restock) for any unknown legacy id. Phase 4 sweeps the
+// mock data to use the canonical IDs directly.
+const LEGACY_AGENT_MAP: Record<number, string> = {
+  1: 'A-04',   // PO Engine → Spend Watchdog
+  3: 'A-02',   // Demand Signal → Restock
+  5: 'A-01',   // Sourcing
+  6: 'A-01',   // Pricing → Sourcing
+  7: 'A-05',   // Logistics
+  8: 'A-02',   // Restock
+  9: 'A-05',   // Quality → Logistics (QC stage)
+  10: 'A-04',  // Ops Analytics → Spend Watchdog
+  13: 'A-03',  // Exception Handler / Supplier Comms → Vendor Comms
+  14: 'A-04',  // Pricing/ERP → Spend Watchdog
+  18: 'A-04',  // ERP → Spend Watchdog
+  21: 'A-01',  // Market Intel → Sourcing
+  25: 'A-02',  // POS Intelligence → Restock
+  28: 'A-04',  // Finance / Payments → Spend Watchdog
+  33: 'A-04',  // Compliance → Spend Watchdog
+};
+
 function agentBadge(a: AssignedAgent) {
-  return `Agent #${String(a.id).padStart(2, '0')}`;
+  return LEGACY_AGENT_MAP[a.id] ?? 'A-02';
 }
 
 function agentLabel(a: AssignedAgent) {
@@ -47,27 +67,21 @@ function hashStr(s: string) {
   return Math.abs(h);
 }
 
-// ── HITL: Authorization-gated stages (Stage 1 & 12) ────────────────
-// These two stages have human gatekeepers — even when the order is in
-// Agent Active mode, the primary action remains "Review & Authorize".
+// ── HITL: Authorization-gated stages ────────────────────────────────
+// Stage 1 (Request) and Stage 5 (Delivered & Checked) have human
+// gatekeepers — even in Agent mode, the primary action remains
+// "Review & Authorize" for these stages.
 function requiresHumanAuthorization(stageIdx: number) {
-  return stageIdx === 0 || stageIdx === 11;
+  return stageIdx === 0 || stageIdx === 4;
 }
 
-// ── 12-Stage DAG with hidden agent sub-steps ─────────────────────────
+// ── 5-Stage DAG (matches PLATFORM-MAP.md canonical model) ───────────
 const DAG_STAGES: { label: string; agentStep?: string }[] = [
-  { label: 'PO Created' },
-  { label: 'Vendor Confirmed',   agentStep: 'Agent #5 sent and confirmed' },
-  { label: 'Payment Sent',       agentStep: 'Agent #28 processed payment' },
-  { label: 'ERP Sync',           agentStep: 'Agent #18 synced to ERP ledger' },
-  { label: 'Vendor Processing' },
-  { label: 'Quality Check',      agentStep: 'Agent #9 verified quality specs' },
-  { label: 'Dispatched' },
-  { label: 'Customs Clearance',  agentStep: 'Agent #33 pre-filed import docs' },
-  { label: 'In Transit' },
-  { label: 'Regional Hub',       agentStep: 'Agent #7 confirmed cold-chain at hub' },
-  { label: 'Out for Delivery' },
-  { label: 'Delivered' },
+  { label: 'Request',                  agentStep: 'A-02 (Restock) raised the demand signal — par breach, scheduled trigger, or human-issued.' },
+  { label: 'Quote / Vendor Confirmed', agentStep: 'A-01 (Sourcing) ran the playbook. RFQ for Standard, direct vendor for Rush, contract draw for Recurring. Quote validated vs 30-day market median.' },
+  { label: 'PO Approved',              agentStep: 'A-04 (Spend Watchdog) checked the policy stack — spend cap, vendor trust floor, duplicate detection. PO issued to vendor on pass.' },
+  { label: 'In Transit',               agentStep: 'A-05 (Logistics) confirmed dispatch and tracks ETA. Cold-chain sensors monitored for proteins, seafood, dairy.' },
+  { label: 'Delivered & Checked',      agentStep: 'Receiving venue staff QC the delivery against PO. Pass → stock updated. Fail → dispute opened on Activity & Governance.' },
 ];
 
 // ── Manual Takeover · Task Modules ───────────────────────────────────
@@ -102,92 +116,57 @@ interface TaskModule {
   inputs: StageInput[];
 }
 const TASK_MODULES: TaskModule[] = [
-  { action: 'Review / Edit PO',
-    copilotHint: 'I can pre-populate the PO with the last accepted quote terms from your internal directory.',
-    delegationLabel: 'Generate PO from last quote',
-    delegationLockedCopy: 'Atlas is drafting the PO from the last accepted quote. You will be alerted when the draft is ready to upload.',
-    inputs: [{ kind: 'file', key: 'po_pdf', label: 'Upload Final PO PDF', accept: '.pdf', required: true, fortressLookup: 'last accepted quote PDF in vendor profile' }] },
-  { action: 'Log supplier contact',
-    copilotHint: "Vendor's preferred channel is WhatsApp. Last contact was 3 days ago via Account Manager.",
-    delegationLabel: 'Send confirmation via preferred channel',
-    delegationLockedCopy: 'Atlas is sending the confirmation message and will log the response automatically.',
+  // Stage 1 — Request
+  { action: 'Raise / Confirm Request',
+    copilotHint: 'I can prefill from the linked SKU\'s par-floor breach (Inventory) or the source PO (Re-order).',
+    delegationLabel: 'Auto-draft from inventory signal',
+    delegationLockedCopy: 'Atlas is drafting the request from the inventory signal. You will be alerted when ready.',
+    inputs: [
+      { kind: 'textarea', key: 'reason',  label: 'Reason / Trigger', placeholder: 'Par breach, scheduled trigger, manual ask…', required: true },
+      { kind: 'select',   key: 'urgency', label: 'Urgency', options: ['standard', 'urgent', 'recurring'], required: true },
+    ] },
+  // Stage 2 — Quote / Vendor Confirmed
+  { action: 'Log Quote · Vendor Confirmation',
+    copilotHint: "Vendor's preferred channel is WhatsApp. I can pull the last accepted quote from the vendor profile.",
+    delegationLabel: 'Send RFQ via preferred channel',
+    delegationLockedCopy: 'Atlas is sending the RFQ and will log responses automatically.',
     delegationDependsOn: ['channel'],
     inputs: [
-      { kind: 'select', key: 'channel',   label: 'Confirmed via', options: ['Phone', 'WhatsApp', 'Email'], required: true },
-      { kind: 'text',   key: 'lead_time', label: 'Estimated Lead Time', placeholder: 'e.g. 5 days', required: true, fortressLookup: 'historical lead-time average for this vendor' },
+      { kind: 'select', key: 'channel',     label: 'Confirmed via',     options: ['WhatsApp', 'Telegram', 'Email', 'Phone'], required: true },
+      { kind: 'text',   key: 'lead_time',   label: 'Estimated Lead Time', placeholder: 'e.g. 2 days', required: true, fortressLookup: 'historical lead-time average for this vendor' },
+      { kind: 'text',   key: 'quote_amt',   label: 'Quote Amount (Rp)', placeholder: 'e.g. 14200000', required: true },
     ] },
-  { action: 'Log transaction',
-    copilotHint: "Here's the vendor's previous bank info to save you time: Mandiri · 1234567890.",
-    delegationLabel: 'Match bank reference + reconcile',
-    delegationLockedCopy: 'Atlas is reconciling the bank reference against the vendor ledger. You will be alerted on match.',
-    delegationDependsOn: ['bank_ref'],
+  // Stage 3 — PO Approved
+  { action: 'Approve PO · Policy Gate',
+    copilotHint: 'I can verify spend cap headroom and vendor trust floor before you approve. Above-threshold POs route to the Manager queue.',
+    delegationLabel: 'Auto-run policy stack',
+    delegationLockedCopy: 'Atlas is running the policy stack and will paste the approval reference back.',
     inputs: [
-      { kind: 'text', key: 'bank_ref', label: 'Bank Reference #', placeholder: 'e.g. TXN-89102', required: true, fortressLookup: 'finance ledger entries for the past 24h' },
-      { kind: 'file', key: 'receipt',  label: 'Upload Receipt',   accept: 'image/*,.pdf', required: true },
+      { kind: 'file', key: 'po_pdf',     label: 'Upload Signed PO PDF', accept: '.pdf', required: true, fortressLookup: 'last accepted quote PDF in vendor profile' },
+      { kind: 'text', key: 'policy_ref', label: 'Policy Check Reference', placeholder: 'e.g. pol-2026-3041', required: true },
     ] },
-  { action: 'Manual Mirroring',
-    copilotHint: 'ERP convention is PO-YYYY-NNN. Next free ID in your internal ERP looks like ERP-2026-0048.',
-    delegationLabel: 'Auto-mirror to ERP',
-    delegationLockedCopy: 'Atlas is mirroring the entry to ERP and will paste the assigned reference back here.',
-    inputs: [{ kind: 'text', key: 'erp_ref', label: 'Internal ERP Reference ID', placeholder: 'e.g. ERP-2026-0048', required: true, fortressLookup: 'next free ID in internal ERP sequence' }] },
-  { action: 'Status Check',
-    copilotHint: 'Vendor reports work-orders weekly on Mondays. I can draft a status query message.',
-    delegationLabel: 'Auto-poll vendor status weekly',
-    delegationLockedCopy: 'Atlas will poll the vendor every Monday and post the status note for you.',
-    inputs: [{ kind: 'textarea', key: 'status_note', label: 'Status Note', placeholder: 'e.g. In Production · 60% complete · ETA on track', required: true }] },
-  { action: 'Inspection Review',
-    copilotHint: 'QC threshold for this category is 92. The last 3 deliveries from this vendor averaged 94.',
-    delegationLabel: 'Compare against QC baseline',
-    delegationLockedCopy: 'Atlas is scoring the report against the vendor baseline. Flagging anomalies for your review.',
-    delegationDependsOn: ['qc_report'],
-    inputs: [
-      { kind: 'file',   key: 'qc_report',  label: 'Upload QC Photos / Report', accept: 'image/*,.pdf', required: true },
-      { kind: 'select', key: 'qc_outcome', label: 'QC Outcome', options: ['pass', 'fail', 'conditional'], required: true },
-    ] },
-  { action: 'Log departure',
-    copilotHint: 'Default carrier on this lane is PT Express. MBL format is 11 alphanumeric chars.',
-    delegationLabel: 'Track via MBL',
-    delegationLockedCopy: 'Atlas is tracking the MBL with the carrier. You will be alerted on each milestone.',
-    delegationDependsOn: ['mbl'],
-    inputs: [
-      { kind: 'text', key: 'carrier', label: 'Carrier Name', placeholder: 'e.g. PT Express', required: true, fortressLookup: 'default carrier on this lane' },
-      { kind: 'text', key: 'mbl',     label: 'Master Bill of Lading (MBL)', placeholder: 'e.g. EXP12345678', required: true },
-    ] },
-  { action: 'Verify permits',
-    copilotHint: 'Agent #33 had pre-filed import docs. Clearance ID typically starts with KH-.',
-    delegationLabel: 'Monitor clearance status',
-    delegationLockedCopy: 'Atlas is monitoring the clearance and will surface duty receipts as they post.',
-    delegationDependsOn: ['clearance_id'],
-    inputs: [
-      { kind: 'text', key: 'clearance_id', label: 'Clearance ID', placeholder: 'e.g. KH-2026-44120', required: true, fortressLookup: "Agent #33's pre-filed import docs" },
-      { kind: 'file', key: 'duty_receipt', label: 'Upload Duty Payment Receipt', accept: 'image/*,.pdf', required: true },
-    ] },
-  { action: 'Track shipment',
+  // Stage 4 — In Transit
+  { action: 'Log Dispatch · Track Shipment',
     copilotHint: 'I can poll the carrier API every 15 min once you save the tracking number.',
     delegationLabel: 'Poll carrier API every 15 min',
     delegationLockedCopy: 'Atlas is polling the carrier API every 15 min. You will be alerted on status changes.',
     delegationDependsOn: ['tracking'],
-    inputs: [{ kind: 'text', key: 'tracking', label: 'Tracking Number / HAWB', placeholder: 'e.g. 180-12345678', required: true }] },
-  { action: 'Arrival verification',
-    copilotHint: 'Hub timezone is Asia/Jakarta. I can convert from carrier UTC if needed.',
-    delegationLabel: 'Auto-verify hub arrival',
-    delegationLockedCopy: 'Atlas is watching the hub gate logs and will stamp arrival as soon as the truck checks in.',
-    inputs: [{ kind: 'date', key: 'hub_entry', label: 'Hub Entry Timestamp', required: true }] },
-  { action: 'Driver coordination',
-    copilotHint: 'Default loading bay is C-7. Last driver from this carrier was Pak Iwan / B 9023 KAB.',
-    delegationLabel: 'Coordinate driver via SMS',
-    delegationLockedCopy: 'Atlas is sending the loading bay & ETA to the driver and will confirm receipt.',
-    delegationDependsOn: ['truck_plate'],
     inputs: [
-      { kind: 'text', key: 'driver_name', label: 'Driver Name', placeholder: 'e.g. Iwan Setiawan', required: true, fortressLookup: "this carrier's roster from the last 30 days" },
-      { kind: 'text', key: 'truck_plate', label: 'Truck Plate #', placeholder: 'e.g. B 9023 KAB', required: true },
+      { kind: 'text', key: 'carrier',     label: 'Carrier Name', placeholder: 'e.g. JNE Trucking', required: true, fortressLookup: 'default carrier on this lane' },
+      { kind: 'text', key: 'tracking',    label: 'Tracking Number', placeholder: 'e.g. 180-12345678', required: true },
+      { kind: 'date', key: 'eta',         label: 'ETA at Receiving Venue' },
     ] },
-  { action: 'Receipt of Goods',
-    copilotHint: "I'll auto-trigger the QC ledger entry once you upload signed POD.",
-    delegationLabel: 'Auto-trigger QC ledger on POD',
-    delegationLockedCopy: 'Atlas will trigger the QC ledger entry and close the order as soon as POD is uploaded.',
+  // Stage 5 — Delivered & Checked
+  { action: 'QC at Receiving Venue',
+    copilotHint: "I'll auto-update inventory once you upload signed POD and mark QC outcome.",
+    delegationLabel: 'Auto-update inventory on QC pass',
+    delegationLockedCopy: 'Atlas will write the inventory delta and close the order on QC pass.',
     delegationDependsOn: ['pod'],
-    inputs: [{ kind: 'file', key: 'pod', label: 'Signed Proof of Delivery (POD) Image', accept: 'image/*,.pdf', required: true }] },
+    inputs: [
+      { kind: 'file',   key: 'pod',          label: 'Signed Proof of Delivery (POD)', accept: 'image/*,.pdf', required: true },
+      { kind: 'select', key: 'qc_outcome',   label: 'QC Outcome', options: ['pass', 'fail', 'conditional'], required: true },
+      { kind: 'text',   key: 'receiver',     label: 'Receiving Staff', placeholder: 'e.g. Wayan Sukarjo (BC)', required: true },
+    ] },
 ];
 
 // ── Stage History · Paper Trail ─────────────────────────────────────
@@ -252,24 +231,24 @@ interface Order {
 
 // Helper: short label for a workflow template id (e.g. 'WF-STD' → 'Standard').
 function workflowLabel(id: string): string {
+  if (id === 'WF-STD') return 'Standard';
+  if (id === 'WF-RSH') return 'Rush';
+  if (id === 'WF-REC') return 'Recurring';
+  // Legacy Buyamia workflow ids — keep a fallback for any historical mock
+  // data that still references them. Phase 4 sweeps these out of the data.
   return workflowTemplates.find(w => w.id === id)?.name ?? id;
 }
 
-// Deterministic template picker for historicals.
-function pickWorkflow(seed: number, hint?: 'rush' | 'emergency' | 'production' | 'maintenance' | 'blanket'): string {
-  if (hint === 'rush')        return 'WF-RSH';
-  if (hint === 'emergency')   return 'WF-EMR';
-  if (hint === 'production')  return 'WF-PRD';
-  if (hint === 'maintenance') return 'WF-MNT';
-  if (hint === 'blanket')     return 'WF-BPO';
-  // 60% Standard, 15% Rush, 10% Group Buy, 5% Blanket, 5% Production, 5% Maintenance.
+// Deterministic playbook picker. Finn's only runs 3 playbooks.
+// 'rush' and 'recurring' hints are honored when supplied; otherwise 70%
+// Standard, 20% Rush, 10% Recurring.
+function pickWorkflow(seed: number, hint?: 'rush' | 'recurring'): string {
+  if (hint === 'rush')      return 'WF-RSH';
+  if (hint === 'recurring') return 'WF-REC';
   const roll = seed % 100;
-  if (roll < 60) return 'WF-STD';
-  if (roll < 75) return 'WF-RSH';
-  if (roll < 85) return 'WF-GRP';
-  if (roll < 90) return 'WF-BPO';
-  if (roll < 95) return 'WF-PRD';
-  return            'WF-MNT';
+  if (roll < 70) return 'WF-STD';
+  if (roll < 90) return 'WF-RSH';
+  return            'WF-REC';
 }
 
 const ORDERS: Order[] = [
@@ -282,9 +261,9 @@ const ORDERS: Order[] = [
     humanDescription: 'New supplier trial order — quality hold clause included.',
     eta: 'Apr 15 · 2:00 PM', dagStage: 0,
     agentReasoning: "Within your approved directory, I benchmarked 6 vetted vendors. AUS Meats' cold-chain reliability is 97% and they're 12% cheaper than Indo Seafood. Quality hold clause protects this first order.",
-    agentAgent: 'Agent #07 (Logistics)',
+    agentAgent: 'A-05 (Logistics)',
     assignedAgent: { id: 7, role: 'Logistics' },
-    financeInsight: "This $8,900 order can be invoice-factored within 2 hours. Agent #28 pre-approved based on your cash flow.",
+    financeInsight: "This $8,900 order can be invoice-factored within 2 hours. A-04 pre-approved based on your cash flow.",
     saving: { time: '1.5h', cost: 680 },
     isNewSupplier: true,
     digitalTwin: {
@@ -305,7 +284,7 @@ const ORDERS: Order[] = [
     humanDescription: 'Driver could not access the loading bay at 6 AM. Bay code had changed.',
     eta: 'Rescheduling now', dagStage: 9,
     agentReasoning: "Delivery attempted at 06:14 — bay access denied. I've contacted PT Express dispatch and Indo Seafood. Second attempt scheduled for 10:00 AM today.",
-    agentAgent: 'Agent #13 (Exception Handler)',
+    agentAgent: 'A-03 (Vendor Comms)',
     assignedAgent: { id: 13, role: 'Exception Handler' },
     failureReason: 'Loading bay access denied — bay code changed',
     negotiating: true,
@@ -323,9 +302,9 @@ const ORDERS: Order[] = [
     humanDescription: 'Shipment arrived at your dock at 3:42 PM. Driver is waiting for confirmation.',
     eta: 'Now', etaMinutes: 0, dagStage: 10,
     agentReasoning: "Routed through PT Express — 99% cold-chain reliability for dry goods. Temp-controlled truck confirmed. All 12 DAG stages completed except delivery confirmation.",
-    agentAgent: 'Agent #07 (Logistics)',
+    agentAgent: 'A-05 (Logistics)',
     assignedAgent: { id: 7, role: 'Logistics' },
-    financeInsight: "Qualifies for early payment discount of $248 if settled within 5 days. Agent #28 recommends accepting.",
+    financeInsight: "Qualifies for early payment discount of $248 if settled within 5 days. A-04 recommends accepting.",
     saving: { time: '2.5h', cost: 1120 },
     createdAt: '2026-05-07T09:10:00.000Z',
     status: 'live',
@@ -340,7 +319,7 @@ const ORDERS: Order[] = [
     humanDescription: 'Your chicken breast is about 10 minutes away. Driver is at Jl. Sudirman.',
     eta: '~10 min', etaMinutes: 10, dagStage: 10,
     agentReasoning: "Within your approved directory, Thai Fresh was the only vetted supplier whose Bangkok hub stock met the Friday window. Cold-chain handling confirmed with driver.",
-    agentAgent: 'Agent #07 (Logistics)',
+    agentAgent: 'A-05 (Logistics)',
     assignedAgent: { id: 7, role: 'Logistics' },
     saving: { time: '1h', cost: 240 },
     createdAt: '2026-05-08T07:45:00.000Z',
@@ -355,8 +334,8 @@ const ORDERS: Order[] = [
     humanStatus: 'Cleared customs — in transit',
     humanDescription: 'Cleared Vietnam customs 2 hours early. Arriving at regional hub tomorrow.',
     eta: 'Tomorrow · 9 AM', dagStage: 8,
-    agentReasoning: "Cleared customs ahead of schedule. All import docs pre-filed by Agent #33. No intervention needed.",
-    agentAgent: 'Agent #33 (Compliance)',
+    agentReasoning: "Cleared customs ahead of schedule. All import docs pre-filed by A-04. No intervention needed.",
+    agentAgent: 'A-04 (Compliance)',
     assignedAgent: { id: 33, role: 'Compliance' },
     saving: { time: '4h', cost: 420 },
     createdAt: '2026-05-06T11:00:00.000Z',
@@ -372,7 +351,7 @@ const ORDERS: Order[] = [
     humanDescription: 'Received and confirmed. Quality check passed — all items within spec.',
     eta: 'Apr 5 · 11:20 AM', dagStage: 11,
     agentReasoning: "Delivered 40 min early. Quality inspection passed. 3 manual steps automated.",
-    agentAgent: 'Agent #07 (Logistics)',
+    agentAgent: 'A-05 (Logistics)',
     assignedAgent: { id: 7, role: 'Logistics' },
     saving: { time: '3.2h', cost: 980 },
     createdAt: '2026-04-02T08:00:00.000Z',
@@ -389,7 +368,7 @@ const ORDERS: Order[] = [
     humanDescription: 'Cold-chain maintained throughout. Auto-payment processed within 24h.',
     eta: 'Apr 3 · 2:10 PM', dagStage: 11,
     agentReasoning: "SLA met. Cold-chain verified. Auto-payment processed.",
-    agentAgent: 'Agent #07 (Logistics)',
+    agentAgent: 'A-05 (Logistics)',
     assignedAgent: { id: 7, role: 'Logistics' },
     saving: { time: '1.8h', cost: 210 },
     createdAt: '2026-04-01T07:30:00.000Z',
@@ -554,7 +533,7 @@ function makeHistoricalOrders(): Order[] {
       humanDescription: `Dispute opened — ${RESOLUTIONS.disputed[seed % RESOLUTIONS.disputed.length]}.`,
       eta: 'Dispute pending',
       dagStage: 11,
-      agentReasoning: 'Exception flagged at delivery. Agent #9 (Quality) escalated to admin review.',
+      agentReasoning: 'Exception flagged at delivery. A-05 (Logistics) escalated to admin review.',
       agentAgent: agentLabel(agent),
       assignedAgent: agent,
       failureReason: RESOLUTIONS.disputed[seed % RESOLUTIONS.disputed.length],
@@ -594,7 +573,7 @@ function makeHistoricalOrders(): Order[] {
       completedAt: new Date(NOW - (daysAgo - 1) * DAY).toISOString(),
       status: 'cancelled',
       resolution: RESOLUTIONS.cancelled[seed % RESOLUTIONS.cancelled.length],
-      workflowTemplate: pickWorkflow(seed, i === 0 ? 'emergency' : undefined),
+      workflowTemplate: pickWorkflow(seed, i === 0 ? 'rush' : undefined),
     });
   }
 
@@ -625,7 +604,7 @@ function makeHistoricalOrders(): Order[] {
       createdAt,
       status: 'on-hold',
       resolution: RESOLUTIONS['on-hold'][seed % RESOLUTIONS['on-hold'].length],
-      workflowTemplate: pickWorkflow(seed, i === 0 ? 'production' : i === 1 ? 'blanket' : undefined),
+      workflowTemplate: pickWorkflow(seed, i === 0 ? 'recurring' : undefined),
     });
   }
 
@@ -637,185 +616,8 @@ const HISTORICAL_ORDERS: Order[] = makeHistoricalOrders();
 // Combined ledger used by Audit Mode.
 const ALL_ORDERS: Order[] = [...ORDERS, ...HISTORICAL_ORDERS];
 
-// ── Decision Attribution (per-order × per-stage) ────────────────────
-// Rich audit-trail record that names the responsible agent, the
-// concrete decision they made, the data they used, the alternatives
-// they ruled out, and any human override. This is the bridge layer
-// between Orders' Audit Mode and the Governance / AI Activity story —
-// each stage attribution can deep-link to that agent's Governance
-// profile and (where applicable) to AI Activity for re-runs / overrides.
-type DecisionType =
-  | 'auto-order' | 'vendor-comms' | 'payment'  | 'erp-sync'
-  | 'monitor'    | 'verify'       | 'route'    | 'compliance'
-  | 'logistics'  | 'quality-check'| 'hand-off' | 'close-out';
-
-type AttributionOutcome = 'success' | 'flagged' | 'failed' | 'overridden' | 'pending';
-
-interface AttributionDataPoint {
-  label: string;
-  value: string;
-  delta?: string;
-  tone?: 'positive' | 'negative' | 'neutral';
-}
-
-interface AttributionAlternative {
-  label: string;
-  rejectedBecause: string;
-}
-
-interface AttributionOverride {
-  by: string;            // "Admin" / "Ops Manager" / etc.
-  reason: string;
-  at: string;            // ISO timestamp
-}
-
-interface StageAttribution {
-  stageIdx: number;
-  stageName: string;
-  agent: AssignedAgent;
-  decisionType: DecisionType;
-  decision: string;                       // One-liner: what the agent decided
-  confidence: number;                     // 0-100
-  dataPoints: AttributionDataPoint[];
-  alternatives: AttributionAlternative[];
-  outcome: AttributionOutcome;
-  override?: AttributionOverride;
-  governanceDecisionId?: string;          // Deep-link to Governance Decision Ledger
-  aiActivityEventId?: string;             // Deep-link to AI Activity event
-  verifiedAtIso: string;
-}
-
-// Stage 0-11 → (decisionType, decision template, default agent)
-const ATTRIBUTION_BLUEPRINT: Array<{ type: DecisionType; agent: AssignedAgent; decision: string }> = [
-  { type: 'auto-order',    agent: { id: 7,  role: 'Logistics'         }, decision: 'Generated PO from accepted quote · selected vetted vendor on cost+reliability' },
-  { type: 'vendor-comms',  agent: { id: 5,  role: 'Vendor Comms'      }, decision: 'Sent PO via vendor\'s preferred channel · confirmed read receipt' },
-  { type: 'payment',       agent: { id: 28, role: 'Payments'          }, decision: 'Initiated payment on vendor\'s primary bank account · finance ledger reconciled' },
-  { type: 'erp-sync',      agent: { id: 18, role: 'ERP'               }, decision: 'Mirrored PO into ERP with next-free internal sequence number' },
-  { type: 'monitor',       agent: { id: 5,  role: 'Vendor Comms'      }, decision: 'Polled vendor production status · weekly cadence on track' },
-  { type: 'quality-check', agent: { id: 9,  role: 'Quality'           }, decision: 'Pre-dispatch QC verified above supplier baseline · 12 photos archived' },
-  { type: 'route',         agent: { id: 7,  role: 'Logistics'         }, decision: 'Assigned default-lane carrier · MBL issued at vendor warehouse departure' },
-  { type: 'compliance',    agent: { id: 33, role: 'Compliance'        }, decision: 'Auto-filed customs declaration · cleared on first pass · no broker needed' },
-  { type: 'logistics',     agent: { id: 7,  role: 'Logistics'         }, decision: 'Real-time carrier polling active · alert threshold 2h vs ETA' },
-  { type: 'route',         agent: { id: 7,  role: 'Logistics'         }, decision: 'Cold-chain spec held across full leg · hub-gate scan confirmed' },
-  { type: 'hand-off',      agent: { id: 7,  role: 'Logistics'         }, decision: 'Final-mile driver assigned from carrier\'s 30-day roster · bay matches' },
-  { type: 'close-out',     agent: { id: 9,  role: 'Quality'           }, decision: 'Goods received and signed for · QC ledger entry auto-created · order closed' },
-];
-
-function synthesizeAttribution(order: Order, stageIdx: number): StageAttribution {
-  const blueprint = ATTRIBUTION_BLUEPRINT[stageIdx];
-  const seed = hashStr(`attr-${order.id}-${stageIdx}`);
-  const pick = <T,>(arr: T[]) => arr[seed % arr.length];
-  const history = synthesizeStageHistory(order, stageIdx);
-
-  // Confidence: most decisions land 80-99%. Resolve-issue / disputed
-  // orders carry a confidence dip on the relevant stage.
-  const baseConfidence = 78 + (seed % 22);
-  const dippedConfidence =
-    order.status === 'disputed' && stageIdx >= 9 ? Math.max(54, baseConfidence - 30) :
-    order.status === 'cancelled' && stageIdx >= order.dagStage ? 0 :
-    order.failureReason && stageIdx === order.dagStage ? Math.max(60, baseConfidence - 18) :
-    baseConfidence;
-
-  // Outcome: derive from the order status + dagStage.
-  let outcome: AttributionOutcome = 'success';
-  if (order.status === 'cancelled' && stageIdx >= order.dagStage) outcome = 'failed';
-  else if (order.status === 'cancelled') outcome = 'success';
-  else if (order.status === 'on-hold' && stageIdx >= order.dagStage) outcome = 'pending';
-  else if (order.status === 'disputed' && stageIdx === 11) outcome = 'flagged';
-  else if (order.failureReason && stageIdx === order.dagStage) outcome = 'failed';
-  else if (stageIdx > order.dagStage && order.status === 'live') outcome = 'pending';
-
-  // Data points — pull from the history record and add one stage-specific row.
-  const dataPoints: AttributionDataPoint[] = [
-    { label: 'Verified at',   value: history.verifiedAtIso.slice(0, 16).replace('T', ' ') + ' UTC' },
-    { label: 'Proof',         value: history.proof.slice(0, 80) + (history.proof.length > 80 ? '…' : '') },
-    ...Object.entries(history.data).slice(0, 2).map(([k, v]) => ({
-      label: k.replace(/_/g, ' '),
-      value: String(v).slice(0, 60),
-    })),
-  ];
-
-  // Add a confidence-style metric tone
-  if (dippedConfidence >= 90)      dataPoints[0].tone = 'positive';
-  else if (dippedConfidence < 70)  dataPoints[0].tone = 'negative';
-
-  // Alternatives — synthesize 1-2 per stage from a small pool keyed on type
-  const ALTERNATIVES_BY_TYPE: Record<DecisionType, AttributionAlternative[]> = {
-    'auto-order':    [{ label: 'Next-cheapest vendor', rejectedBecause: 'Reliability score below 90th-percentile threshold' }],
-    'vendor-comms':  [{ label: 'Email-only channel',    rejectedBecause: 'Vendor SLA prefers WhatsApp for sub-5d lead times' }],
-    'payment':       [{ label: 'Defer to NET-30',       rejectedBecause: 'Vendor offered 2% early-payment discount' }],
-    'erp-sync':      [{ label: 'Manual ledger entry',   rejectedBecause: 'API path matches the configured ERP for this vendor' }],
-    'monitor':       [{ label: 'Skip weekly poll',      rejectedBecause: 'Vendor publishes work-orders weekly — cadence aligned' }],
-    'quality-check': [{ label: 'Sample-only inspection',rejectedBecause: 'Contract spec requires full-batch QC on first-order trials' }],
-    'route':         [{ label: 'Air freight',           rejectedBecause: 'Sea freight saves $1,200 within the contract window' }],
-    'compliance':    [{ label: 'Manual broker filing',  rejectedBecause: 'Pre-filed docs cleared without intervention' }],
-    'logistics':     [{ label: 'GPS-only polling',      rejectedBecause: 'Cold-chain temp sensors required by contract' }],
-    'hand-off':      [{ label: 'Same-day courier swap', rejectedBecause: 'Driver is on the carrier\'s 30-day vetted roster' }],
-    'close-out':     [{ label: 'Manual sign-off',       rejectedBecause: 'POD photo + GPS-tag satisfy the contract close-out clause' }],
-  };
-  const alternatives = ATTRIBUTION_BLUEPRINT[stageIdx].type === 'route' && stageIdx === 9
-    ? [] // Stage 9 (Regional Hub) is mostly mechanical — no alternative
-    : ALTERNATIVES_BY_TYPE[blueprint.type] ?? [];
-
-  // Synthesize human-override on a small fraction of historical orders
-  // for realistic audit storytelling.
-  const overrideRoll = hashStr(`override-${order.id}-${stageIdx}`) % 100;
-  let override: AttributionOverride | undefined;
-  // ~6% of stages on completed/disputed historicals carry an override
-  if (order.status !== 'live' && stageIdx >= 1 && stageIdx <= 7 && overrideRoll < 6) {
-    const OVERRIDE_REASONS: Record<number, string> = {
-      1: 'Held vendor on previous SLA breach until rep called back',
-      2: 'Switched payment terms NET-30 → NET-15 (cash-flow gate)',
-      3: 'Forced ERP sequence to legacy block per accounting',
-      4: 'Paused vendor-status poll — supplier under audit review',
-      5: 'Required full-batch QC instead of sample (first-trial vendor)',
-      6: 'Switched carrier to air freight — emergency reorder',
-      7: 'Manual broker filing — pre-filed docs missing CITES annex',
-    };
-    override = {
-      by: 'Admin',
-      reason: OVERRIDE_REASONS[stageIdx] ?? 'Override applied',
-      at: history.verifiedAtIso,
-    };
-    outcome = 'overridden';
-  }
-
-  // Cross-page deep links — pick deterministically from the REAL
-  // seeded id space so every chip resolves on the destination page.
-  //   • Governance Decision Ledger seeds DEC-001..DEC-008 (mockData.ts).
-  //   • AI Activity seeds evt-001..evt-012 (AIActivityPage EVENTS).
-  // The mapping is many-to-one (multiple stages on multiple orders may
-  // point at the same DEC / evt) — the link surface is what matters,
-  // not 1-to-1 fidelity with the underlying decision logic.
-  const GOVERNANCE_DEC_POOL = 8;   // DEC-001..DEC-008
-  const AI_EVT_POOL          = 12; // evt-001..evt-012
-  const governanceDecisionId = stageIdx <= 3
-    ? `DEC-${String((hashStr(order.id + '-' + stageIdx) % GOVERNANCE_DEC_POOL) + 1).padStart(3, '0')}`
-    : undefined;
-  const aiActivityEventId = (blueprint.type === 'auto-order' || blueprint.type === 'compliance' || blueprint.type === 'monitor')
-    ? `evt-${String((hashStr(order.id + '-' + stageIdx) % AI_EVT_POOL) + 1).padStart(3, '0')}`
-    : undefined;
-
-  return {
-    stageIdx,
-    stageName: DAG_STAGES[stageIdx].label,
-    agent: order.assignedAgent.id === blueprint.agent.id ? order.assignedAgent : blueprint.agent,
-    decisionType: blueprint.type,
-    decision: blueprint.decision,
-    confidence: dippedConfidence,
-    dataPoints,
-    alternatives,
-    outcome,
-    override,
-    governanceDecisionId,
-    aiActivityEventId,
-    verifiedAtIso: history.verifiedAtIso,
-  };
-}
-
-function buildAttributionTrail(order: Order): StageAttribution[] {
-  return Array.from({ length: 12 }, (_, i) => synthesizeAttribution(order, i));
-}
+// Decision Attribution Trail removed for Finn's scope.
+// Audit lineage now lives inline on event cards in Activity & Governance.
 
 // ── Synthesized Stage History (per-order × per-stage) ───────────────
 // Deterministic so the same order always shows the same MBL, tracking #,
@@ -838,92 +640,52 @@ function synthesizeStageHistory(order: Order, stageIdx: number): StageHistory {
   const lastSlug = order.id.slice(-4);
 
   const STAGE_FIXTURES: Record<number, () => StageHistory> = {
+    // Stage 1 — Request
     0: () => ({
-      data: { po_pdf: `${order.id}_PO_v1.pdf` },
-      trigger: `Demand-spike alert: ${order.items[0].split(' ')[0]} stock fell below 10% reorder point`,
-      proof: `Inventory snapshot ID: INV-${num(7)} · Cap doc ${order.id}_CAP_v1.pdf`,
-      logic: `I generated the PO from the last accepted quote for ${order.supplier} after the inventory kernel triggered a reorder.`,
+      data: { reason: `Par breach · ${order.items[0]?.split(' ')[0] ?? 'SKU'}`, urgency: order.workflowTemplate === 'WF-RSH' ? 'urgent' : 'standard' },
+      trigger: `A-02 (Restock) raised the demand signal: ${order.items[0]?.split(' ')[0] ?? 'SKU'} stock below par.`,
+      proof: `Inventory snapshot ID: INV-${num(7)}`,
+      logic: `Request raised. Forecasted ${order.items.length} line${order.items.length !== 1 ? 's' : ''} for ${order.supplier}.`,
       verifiedAtIso,
     }),
+    // Stage 2 — Quote / Vendor Confirmed
     1: () => ({
-      data: { channel, lead_time: `${3 + (seed % 5)} days` },
-      trigger: `PO ${order.id} sent to ${order.supplier} via ${channel}`,
-      proof: `${channel} message ID: msg-${num(8)} · Vendor read receipt at ${new Date(baseEpoch + 30 * 60 * 1000).toISOString()}`,
-      logic: `${order.supplier}'s preferred channel is ${channel}. Lead-time confirmed against the vendor SLA in your internal directory.`,
+      data: { channel, lead_time: `${1 + (seed % 4)} days`, quote_amt: `Rp ${order.amount.toLocaleString('id-ID')}` },
+      trigger: `A-01 (Sourcing) sent the request to ${order.supplier} via ${channel}.`,
+      proof: `${channel} msg ID: msg-${num(8)} · read receipt ${new Date(baseEpoch + 30 * 60 * 1000).toISOString()}`,
+      logic: `${order.supplier}'s quote within tolerance of 30-day median. Lead time aligned with their SLA.`,
       verifiedAtIso,
     }),
+    // Stage 3 — PO Approved
     2: () => ({
-      data: { bank_ref: `TXN-${num(6)}`, receipt: `${order.id}_wire_receipt.pdf` },
-      trigger: `Vendor confirmation received → auto-payment trigger`,
-      proof: `Bank API ref ${num(10)} · SWIFT MT103 timestamp ${new Date(baseEpoch + 2 * 60 * 60 * 1000).toISOString()}`,
-      logic: `Settlement routed via the vendor's primary account on file. Reconciled against finance ledger entry.`,
+      data: { po_pdf: `${order.id}_PO_v1.pdf`, policy_ref: `pol-${num(8)}` },
+      trigger: `A-04 (Spend Watchdog) ran the policy stack — spend cap, vendor trust floor, duplicate detection.`,
+      proof: `PO doc ${order.id}_PO_v1.pdf · Policy check ID: pol-${num(8)}`,
+      logic: `PO drafted from the locked quote. ${requiresHumanAuthorization(2) ? 'Above spend cap — needed human authorization.' : 'Under auto-approve threshold.'}`,
       verifiedAtIso,
     }),
+    // Stage 4 — In Transit
     3: () => ({
-      data: { erp_ref: `ERP-2026-${num(4)}` },
-      trigger: `Payment cleared → ERP mirror`,
-      proof: `ERP write ID: WR-${num(9)} · Internal API timestamp ${new Date(baseEpoch + 3 * 60 * 60 * 1000).toISOString()}`,
-      logic: `Mirrored to ERP using the next free sequence in your internal numbering scheme.`,
+      data: { carrier, tracking: `${num(3)}-${num(8)}`, eta: new Date(baseEpoch + 24 * 60 * 60 * 1000).toISOString().slice(0, 16) },
+      trigger: `A-05 (Logistics) confirmed dispatch from ${order.supplier}; carrier API IN_TRANSIT.`,
+      proof: `Carrier ack: ${carrierApi}-${num(7)} · Tracking ${num(3)}-${num(8)}`,
+      logic: `${carrier} on this lane. Cold-chain sensors monitored across the full leg.`,
       verifiedAtIso,
     }),
+    // Stage 5 — Delivered & Checked
     4: () => ({
-      data: { status_note: `In Production · ${50 + (seed % 40)}% complete · ETA on track` },
-      trigger: `Weekly vendor status poll`,
-      proof: `Vendor status payload ID: vs-${num(7)} · Polled at ${new Date(baseEpoch + 8 * 60 * 60 * 1000).toISOString()}`,
-      logic: `${order.supplier} reports work-orders weekly. Production progress matches their published cadence.`,
-      verifiedAtIso,
-    }),
-    5: () => ({
-      data: { qc_report: `${order.id}_QC_inspection.pdf` },
-      trigger: `Pre-dispatch QC verification`,
-      proof: `QC report doc ID: qc-${num(8)} · 12 photos archived in vendor profile`,
-      logic: `Inspection scored ${88 + (seed % 10)}/100, above the ${order.supplier} baseline of ${85 + (seed % 5)}.`,
-      verifiedAtIso,
-    }),
-    6: () => ({
-      data: { carrier, mbl: `${carrier.split(' ')[0].slice(0, 3).toUpperCase()}${num(8)}` },
-      trigger: `Vendor ERP webhook fired DISPATCH event`,
-      proof: `Carrier API ack: ${carrierApi}-${num(7)} · Pickup window confirmed`,
-      logic: `${carrier} is the default carrier on this lane. MBL was issued at vendor warehouse departure.`,
-      verifiedAtIso,
-    }),
-    7: () => ({
-      data: { clearance_id: `KH-2026-${num(5)}`, duty_receipt: `${order.id}_duty_receipt.pdf` },
-      trigger: `Customs declaration auto-filed by Agent #33`,
-      proof: `Clearance ID KH-2026-${num(5)} · Duty paid via finance ref ${num(9)}`,
-      logic: `Pre-filed import docs cleared on first pass — no broker intervention needed.`,
-      verifiedAtIso,
-    }),
-    8: () => ({
-      data: { tracking: `${num(3)}-${num(8)}` },
-      trigger: `Carrier API status changed to IN_TRANSIT`,
-      proof: `Carrier tracking ${num(3)}-${num(8)} · Polled every 15 min via ${carrierApi} API`,
-      logic: `Real-time milestone tracking active. I will alert on any delay > 2 hours against ETA.`,
-      verifiedAtIso,
-    }),
-    9: () => ({
-      data: { hub_entry: new Date(baseEpoch + 24 * 60 * 60 * 1000).toISOString().slice(0, 16) },
-      trigger: `Hub gate scanner detected MBL`,
-      proof: `Hub gate event ID: gate-${num(8)} · Asia/Jakarta TZ`,
-      logic: `Cold-chain temperature held within the ${order.supplier} contract spec across the full leg.`,
-      verifiedAtIso,
-    }),
-    10: () => ({
-      data: { driver_name: driver, truck_plate: truckPlate },
-      trigger: `Hub dispatch assigned a final-mile driver`,
-      proof: `Driver roster ID: drv-${num(6)} · Bay C-7 · ETA SMS confirmed`,
-      logic: `Driver was on this carrier's roster within the last 30 days; bay C-7 matches the supplier's standard receiving dock.`,
-      verifiedAtIso,
-    }),
-    11: () => ({
-      data: { pod: `${order.id}_signed_POD.jpg` },
-      trigger: `Driver uploaded signed POD at delivery`,
-      proof: `POD doc ID: pod-${num(8)} · GPS-tagged at delivery address · QC ledger entry pos-${num(7)}`,
-      logic: `Goods received and signed for. QC ledger entry auto-created and order closed.`,
+      data: { pod: `${order.id}_signed_POD.jpg`, qc_outcome: order.status === 'disputed' ? 'fail' : 'pass', receiver: driver },
+      trigger: `Receiving venue staff QC'd ${order.items[0]?.split(' ')[0] ?? 'delivery'} on arrival.`,
+      proof: `POD doc: pod-${num(8)} · QC ledger entry: qc-${num(7)}`,
+      logic: `Goods received and signed for. ${order.status === 'disputed' ? 'QC FAIL — dispute opened on Activity & Governance.' : 'QC passed against vendor baseline. Stock auto-incremented for the consuming venue(s).'}`,
       verifiedAtIso,
     }),
   };
-  return STAGE_FIXTURES[stageIdx]();
+  return STAGE_FIXTURES[stageIdx]?.() ?? {
+    data: {}, trigger: '—', proof: '—',
+    logic: 'No history recorded for this stage.',
+    verifiedAtIso,
+  };
 }
 
 const ACTION_META: Record<ActionKind, { icon: typeof Zap; label: string; color: string; darkColor: string }> = {
@@ -947,13 +709,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const [batchComplete, setBatchComplete]   = useState(false);
   const [expandedDagSteps, setExpandedDagSteps] = useState<Set<number>>(new Set());
   const [chatMessages, setChatMessages]     = useState([
-    { from: 'atlas', text: 'Select an order to see its full 12-stage journey. Ctrl+click for batch operations.' }
+    { from: 'atlas', text: 'Select an order to see its full 5-stage journey. Ctrl+click for batch operations.' }
   ]);
 
   // ── Labor Switch (Manual Takeover) — Wayne doctrine ────────────
   // Per-order steering mode. Default 'agent' for every order.
   const [laborMode, setLaborMode] = useState<Record<string, LaborMode>>({});
-  // Per-order force-completed stages (for Manual Takeover of the 12-stage journey).
+  // Per-order force-completed stages (for Manual Takeover of the 5-stage journey).
   const [forceCompletedStages, setForceCompletedStages] = useState<Record<string, number>>({});
   // Per-order manual stage data: { [orderId]: { [stageIdx]: { fieldKey: value } } }.
   // Doubles as the audit trail and the basis for the Resumption Handshake.
@@ -1024,28 +786,6 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const [auditSelected,       setAuditSelected]       = useState<Set<string>>(new Set());
   const auditSearchRef                                 = useRef<HTMLInputElement>(null);
 
-  // ── Decision Attribution Trail ────────────────────────────────────
-  // Holds the order ID currently being inspected. Renders as a
-  // full-screen sheet overlay (modal pattern, like the Task Module).
-  const [attributionTrailFor, setAttributionTrailFor] = useState<string | null>(null);
-  const [expandedAttrStage,   setExpandedAttrStage]   = useState<number | null>(null);
-
-  // Trail-Return marker — when the user lands back on Orders from a
-  // cross-page chip in the Trail, re-open the Trail at the same order
-  // and stage they were inspecting. The marker is set in
-  // `lib/trailReturn.ts` by the chip handlers before navigation.
-  useEffect(() => {
-    const marker = getTrailReturn();
-    if (!marker) return;
-    if (!ALL_ORDERS.some(o => o.id === marker.orderId)) {
-      clearTrailReturn();
-      return;
-    }
-    setAttributionTrailFor(marker.orderId);
-    setExpandedAttrStage(marker.stageIdx);
-    clearTrailReturn();
-  }, []);
-
   // Auto-focus the audit search input on entering audit mode (matches
   // Inventory's behavior).
   useEffect(() => {
@@ -1112,7 +852,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       nextRunIso,
     }, ...prev]);
     const ownerLabel = draft.assignment === 'agent'
-      ? `Agent #${String(draft.agentId).padStart(2, '0')} (${draft.agentId === 7 ? 'Logistics' : draft.agentId === 6 ? 'Pricing' : 'Operations'})`
+      ? `${LEGACY_AGENT_MAP[draft.agentId] ?? 'A-02'} (${draft.agentId === 7 ? 'Logistics' : draft.agentId === 6 ? 'Sourcing' : 'Operations'})`
       : 'You (Manual Takeover from start)';
     setChatMessages(prev => [...prev, {
       from: 'atlas',
@@ -1197,35 +937,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     onNavigate?.('governance');
   }, [onNavigate]);
 
-  // Cross-page deep-link to AI Activity for a synthetic event id. AI
-  // Activity's hash-reader picks up `#evt=evt-NNN` and selects that
-  // event (or shows the unfiltered ledger if the id is unknown).
-  const openAIActivity = useCallback((eventId: string) => {
-    if (typeof window !== 'undefined') {
-      window.location.hash = `evt=${eventId}`;
-    }
-    onNavigate?.('ai-activity');
-  }, [onNavigate]);
-
-  // Cross-page deep-link to Workflows for the order's template id.
-  // WorkflowsPage's hash-reader picks up `#workflow=WF-XXX` and selects
-  // that workflow in the template list.
-  const openWorkflow = useCallback((templateId: string) => {
-    if (typeof window !== 'undefined') {
-      window.location.hash = `workflow=${templateId}`;
-    }
-    onNavigate?.('workflows');
-  }, [onNavigate]);
-
-  // Cross-page deep-link to Governance scoped to a synthetic decision
-  // id. Promoted via `#decision=DEC-XXX` — Governance's hash-reader
-  // opens the Reasoning Chain panel.
-  const openGovernanceDecision = useCallback((decisionId: string) => {
-    if (typeof window !== 'undefined') {
-      window.location.hash = `decision=${decisionId}`;
-    }
-    onNavigate?.('governance');
-  }, [onNavigate]);
+  // Note: openAIActivity / openWorkflow / openGovernanceDecision removed
+  // alongside the Decision Attribution Trail. Cross-page navigation now
+  // happens via plain hash deep-links (#order / #agent / #evt) from
+  // surfaces that survive in Finn's scope.
 
   // ── Task Module open / save / cancel ────────────────────────────
   const openStageModule = useCallback((orderId: string, stageIdx: number) => {
@@ -1536,16 +1251,18 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
   // Open an audit row.
   //   • Live order  → collapse Audit Mode and load the Single Order Journey.
-  //   • Historical  → open the Decision Attribution Trail directly (this
-  //                   is the audit-trail surface designed for past orders;
-  //                   they have no live journey to render).
+  //   • Historical  → surface a Quick Journey card in the right panel; the
+  //                   ledger view stays expanded so the user can keep
+  //                   browsing. (No full Decision Attribution Trail
+  //                   modal — that pattern is dropped for Finn's.)
   const openFromAudit = useCallback((id: string) => {
     if (ORDERS.some(o => o.id === id)) {
       setSelectedIds(new Set([id]));
       setAuditMode(false);
     } else {
-      setAttributionTrailFor(id);
-      setExpandedAttrStage(null);
+      // Historical: keep audit mode open, surface a single-row selection
+      // so the right-panel Quick Journey can render.
+      setAuditSelected(new Set([id]));
     }
   }, []);
 
@@ -1878,7 +1595,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <div>
               <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Orders Audit</h2>
               <p className={`text-[10px] ${t.textMuted}`}>
-                {auditFiltered.length} of {ALL_ORDERS.length} orders · Agent #10 (Ops Analytics)
+                {auditFiltered.length} of {ALL_ORDERS.length} orders · A-04 (Spend Watchdog)
               </p>
             </div>
           </div>
@@ -2122,9 +1839,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     }`}>{pill.label}</span>
                     <span className={`text-xs font-bold ${t.textPrimary}`}>${o.amount.toLocaleString()}</span>
                   </div>
-                  {/* Mini 12-stage bar */}
+                  {/* Mini 5-stage bar */}
                   <div className="flex items-center gap-0.5 mb-1">
-                    {Array.from({ length: 12 }, (_, i) => (
+                    {Array.from({ length: 5 }, (_, i) => (
                       <div key={i} className={`h-1 flex-1 rounded-sm ${
                         i <= o.dagStage
                           ? o.status === 'disputed' ? 'bg-red-500' :
@@ -2170,7 +1887,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               </div>
               <p className={`text-[10px] ${t.textMuted}`}>{selectedOrder.humanDescription}</p>
             </div>
-            {/* Compact 12-stage dot rail */}
+            {/* Compact 5-stage dot rail */}
             <div className="space-y-1">
               {DAG_STAGES.map((s, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -2210,7 +1927,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <TrendingUp className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
             <span className={`text-sm font-semibold ${t.textPrimary}`}>Operations Insights</span>
           </div>
-          <p className={`text-[10px] ${t.textMuted}`}>Agent #10 · scoped to current filters</p>
+          <p className={`text-[10px] ${t.textMuted}`}>A-04 · scoped to current filters</p>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Headline stats */}
@@ -2745,7 +2462,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <div className="flex items-center gap-2 shrink-0">
               {/* Re-order — visible action for delivered orders.
                   Surfaces the carbon-copy path here instead of burying it in
-                  the Stage 12 trace modal. */}
+                  the Stage 5 trace modal. */}
               {(stage >= 11 || completedIds.has(selectedOrder.id)) && (
                 <button
                   onClick={() => {
@@ -2768,14 +2485,6 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   <RefreshCw className="h-3.5 w-3.5" /> Re-order
                 </button>
               )}
-              <button onClick={() => { setAttributionTrailFor(selectedOrder.id); setExpandedAttrStage(null); }}
-                title="Decision Attribution Trail — every agent decision on this PO across all 12 stages"
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm border ${
-                  isDark ? 'bg-[#181818] border-gray-700 text-gray-300 hover:bg-gray-800'
-                        : 'bg-white border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'
-                }`}>
-                <History className="h-3.5 w-3.5" /> Decision Trail
-              </button>
               <LaborSwitch order={selectedOrder} />
               <button onClick={() => setSelectedIds(new Set())}
                 className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#f4f6f0]'}`}>
@@ -3135,7 +2844,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                         <span>·</span>
                         <span className="inline-flex items-center gap-1">
                           {entry.assignment === 'agent'
-                            ? <><Bot className="h-2.5 w-2.5" /> Agent #{String(entry.agentId).padStart(2, '0')}</>
+                            ? <><Bot className="h-2.5 w-2.5" /> {LEGACY_AGENT_MAP[entry.agentId] ?? 'A-02'}</>
                             : <><Hand className="h-2.5 w-2.5 text-amber-500" /> Manual from start</>}
                         </span>
                         {entry.nextRunIso && (
@@ -3515,7 +3224,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>EMBEDDED FINANCE</span>
             </div>
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-green-500/5 border-green-500/15' : 'bg-green-50 border-green-200'}`}>
-              <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-green-400' : 'text-green-700'}`}>Agent #28 (Finance)</p>
+              <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-green-400' : 'text-green-700'}`}>A-04 (Finance)</p>
               <p className={`text-xs leading-relaxed ${t.textPrimary} mb-2`}>{selectedOrder.financeInsight}</p>
               <button className={`text-[10px] font-semibold flex items-center gap-1 ${isDark ? 'text-green-400 hover:text-green-300' : 'text-green-700 hover:text-green-800'}`}>
                 Factor this invoice <ArrowRight className="h-3 w-3" />
@@ -3732,7 +3441,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 }`}>
                   {reviewMode ? 'History & Trace Record' : `${status} · Manual Task`}
                 </span>
-                <span className={`text-[10px] ${t.textMuted}`}>{order.id} · Stage {stageIdx + 1}/12</span>
+                <span className={`text-[10px] ${t.textMuted}`}>{order.id} · Stage {stageIdx + 1}/5</span>
                 {/* Attribution badge (Review only) */}
                 {reviewMode && attribution && (
                   <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
@@ -4097,7 +3806,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 </>
               ) : (
                 <>
-                  {/* Re-order — only on Stage 12 (Delivered) Review Mode */}
+                  {/* Re-order — only on Stage 5 (Delivered & Checked) Review Mode */}
                   {stageIdx === 11 && (
                     <button
                       onClick={() => {
@@ -4326,7 +4035,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <div className={`p-3 rounded-lg border flex items-start gap-2 ${isDark ? 'bg-[#1f2a1f] border-[#87986a]/30' : 'bg-[#f0f4e8] border-[#87986a]/30'}`}>
               <ShieldCheck className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
               <p className={`text-[10px] leading-relaxed ${t.textPrimary}`}>
-                Stage 1 (PO Approval) and Stage 12 (Delivery Confirmation) always require <strong>your</strong> Review &amp; Authorize — even when an agent is driving.
+                Stage 1 (Request) and Stage 5 (Delivered &amp; Checked) always require <strong>your</strong> Review &amp; Authorize — even when an agent is driving.
               </p>
             </div>
           </div>
@@ -4352,275 +4061,6 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     );
   })();
 
-  // ── Decision Attribution Trail · full-screen sheet ────────────────
-  // Opens from the Audit Mode Quick Journey panel and from the Single
-  // Order Journey header. Renders all 12 stage attributions in one
-  // scrollable list with agent badges, decision summaries, confidence,
-  // data points used, alternatives rejected, outcomes, and (when
-  // present) human overrides. Each row carries deep-links into
-  // Governance (Decision Ledger / agent profile) and AI Activity.
-  const attributionTrailEl = (() => {
-    if (!attributionTrailFor) return null;
-    const order = ALL_ORDERS.find(o => o.id === attributionTrailFor);
-    if (!order) return null;
-    const trail = buildAttributionTrail(order);
-
-    // Aggregate agents involved
-    const agentsMap = new Map<number, { agent: AssignedAgent; count: number }>();
-    trail.forEach(a => {
-      const cur = agentsMap.get(a.agent.id) ?? { agent: a.agent, count: 0 };
-      cur.count++;
-      agentsMap.set(a.agent.id, cur);
-    });
-    const agentsInvolved = [...agentsMap.values()].sort((a, b) => b.count - a.count);
-    const overrideCount = trail.filter(a => a.override).length;
-
-    const outcomeMeta = (o: AttributionOutcome) => {
-      switch (o) {
-        case 'success':    return { Icon: CheckCircle,   label: 'Success',     dark: 'text-green-400', light: 'text-green-700' };
-        case 'flagged':    return { Icon: AlertTriangle, label: 'Flagged',     dark: 'text-amber-300', light: 'text-amber-700' };
-        case 'failed':     return { Icon: XCircle,       label: 'Failed',      dark: 'text-red-400',   light: 'text-red-700'   };
-        case 'overridden': return { Icon: Hand,          label: 'Overridden',  dark: 'text-purple-300',light: 'text-purple-700'};
-        case 'pending':    return { Icon: Clock,         label: 'Pending',     dark: 'text-gray-400',  light: 'text-gray-600'  };
-      }
-    };
-
-    const closeTrail = () => { setAttributionTrailFor(null); setExpandedAttrStage(null); };
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={closeTrail}>
-        <div onClick={(e) => e.stopPropagation()}
-          className={`w-full max-w-5xl max-h-[90vh] rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0]'}`}>
-          {/* Header */}
-          <div className={`px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#181818]' : 'border-[#e5e5e0] bg-[#fafaf7]'}`}>
-            <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center ${isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
-              <History className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
-                Decision Attribution Trail
-              </div>
-              <h3 className={`text-sm font-bold mt-0.5 ${t.textPrimary}`}>
-                {order.id} · {order.supplier} · ${order.amount.toLocaleString()}
-              </h3>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <button
-                  onClick={() => { setTrailReturn(order.id, expandedAttrStage ?? 0); openWorkflow(order.workflowTemplate); }}
-                  title={`Open the ${workflowLabel(order.workflowTemplate)} playbook in Workflows & Kernel. A return pill keeps your Trail location.`}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold transition-colors ${
-                    isDark ? 'bg-blue-500/10 border-blue-500/30 text-blue-300 hover:bg-blue-500/20' : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                  }`}>
-                  🧭 Workflow · {workflowLabel(order.workflowTemplate)}
-                  <ExternalLink className="h-2.5 w-2.5 opacity-60" />
-                </button>
-                <p className={`text-[11px] ${t.textMuted}`}>
-                  {agentsInvolved.length} agent{agentsInvolved.length !== 1 ? 's' : ''} · {trail.length} stages · {overrideCount} human override{overrideCount !== 1 ? 's' : ''}
-                </p>
-              </div>
-            </div>
-            <button onClick={closeTrail} className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#f4f6f0] text-gray-500'}`}>
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Body — scrollable */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {/* Agents Involved summary */}
-            <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-              <p className={`text-[9px] font-bold uppercase tracking-wider mb-2 ${t.textMuted}`}>Agents involved</p>
-              <div className="flex flex-wrap gap-2">
-                {agentsInvolved.map(a => (
-                  <button key={a.agent.id}
-                    onClick={() => { setTrailReturn(order.id, expandedAttrStage ?? 0); openGovernance(a.agent.id); }}
-                    title="Open this agent's profile in Governance — a return pill keeps your Trail location"
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-medium transition-colors ${
-                      isDark ? 'bg-[#87986a]/10 border-[#87986a]/30 text-[#a3b085] hover:bg-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce] text-[#6b7a54] hover:bg-[#e8eedb]'
-                    }`}>
-                    <Bot className="h-3 w-3" />
-                    #{String(a.agent.id).padStart(2, '0')} · {a.agent.role}
-                    <span className={`opacity-60`}>·</span>
-                    <span>{a.count} decision{a.count !== 1 ? 's' : ''}</span>
-                    <ExternalLink className="h-2.5 w-2.5 opacity-60" />
-                  </button>
-                ))}
-              </div>
-              {overrideCount > 0 && (
-                <p className={`text-[10px] mt-2 ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>
-                  <Hand className="h-3 w-3 inline -mt-0.5 mr-1" />
-                  {overrideCount} stage{overrideCount !== 1 ? 's' : ''} carry a human override — admin intervened to reshape the agent decision.
-                </p>
-              )}
-            </div>
-
-            {/* Stage-by-stage timeline */}
-            <div className="p-4 space-y-2">
-              <p className={`text-[9px] font-bold uppercase tracking-wider mb-2 ${t.textMuted}`}>Stage-by-stage timeline</p>
-              {trail.map(attr => {
-                const oc = outcomeMeta(attr.outcome);
-                const ColorIcon = oc.Icon;
-                const isExpanded = expandedAttrStage === attr.stageIdx;
-                const isHumanOverride = !!attr.override;
-                const confColor =
-                  attr.confidence >= 90 ? (isDark ? 'text-green-400' : 'text-green-700') :
-                  attr.confidence >= 70 ? (isDark ? 'text-amber-300' : 'text-amber-700') :
-                  attr.confidence > 0   ? (isDark ? 'text-red-400'   : 'text-red-700')   :
-                                          (isDark ? 'text-gray-500'  : 'text-gray-500');
-                return (
-                  <div key={attr.stageIdx}
-                    className={`rounded-lg border ${
-                      isHumanOverride
-                        ? isDark ? 'bg-purple-500/8 border-purple-500/30' : 'bg-purple-50 border-purple-200'
-                        : isDark ? 'bg-[#2a2a2a] border-gray-800'         : 'bg-white border-[#e5e5e0]'
-                    }`}>
-                    {/* Stage header row */}
-                    <button onClick={() => setExpandedAttrStage(isExpanded ? null : attr.stageIdx)}
-                      className="w-full text-left px-4 py-3 flex items-start gap-3 hover:opacity-90 transition-opacity">
-                      {/* Stage number circle */}
-                      <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold ${
-                        attr.outcome === 'success'    ? 'bg-[#87986a] text-white' :
-                        attr.outcome === 'overridden' ? (isDark ? 'bg-purple-500/30 text-purple-200' : 'bg-purple-200 text-purple-800') :
-                        attr.outcome === 'failed'     ? 'bg-red-500 text-white' :
-                        attr.outcome === 'flagged'    ? 'bg-amber-500 text-white' :
-                                                        (isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-500')
-                      }`}>
-                        {attr.stageIdx + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-[12px] font-bold ${t.textPrimary}`}>{attr.stageName}</span>
-                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${
-                            isDark ? 'bg-[#87986a]/15 border-[#87986a]/30 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/30 text-[#6b7a54]'
-                          }`}>
-                            <Bot className="h-2.5 w-2.5" />
-                            #{String(attr.agent.id).padStart(2, '0')} · {attr.agent.role}
-                          </span>
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${oc.dark} ${isDark ? '' : oc.light}`}>
-                            <ColorIcon className={`h-3 w-3 ${isDark ? oc.dark : oc.light}`} />
-                            {oc.label}
-                          </span>
-                          {attr.confidence > 0 && (
-                            <span className={`text-[10px] font-mono font-semibold ${confColor}`} title="Agent confidence on this decision">
-                              {attr.confidence}%
-                            </span>
-                          )}
-                        </div>
-                        <p className={`text-[11px] mt-1 leading-snug ${t.textMuted}`}>{attr.decision}</p>
-                      </div>
-                      {isExpanded
-                        ? <ChevronUp className={`h-3.5 w-3.5 shrink-0 mt-2 ${t.textMuted}`} />
-                        : <ChevronDown className={`h-3.5 w-3.5 shrink-0 mt-2 ${t.textMuted}`} />}
-                    </button>
-
-                    {/* Expanded detail */}
-                    {isExpanded && (
-                      <div className={`px-4 pb-4 pt-1 border-t space-y-3 ${isDark ? 'border-gray-800/70' : 'border-[#e5e5e0]/70'}`}>
-                        {/* Override callout */}
-                        {attr.override && (
-                          <div className={`p-3 rounded-lg border ${isDark ? 'bg-purple-500/10 border-purple-500/30' : 'bg-purple-50 border-purple-200'}`}>
-                            <div className="flex items-start gap-2">
-                              <Hand className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-purple-300' : 'text-purple-700'}`} />
-                              <div className="flex-1 min-w-0">
-                                <p className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>
-                                  Human override · {attr.override.by}
-                                </p>
-                                <p className={`text-[11px] mt-1 ${t.textPrimary}`}>{attr.override.reason}</p>
-                                <p className={`text-[9px] mt-1 ${t.textMuted}`}>{attr.override.at.slice(0, 16).replace('T', ' ')} UTC</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Data points used */}
-                        <div>
-                          <p className={`text-[9px] font-bold uppercase tracking-wider mb-1.5 ${t.textMuted}`}>Data used</p>
-                          <div className="space-y-1">
-                            {attr.dataPoints.map((dp, i) => (
-                              <div key={i} className={`flex items-start gap-2 text-[11px] ${t.textMuted}`}>
-                                <span className={`shrink-0 w-32 ${t.textMuted}`}>{dp.label}</span>
-                                <span className={`flex-1 ${t.textPrimary}`}>{dp.value}</span>
-                                {dp.delta && (
-                                  <span className={`shrink-0 ${
-                                    dp.tone === 'positive' ? (isDark ? 'text-green-400' : 'text-green-700') :
-                                    dp.tone === 'negative' ? (isDark ? 'text-red-400'   : 'text-red-700')   :
-                                                             t.textMuted
-                                  }`}>{dp.delta}</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Alternatives rejected */}
-                        {attr.alternatives.length > 0 && (
-                          <div>
-                            <p className={`text-[9px] font-bold uppercase tracking-wider mb-1.5 ${t.textMuted}`}>Alternatives rejected</p>
-                            <div className="space-y-1.5">
-                              {attr.alternatives.map((alt, i) => (
-                                <div key={i} className={`p-2 rounded-md ${isDark ? 'bg-[#181818]' : 'bg-[#fafaf7]'}`}>
-                                  <p className={`text-[11px] font-semibold ${t.textPrimary}`}>× {alt.label}</p>
-                                  <p className={`text-[10px] italic mt-0.5 ${t.textMuted}`}>{alt.rejectedBecause}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Cross-page deep-links */}
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          <button onClick={() => { setTrailReturn(order.id, attr.stageIdx); openGovernance(attr.agent.id); }}
-                            title="Opens this agent's Governance profile. A return pill will keep your Trail location."
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors ${
-                              isDark ? 'bg-[#87986a]/10 text-[#a3b085] hover:bg-[#87986a]/20' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e8eedb]'
-                            }`}>
-                            <Bot className="h-3 w-3" /> Agent in Governance
-                            <ExternalLink className="h-2.5 w-2.5 opacity-60" />
-                          </button>
-                          {attr.governanceDecisionId && (
-                            <button onClick={() => { setTrailReturn(order.id, attr.stageIdx); openGovernanceDecision(attr.governanceDecisionId!); }}
-                              title={`Open Decision Ledger row ${attr.governanceDecisionId}. A return pill will keep your Trail location.`}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors ${
-                                isDark ? 'bg-blue-500/10 text-blue-300 hover:bg-blue-500/20' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                              }`}>
-                              <Activity className="h-3 w-3" /> Decision · {attr.governanceDecisionId}
-                              <ExternalLink className="h-2.5 w-2.5 opacity-60" />
-                            </button>
-                          )}
-                          {attr.aiActivityEventId && (
-                            <button onClick={() => { setTrailReturn(order.id, attr.stageIdx); openAIActivity(attr.aiActivityEventId!); }}
-                              title={`Open ${attr.aiActivityEventId} in AI Activity. A return pill will keep your Trail location.`}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors ${
-                                isDark ? 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                              }`}>
-                              <Zap className="h-3 w-3" /> AI Activity · {attr.aiActivityEventId}
-                              <ExternalLink className="h-2.5 w-2.5 opacity-60" />
-                            </button>
-                          )}
-                          <span className={`ml-auto text-[9px] ${t.textMuted}`}>
-                            {attr.verifiedAtIso.slice(0, 16).replace('T', ' ')} UTC
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-            <p className={`text-[10px] ${t.textMuted}`}>
-              Attribution is the bridge between Orders and the Governance / AI Activity story — every stage carries the agent, the data, and any human override.
-            </p>
-            <button onClick={closeTrail}
-              className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors inline-flex items-center gap-1.5 shadow-sm">
-              <Check className="h-3 w-3" /> Done
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  })();
 
   // Theme tokens for the audit-aware panel shell
   const panelBorder = isDark ? 'border-gray-800' : 'border-[#e5e5e0]';
@@ -4649,10 +4089,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         </div>
       </div>
 
-      {/* Decision Attribution Trail (full-screen sheet) */}
-      {attributionTrailEl}
-
-      {/* Manual-mode Task Module sheet (12-stage interactive task list) */}
+      {/* Manual-mode Task Module sheet (5-stage interactive task list) */}
       {taskModuleSheet}
 
       {/* New Order / Re-order / Schedule sheet */}

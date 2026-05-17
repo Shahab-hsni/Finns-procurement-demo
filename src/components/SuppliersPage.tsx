@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
 import { AgentCTA } from './AgentCTA';
+import { VendorOnboardingModal } from './VendorOnboardingModal';
 
 interface SuppliersPageProps {
   theme: 'dark' | 'light';
@@ -642,11 +643,12 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
     }
     onNavigate?.('governance');
   }, [onNavigate]);
+  // Vendor Onboarding mini-wizard (Phase 4i). Replaces the broken
+  // "redirect to New Request" path with a proper 4-step intake modal.
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const handleOnboardVendor = useCallback(() => {
-    // Manual Discovery Portal — humans are the sole gateway for new vendor data.
-    // Routes to the New Request flow which already hosts the intake stepper.
-    onNavigate?.('request');
-  }, [onNavigate]);
+    setOnboardingOpen(true);
+  }, []);
 
   // ── Manual Takeover · per-stage task modules ──────────────────
   // Per-supplier override: how many stages have been manually advanced
@@ -2901,6 +2903,9 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
           </div>
         );
       })()}
+
+      {/* Vendor Onboarding mini-wizard (Phase 4i) */}
+      <VendorOnboardingModal isDark={isDark} isOpen={onboardingOpen} onClose={() => setOnboardingOpen(false)} />
     </>
   );
 }

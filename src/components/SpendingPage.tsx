@@ -15,6 +15,7 @@ import { ThreePanelLayout } from './layout/ThreePanelLayout';
 import { theme as themeTokens } from '../lib/theme';
 import { logUserAction } from '../lib/actionLog';
 import type { FinnsCategory } from '../lib/types';
+import { AgentCTA } from './AgentCTA';
 
 interface SpendingPageProps {
   theme: 'dark' | 'light';
@@ -655,13 +656,18 @@ export function SpendingPage({ theme }: SpendingPageProps) {
           <>
             {/* Trade-off Engine */}
             <div className={`${t.cardPanel} p-5`}>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-2">
                 <h3 className={`text-sm font-semibold ${t.textPrimary}`}>Trade-off Engine</h3>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
-                  Finance Intelligence · A-04
-                </span>
               </div>
-              <p className={`text-xs mb-4 ${t.textMuted}`}>Balance cost savings against supply chain resilience</p>
+              <AgentCTA
+                isDark={isDark}
+                variant="inline"
+                className="mb-4"
+                agentLabel="A-04 · Spend Watchdog"
+                reasoning={`Balance cost savings against supply chain resilience. A-04 calibrated this slider against ${selected.name}'s 30-day spend trend and the seeded stockout-risk model.`}
+                offModeMessage={`Move the slider yourself to weigh ${selected.name} savings against stockout risk. Agent calibration is suppressed in Off mode — both gauges below still update live as you drag.`}
+                autoExecutionNote="A-04 keeps the slider tuned against current trend data. Adjust manually any time to override."
+              />
 
               <div className="flex justify-between mb-2">
                 <span className={`text-xs font-semibold ${tradeoff < 40 ? 'text-[#87986a]' : t.textMuted}`}>💰 Cost Optimization</span>

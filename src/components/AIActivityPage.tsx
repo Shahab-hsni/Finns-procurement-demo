@@ -15,6 +15,7 @@ import { theme as themeTokens } from '../lib/theme';
 import { toast } from 'sonner@2.0.3';
 import { useActionLog, type ActorType, type ActionLogEntry } from '../lib/actionLog';
 import { useAutonomyMode } from '../lib/autonomy';
+import { AgentCTA } from './AgentCTA';
 
 interface AIActivityPageProps {
   theme: 'dark' | 'light';
@@ -1474,14 +1475,18 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                   <span className={`ml-auto text-[9px] ${t.textMuted}`}>{relativeTimeLabel(selectedEvent.minutesAgo)}</span>
                 </div>
 
-                {/* Why */}
-                <div className={`p-2.5 rounded-lg mb-2 ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Bot className={`h-3 w-3 ${t.sageIcon}`} strokeWidth={1.5} />
-                    <div className={`text-[9px] uppercase tracking-wide font-semibold ${t.textMuted}`}>Why was this done?</div>
-                  </div>
-                  <p className={`text-[11px] leading-relaxed ${t.textPrimary}`}>{selectedEvent.reasoning.why}</p>
-                </div>
+                {/* Why (mode-aware via AgentCTA) */}
+                <AgentCTA
+                  isDark={isDark}
+                  variant="inline"
+                  className={`p-2.5 rounded-lg mb-2 ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}
+                  agentLabel={AGENTS[selectedEvent.agent]
+                    ? `${AGENTS[selectedEvent.agent].name} · ${AGENTS[selectedEvent.agent].role}`
+                    : selectedEvent.agent}
+                  reasoning={selectedEvent.reasoning.why}
+                  offModeMessage="Agent receipt hidden — Off mode suppresses recommendation narratives. The Data Used table below still shows what triggered this event."
+                  autoExecutionNote="This action was taken autonomously within policy. Use Override / Rollback below if you disagree."
+                />
 
                 {/* Data Points — editable key-value table (Evidence Override) */}
                 <div className={`p-2.5 rounded-lg mb-2 ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}>

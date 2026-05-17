@@ -38,6 +38,20 @@ interface AgentCTAProps {
   /** Optional dark-mode flag (defaults to false for explicit theming). */
   isDark?: boolean;
   /**
+   * Layout variant:
+   *   'card'   (default) — full header + inset card; for stand-alone surfaces.
+   *   'inline'           — minimal chrome (label + reasoning + actions); for
+   *                        embedding inside a host page's existing card frame
+   *                        (e.g. Suppliers' "Agent Intelligence" panel) or
+   *                        a compact list-row snippet.
+   */
+  variant?: 'card' | 'inline';
+  /**
+   * Outer wrapper className. The component does NOT own a default outer
+   * padding / border — pass whatever fits the surrounding layout.
+   */
+  className?: string;
+  /**
    * Assist-mode handler for "Defer" — snooze the recommendation.
    * If omitted, the Defer link is not rendered.
    */
@@ -63,6 +77,8 @@ export function AgentCTA({
   agentLabel,
   reasoning,
   isDark = false,
+  variant = 'card',
+  className,
   onDefer,
   onDecline,
   autoExecutionNote,
@@ -72,8 +88,19 @@ export function AgentCTA({
 
   // ── Off mode: suppress agent narrative, surface manual framing ──
   if (mode === 'off') {
+    if (variant === 'inline') {
+      return (
+        <div className={`flex items-start gap-2 ${className ?? ''}`}>
+          <Hand className={`h-3 w-3 mt-0.5 shrink-0 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+          <p className={`text-[10px] leading-relaxed ${isDark ? 'text-amber-300/90' : 'text-amber-700'}`}>
+            <span className="font-semibold">Agents are off — </span>
+            {offModeMessage ?? 'Use the data above and the primary action to drive this manually. Agent reasoning is hidden.'}
+          </p>
+        </div>
+      );
+    }
     return (
-      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={className}>
         <div className="flex items-center gap-2 mb-2">
           <Hand className={`h-3.5 w-3.5 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
           <span className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
@@ -96,8 +123,59 @@ export function AgentCTA({
   const showDeferDecline = mode === 'assist' && (onDefer || onDecline);
   const showAutoBadge    = mode === 'auto';
 
+  // ── Inline variant: minimal chrome, no header — for places like
+  // Inventory's compact reasoning snippet or Suppliers' existing
+  // "Agent Intelligence" wrapper that already owns the framing.
+  if (variant === 'inline') {
+    return (
+      <div className={className}>
+        <p className={`text-[10px] font-semibold mb-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+          {agentLabel}
+          {mode === 'assist' && (
+            <span className={`ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full align-middle ${isDark ? 'bg-blue-500/15 text-blue-300' : 'bg-blue-50 text-blue-700'}`}>
+              Suggestion
+            </span>
+          )}
+          {mode === 'auto' && (
+            <span className={`ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full align-middle ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+              Auto
+            </span>
+          )}
+        </p>
+        <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+          {reasoning}
+        </p>
+        {showDeferDecline && (
+          <div className="flex items-center gap-3 mt-1.5">
+            {onDefer && (
+              <button onClick={onDefer}
+                className={`text-[10px] font-semibold transition-colors ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
+                Defer
+              </button>
+            )}
+            {onDefer && onDecline && (
+              <span className={`text-[10px] ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
+            )}
+            {onDecline && (
+              <button onClick={onDecline}
+                className={`text-[10px] font-semibold transition-colors ${isDark ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'}`}>
+                Decline
+              </button>
+            )}
+          </div>
+        )}
+        {showAutoBadge && (
+          <p className={`text-[9px] mt-1 ${isDark ? 'text-[#a3b085]/80' : 'text-[#6b7a54]/80'}`}>
+            {autoExecutionNote ?? `${agentLabel} will execute on your approval.`}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // ── Default 'card' variant ──
   return (
-    <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+    <div className={className}>
       <div className="flex items-center gap-2 mb-2">
         <Zap className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
         <span className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>

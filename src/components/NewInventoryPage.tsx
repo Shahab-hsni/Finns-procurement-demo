@@ -19,6 +19,7 @@ import { theme as themeTokens } from '../lib/theme';
 import { toast } from 'sonner@2.0.3';
 import type { VenueTag, FinnsAgentId, FinnsCategory } from '../lib/types';
 import { logUserAction } from '../lib/actionLog';
+import { AgentCTA } from './AgentCTA';
 
 interface InventoryPageProps {
   theme: 'dark' | 'light';
@@ -2404,15 +2405,20 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               </div>
             )}
 
-            {/* Agent reasoning snippet */}
+            {/* Agent reasoning snippet — mode-aware via AgentCTA */}
             {selected.agentReasoning && (
               <div className="px-4 pb-3">
-                <div className={`p-2.5 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}>
-                  <div className="flex items-start gap-1.5">
-                    <Bot className={`h-3 w-3 mt-0.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
-                    <p className={`text-[10px] leading-relaxed line-clamp-4 ${t.textSecondary}`}>{selected.agentReasoning}</p>
-                  </div>
-                </div>
+                <AgentCTA
+                  isDark={isDark}
+                  variant="inline"
+                  className={`p-2.5 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}
+                  agentLabel={selected.agentTrigger ?? 'A-02 (Restock)'}
+                  reasoning={selected.agentReasoning}
+                  offModeMessage="Use the par level, on-hand, and burn rate above to decide if a restock is needed. Drive it via Restock Now."
+                  autoExecutionNote={`${selected.agentTrigger ?? 'A-02'} will trigger a restock automatically when par is breached.`}
+                  onDefer={() => toast.info(`Deferred ${selected.name}`, { description: 'Restock proposal snoozed for 4h. Par checks keep running.' })}
+                  onDecline={() => toast.warning(`Declined ${selected.name}`, { description: "Won't auto-suggest again until par drops further or burn rate changes." })}
+                />
               </div>
             )}
 

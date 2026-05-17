@@ -17,6 +17,7 @@ import {
 import { toast } from 'sonner';
 import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
+import { AgentCTA } from './AgentCTA';
 
 interface SuppliersPageProps {
   theme: 'dark' | 'light';
@@ -2047,11 +2048,19 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               {peekIsManual ? 'Human Review · Drafts' : 'Agent Intelligence'}
             </span>
           </div>
-          <p className={`text-[10px] leading-relaxed ${t.textSecondary}`}>
-            {peekIsManual
-              ? `${agentBadge(selected.assignedAgent)} suspended. ${selected.assignedAgent.activeTasks} task${selected.assignedAgent.activeTasks === 1 ? '' : 's'} parked for manual sign-off.`
-              : selected.agentNotes}
-          </p>
+          {peekIsManual ? (
+            <p className={`text-[10px] leading-relaxed ${t.textSecondary}`}>
+              {`${agentBadge(selected.assignedAgent)} suspended. ${selected.assignedAgent.activeTasks} task${selected.assignedAgent.activeTasks === 1 ? '' : 's'} parked for manual sign-off.`}
+            </p>
+          ) : (
+            <AgentCTA
+              isDark={isDark}
+              variant="inline"
+              agentLabel={`${agentBadge(selected.assignedAgent)} · ${selected.assignedAgent.role}`}
+              reasoning={selected.agentNotes}
+              offModeMessage={`Use the metrics above to evaluate ${selected.name}. Agent recommendations are suppressed.`}
+            />
+          )}
         </div>
       </div>
 
@@ -3357,11 +3366,24 @@ function renderRelationshipWorkspace(
             <Lock className="h-2.5 w-2.5" /> Internal directory only
           </span>
         </div>
-        <p className={`text-[11px] leading-relaxed mb-3 ${t.textSecondary}`}>
-          {isManual
-            ? `${agentBadge(selected.assignedAgent)} (${selected.assignedAgent.role}) is in Standby. ${selected.assignedAgent.activeTasks} task${selected.assignedAgent.activeTasks === 1 ? ' is' : 's are'} parked here as draft${selected.assignedAgent.activeTasks === 1 ? '' : 's'} for you to complete or cancel manually.`
-            : selected.agentNotes}
-        </p>
+        {isManual ? (
+          <p className={`text-[11px] leading-relaxed mb-3 ${t.textSecondary}`}>
+            {`${agentBadge(selected.assignedAgent)} (${selected.assignedAgent.role}) is in Standby. ${selected.assignedAgent.activeTasks} task${selected.assignedAgent.activeTasks === 1 ? ' is' : 's are'} parked here as draft${selected.assignedAgent.activeTasks === 1 ? '' : 's'} for you to complete or cancel manually.`}
+          </p>
+        ) : (
+          <div className="mb-3">
+            <AgentCTA
+              isDark={isDark}
+              variant="inline"
+              agentLabel={`${agentBadge(selected.assignedAgent)} · ${selected.assignedAgent.role}`}
+              reasoning={selected.agentNotes}
+              offModeMessage={`Use the metrics, contract status, and order history above to assess ${selected.name}. Agent narrative is hidden in Off mode.`}
+              autoExecutionNote={`${agentBadge(selected.assignedAgent)} is actively monitoring this vendor and will propose renegotiations / sourcing alternatives within policy.`}
+              onDefer={() => toast.info(`Deferred A-01 intelligence on ${selected.name}`, { description: 'Snoozed for 24h. SLA and contract sensors keep running.' })}
+              onDecline={() => toast.warning(`Dismissed A-01 intelligence on ${selected.name}`, { description: "Won't re-surface until SLA or pricing signal changes materially." })}
+            />
+          </div>
+        )}
         {isManual ? (
           <div className="flex gap-2">
             <button

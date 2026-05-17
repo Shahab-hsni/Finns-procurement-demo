@@ -3227,6 +3227,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         {selectedOrder && !isBatch && (
           <AgentCTA
             isDark={isDark}
+            className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}
             agentLabel={selectedOrder.agentAgent}
             reasoning={selectedOrder.agentReasoning}
             autoExecutionNote={

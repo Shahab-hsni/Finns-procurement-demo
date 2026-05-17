@@ -17,6 +17,7 @@ import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
 import { workflowTemplates } from '../lib/mockData';
+import { logUserAction, type ActionKind } from '../lib/actionLog';
 
 interface OrdersPageProps {
   theme: 'dark' | 'light';
@@ -1364,6 +1365,32 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         from: 'atlas',
         text: `✅ ${order.humanAction} completed for ${id}. Saved ${order.saving.time} of manual work and $${order.saving.cost.toLocaleString()}. Next autonomous step initiated.`
       }]);
+    }
+    // ── Action log: every executed CTA emits a typed entry ──
+    if (order) {
+      const kindMap: Record<NonNullable<Order['actionKind']>, ActionKind> = {
+        'approve':           'po-approve',
+        'confirm-delivery':  'po-stage-advance',
+        'resolve-issue':     'po-message-supplier',
+        'pay':               'po-approve',
+      };
+      const kind: ActionKind = order.actionKind ? kindMap[order.actionKind] : 'po-stage-advance';
+      const amountIDR = `Rp ${(order.amount / 1_000_000).toFixed(1)}M`;
+      const summary = order.actionKind === 'approve'
+        ? `Approved ${order.id} · ${order.supplier} · ${amountIDR}`
+        : order.actionKind === 'confirm-delivery'
+        ? `Confirmed delivery on ${order.id} · ${order.supplier}`
+        : order.actionKind === 'resolve-issue'
+        ? `Contacted supplier on ${order.id} · ${order.supplier} · ${order.failureReason ?? 'issue resolution'}`
+        : `Advanced ${order.id} · ${order.supplier}`;
+      logUserAction({
+        kind,
+        entity: { type: 'po', id: order.id },
+        summary,
+        venue: 'Multi',
+        details: order.humanDescription,
+        meta: { amount: order.amount, supplier: order.supplier, workflow: order.workflowTemplate },
+      });
     }
   }, []);
 

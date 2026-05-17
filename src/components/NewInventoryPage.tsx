@@ -17,7 +17,8 @@ import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
 import { toast } from 'sonner@2.0.3';
-import type { VenueTag, FinnsAgentId } from '../lib/types';
+import type { VenueTag, FinnsAgentId, FinnsCategory } from '../lib/types';
+import { logUserAction } from '../lib/actionLog';
 
 interface InventoryPageProps {
   theme: 'dark' | 'light';
@@ -566,6 +567,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
     const item = ITEMS.find(i => i.id === adjustOpen);
     if (!item) return;
     const ts = new Date().toISOString();
+    const priorOnHand = manualCounts[adjustOpen]?.count ?? item.onHand;
     // Action only — does not pause the agent, does not flip Steering.
     setManualCounts(prev => ({ ...prev, [adjustOpen]: { count: n, note: adjustDraft.note.trim(), ts } }));
     setIntelligenceLog(prev => [{
@@ -582,8 +584,18 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
       role: 'atlas',
       text: `Physical count updated to ${n}${item.unit} for ${item.name}. Adjusting burn-rate projections — runway is now ${newDays}d at ${item.dailyBurn} ${item.unit}/day.${adjustDraft.note.trim() ? ` Note: "${adjustDraft.note.trim()}".` : ''}`,
     }]);
+    // ── Action log ──
+    logUserAction({
+      kind: 'sku-adjust',
+      entity: { type: 'sku', id: item.sku },
+      summary: `Adjusted ${item.name} on-hand: ${priorOnHand} → ${n} ${item.unit}`,
+      category: item.category as FinnsCategory,
+      venue: item.venues.length === 1 ? item.venues[0] : 'Multi',
+      details: adjustDraft.note.trim() || undefined,
+      meta: { prior: priorOnHand, next: n, unit: item.unit, newDays: parseFloat(newDays) },
+    });
     closeAdjust();
-  }, [adjustOpen, adjustDraft, closeAdjust]);
+  }, [adjustOpen, adjustDraft, closeAdjust, manualCounts]);
   // Resolved on-hand: manual count overrides seeded onHand.
   const getOnHand = useCallback((item: InventoryItem) => manualCounts[item.id]?.count ?? item.onHand, [manualCounts]);
   // Master SKU Catalog management
@@ -3021,6 +3033,12 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 <button onClick={() => {
                   if (catalogDraftRow.name && catalogDraftRow.sku) {
                     setCatalogRows(prev => [...prev, { id: catalogDraftRow.id!, name: catalogDraftRow.name!, sku: catalogDraftRow.sku!, category: catalogDraftRow.category ?? '', unitCost: 0, archived: false }]);
+                    logUserAction({
+                      kind: 'sku-catalog-add',
+                      entity: { type: 'sku', id: catalogDraftRow.sku! },
+                      summary: `Added SKU ${catalogDraftRow.sku} · ${catalogDraftRow.name}`,
+                      category: (catalogDraftRow.category as FinnsCategory) || undefined,
+                    });
                     setCatalogDraftRow(null);
                   }
                 }} className="text-[10px] px-2 py-1 rounded bg-[#87986a] text-white font-semibold hover:bg-[#6b7a54]">Save</button>
@@ -3054,7 +3072,16 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                             className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${isDark ? 'border-gray-700 text-gray-400 hover:text-[#a3b085] hover:border-[#87986a]/50' : 'border-[#e5e5e0] text-gray-500 hover:text-[#6b7a54]'}`}>
                             {catalogEditId === row.id ? 'Done' : 'Edit'}
                           </button>
-                          <button onClick={() => setCatalogRows(prev => prev.map(r => r.id === row.id ? { ...r, archived: !r.archived } : r))}
+                          <button onClick={() => {
+                              setCatalogRows(prev => prev.map(r => r.id === row.id ? { ...r, archived: !r.archived } : r));
+                              logUserAction({
+                                kind: 'sku-archive',
+                                entity: { type: 'sku', id: row.sku },
+                                summary: `${row.archived ? 'Restored' : 'Archived'} SKU ${row.sku} · ${row.name}`,
+                                category: (row.category as FinnsCategory) || undefined,
+                                meta: { archived: !row.archived },
+                              });
+                            }}
                             className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${
                               row.archived
                                 ? isDark ? 'border-[#87986a]/50 text-[#a3b085]' : 'border-[#6b7a54]/50 text-[#6b7a54]'

@@ -13,6 +13,8 @@ import {
 import { toast } from 'sonner';
 import { ThreePanelLayout } from './layout/ThreePanelLayout';
 import { theme as themeTokens } from '../lib/theme';
+import { logUserAction } from '../lib/actionLog';
+import type { FinnsCategory } from '../lib/types';
 
 interface SpendingPageProps {
   theme: 'dark' | 'light';
@@ -339,6 +341,14 @@ export function SpendingPage({ theme }: SpendingPageProps) {
     setCapitalAmt(td.projectedSavings);
     setShowCapital(true);
     setTimeout(() => setShowCapital(false), 2800);
+    // ── Action log ──
+    logUserAction({
+      kind: 'savings-lock',
+      entity: { type: 'ledger', id: selected.id },
+      summary: `Locked $${td.projectedSavings.toLocaleString(undefined, { maximumFractionDigits: 0 })} saving · ${selected.name}`,
+      category: selected.name as FinnsCategory,
+      meta: { amount: td.projectedSavings, categoryId: selected.id },
+    });
   }, [selected, td, lockedSavings]);
 
   const handleAtlasSubmit = useCallback(() => {

@@ -16,6 +16,7 @@ import {
   type AutonomyMode, AUTONOMY_LABEL, AUTONOMY_TAGLINE,
   getAutonomyMode, setAutonomyMode, useAutonomyMode,
 } from "./lib/autonomy";
+import { logUserAction } from "./lib/actionLog";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -280,7 +281,14 @@ function AutonomyToggle({ isDark }: { isDark: boolean }) {
   const mode = useAutonomyMode();
   const handle = (next: AutonomyMode) => {
     if (next === mode) return;
+    const prior = mode;
     setAutonomyMode(next);
+    logUserAction({
+      kind: 'autonomy-mode-change',
+      entity: { type: 'platform', id: 'autonomy' },
+      summary: `Autonomy set to ${AUTONOMY_LABEL[next]}`,
+      meta: { prior, next },
+    });
     // Surface a small toast so the mode change is unmissable.
     // Sensing (alerts, watch lists, par checks, ETA tracking) is always
     // on -- only the action layer is gated.

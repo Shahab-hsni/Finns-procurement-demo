@@ -1629,6 +1629,61 @@ See `RIGHT-PANEL-MAP.md § 7`. Always-on:
 
 ---
 
+## 6.9 Mode-Awareness · Manual Baseline Audit
+
+The Spending page must be fully usable in `Off` mode — a Procurement Manager must be able to view spend, drift, and savings without any agent participation, AND record savings *they themselves* achieved. See `PLATFORM-MAP.md § 3a` for the global model.
+
+### Sensing + manual mechanics (always on)
+
+- **7 category cards** — spend MTD, budget bar, variance arrow, savings locked, per-venue mini-bar. Pure data.
+- **Per-venue spend split** chart under the grid (BC / RC / ST / SP).
+- **Category Detail view** — time-range toggle (1M / 3M / 6M / 1Y), per-venue split, **LEDGER table** (date / PO / supplier / items / venue / amount / saved).
+- **Monthly Spending Trend** chart — 12-month rolling window of actual vs budget.
+- **Budget Setup modal** — per-category + per-venue budget allocation. Manual entry.
+- **Time range toggle** — pure data filter.
+- **Back to all** button — clears category selection.
+- **Atlas right panel** — header, page-context subtitle, data summaries (Autonomy Balance backward-looking metric, Forecast Confidence 4 metrics, Venue Mix bars, Scope 3 Carbon CO2 per category), chat input. Never gated.
+
+### Atlas-curated data layer (always on)
+
+- **Autonomy Balance** bars — historical % handled autonomously vs manually. Backward-looking; always rendered (even if Off mode means future bars all read 0% agent).
+- **Forecast Confidence** card — 4 metrics (next month spend, savings estimate, drift detection, stockout probability). Sensing.
+- **Venue Mix** — per-venue spend mini-bar. Pure data.
+- **Scope 3 Carbon** — CO2 per category. Pure data.
+
+### Mode-aware CTAs (action layer)
+
+| Surface | Auto | Assist | Off |
+|---------|------|--------|-----|
+| **Lock Savings** button (category detail) | One-click commits saving | Same | Opens confirm modal capturing reason + verification source ("renegotiated PT Bali Seafood quote, saved Rp 590k vs Q1 baseline") |
+| **Atlas prompt suggestions** (3 buttons when category selected) | Reference A-01 / A-02 / A-04 actions | Same | Reframed: ask about *facts* not agent actions ("Why is Seafood under budget?" instead of "Why did A-01 switch suppliers?") |
+| **Agent Efficacy** card (right panel) | Top agent per category with % contribution | Same | **Hidden** — no agent contribution to attribute. Replace with "Action mix" showing manual approvals vs recurring schedule fires. |
+| **Atlas response engine** (`getAtlasResponse`) | Cites agent actions ("A-01 switched suppliers because...") | Same | Cites *outcomes* without agent narrative ("Supplier switched on May 15 — locked 4% lower price") |
+| **LEDGER entries with `actorType: 'agent'`** | Show "A-01 negotiated bulk commitment" | Same | Historical entries still display; future Off-mode actions land with `actorType: 'admin'` |
+| **LEDGER `overrideOf`** field | "Override of A-04 (Spend Watchdog)" | Same | Shown for historical overrides; future overrides are pure manual decisions, no `overrideOf` |
+| **Budget Setup → Save** | Instant save | Same | Opens confirm modal: "Apply these budgets from May 16? Notify F&B Director?" |
+
+### Real gaps (open backlog)
+
+1. **"Locked Savings" attribution is purely agent-driven.** Today every LEDGER saving ties back to an agent action. In Off mode the user achieves savings *themselves* (manually renegotiated terms) but has **no way to record that saving in the ledger.** Missing manual surface: "Add a manual saving entry" modal (category, vendor, amount, reason, evidence note). **Biggest gap on this page.**
+2. **`Autonomy Balance` card is awkward when system has always been in Off mode.** Shows 0% agent / 100% admin which is technically correct but visually empty. Should switch copy framing in Off mode ("All transactions are manually authored" instead of "Agents handled 0%").
+3. **`Agent Efficacy` per-category card has no manual fallback.** In Off mode goes empty. Replace with "Action mix" showing manual approvals vs recurring schedule fires (recurring schedule = standing policy, not agent decision).
+4. **`Atlas prompt suggestions`** still reference agent actions. In Off mode reframe to data-only questions.
+5. **No "Manual savings calculator"** for the PM who wants to model "if I switch from X vendor to Y, here's the saving." Currently the simulation is implicit in Atlas reasoning; in Off mode it should be an explicit modal.
+6. **No "Export budget vs actual" CSV** — useful for manual reporting to F&B Director / GM. No export from Spending today.
+7. **Budget Setup is "save and forget"** — no version history, no effective-date, no approver capture. (REALISM-AUDIT § 6 #9.) More critical in Off mode where audit trail relies on user action records.
+
+### Proposed fix shape
+
+- **"Add Manual Saving" entry button** on Category Detail — opens a modal: category, vendor (from `finnsSuppliers`), amount, reason, evidence note, optional invoice ref. Adds a row to LEDGER with `actorType: 'admin'` + `actorLabel: 'You'`.
+- **`Agent Efficacy` card becomes "Action Mix"** in Off mode: manual approvals / recurring auto-approvals / overrides. Same shape, different source.
+- **Mode-aware `atlasPrompts`** in CATEGORIES — alternate question sets for Off mode.
+- **Manual savings calculator** ("what-if") modal: pick a SKU, pick a candidate vendor, see projected delta. Works in all modes.
+- **Export CSV** on Category Detail + Categories Grid.
+- **Budget Setup audit trail** — version history sub-table with effective_date + actor + reason.
+
+---
+
 # 7. Activity & Governance Page
 
 The merged "receipts + HR + policy office" for the AI workforce. This single page replaces the prior Buyamia AI Activity and Governance pages.

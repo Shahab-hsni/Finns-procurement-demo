@@ -5,6 +5,7 @@ import { InfoTooltip } from '../ui/InfoTooltip';
 import { finnsPlaybooks, finnsAgents } from '../../lib/mockData';
 import { theme } from '../../lib/theme';
 import type { PlaybookId, FinnsAgentId } from '../../lib/types';
+import { AgentCTA } from '../AgentCTA';
 
 interface DagFlowPathProps {
   isDark: boolean;
@@ -83,6 +84,17 @@ export function DagFlowPath({ isDark, selectedWorkflowId }: DagFlowPathProps) {
           <p className={`text-[11px] leading-relaxed ${t.textPrimary}`}>{playbook.whenItRuns}</p>
         </div>
       </div>
+
+      {/* Mode-aware framing — how this playbook executes under the current autonomy */}
+      <AgentCTA
+        isDark={isDark}
+        variant="inline"
+        className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}
+        agentLabel={`${playbook.id} · ${playbook.name} · Mode behavior`}
+        reasoning={`Each stage's owning agent will surface a recommendation here — review, approve, or decline before the order advances. Stage 5 (QC) is always human-gated regardless of mode.`}
+        offModeMessage={`Agents are off. Every stage runs manually — treat the per-stage agent labels below as role assignments for the human running that stage (Sourcing = procurement, Logistics = receiving lead, etc).`}
+        autoExecutionNote={`Each stage advances autonomously within policy. You only see escalations on the Triage Queue. Override at any stage via the order's labor switch.`}
+      />
 
       {/* Flow Path — 5 stages vertical */}
       <div id="wf-flow-path">

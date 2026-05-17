@@ -18,6 +18,7 @@ import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
 import { workflowTemplates } from '../lib/mockData';
 import { logUserAction, type ActionKind } from '../lib/actionLog';
+import { AgentCTA } from './AgentCTA';
 
 interface OrdersPageProps {
   theme: 'dark' | 'light';
@@ -3222,18 +3223,25 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           </div>
         )}
 
-        {/* ── Single: Agent reasoning ── */}
+        {/* ── Single: Agent reasoning (mode-aware via AgentCTA) ── */}
         {selectedOrder && !isBatch && (
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <Zap className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
-              <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>AGENT REASONING</span>
-            </div>
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/5 border-[#87986a]/15' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-              <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{selectedOrder.agentAgent}</p>
-              <p className={`text-xs leading-relaxed ${t.textPrimary}`}>{selectedOrder.agentReasoning}</p>
-            </div>
-          </div>
+          <AgentCTA
+            isDark={isDark}
+            agentLabel={selectedOrder.agentAgent}
+            reasoning={selectedOrder.agentReasoning}
+            autoExecutionNote={
+              selectedOrder.actionKind === 'approve'
+                ? `${selectedOrder.agentAgent} drafted this and is waiting for your approval — above the auto-execute cap.`
+                : `${selectedOrder.agentAgent} is driving this stage in Auto mode.`
+            }
+            offModeMessage={
+              selectedOrder.actionKind === 'approve'
+                ? 'Review the supplier, quote, and ETA above. Approve from your own judgement using the button below — agent recommendations are suppressed in Off mode.'
+                : 'Drive this stage manually using the controls below. Agent reasoning is hidden while autonomy is Off.'
+            }
+            onDefer={() => toast.info(`Deferred ${selectedOrder.id}`, { description: 'The recommendation is snoozed for 4h. It will re-surface in the Needs Action queue after that.' })}
+            onDecline={() => toast.warning(`Declined ${selectedOrder.id}`, { description: 'Recommendation rejected. The agent will not re-suggest this PO without new data.' })}
+          />
         )}
 
         {/* ── Single: Embedded Finance ── */}

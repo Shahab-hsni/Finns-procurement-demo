@@ -1423,6 +1423,65 @@ Opens from Bulk Action or Comparative Delta. Target vendor pills + channel toggl
 
 ---
 
+## 5.16 Mode-Awareness · Manual Baseline Audit
+
+The Suppliers page must be fully usable in `Off` mode — a Procurement Manager must be able to view, message, compare, broadcast, and (gap, see below) onboard vendors without any agent participation. See `PLATFORM-MAP.md § 3a` for the global model.
+
+### Sensing + manual mechanics (always on)
+
+- **Vendor cards** in the left panel — name, region flag, composite score, categories, status badge, venues served. All data.
+- **Sidebar status groupings** (Needs Attention / Active / Paused) — derived from `vendorStatus` + `qcAlerts.length`.
+- **Search input** filters cards by name / category / venue.
+- **Audit Mode** + all filters.
+- **Ecosystem Hub** (center default) — KPI cards, performance matrix, category bar chart, status distribution, venues-served distribution.
+- **Relationship Workspace** (vendor selected) — dossier, journey track (5-stage relationship lifecycle), metrics radar, account manager card, venues served, recent orders.
+- **Comparison Matrix** (2 vendors + Compare active).
+- **Messaging Drawer** (1-on-1) — empty composer, user types, hits Send.
+- **Broadcast Drawer** (multi-vendor) — target pills + message field.
+- **QC Failure Alerts** banner at top of center panel — fires from Orders Stage 5 outcome=fail via `finns-qc-failure` data edge. Always shown.
+- **Fortress Sourcing Banner** — "Onboard New Vendor" CTA always visible.
+- **Atlas right panel** — header, page-context subtitle, data summaries (Relationship ROI savings YTD, Market Benchmarking lead time + quality vs regional avg, Direct Comparison narrative in Comparative Delta mode), chat input. Never gated.
+
+### Atlas-curated data layer (always on)
+
+- **Relationship ROI** card — savings YTD + tier narrative + grade badge (A/B+/B/C). Computed from `metrics.composite`.
+- **Market Benchmarking** card — lead time vs regional avg + quality vs regional avg. Pure delta from `REGIONAL_BENCH`.
+- **Direct Comparison narrative** in Comparative Delta — auto-generated from metric deltas.
+
+### Mode-aware CTAs (action layer)
+
+| Surface | Auto | Assist | Off |
+|---------|------|--------|-----|
+| **Per-vendor Labor Mode toggle** (Agent / Manual) | Useful override | Useful override | **Hidden** — global Off already locks everything to manual |
+| **Open Secure Bridge** (in Relationship ROI) | Opens Messaging Drawer; A-03 may pre-draft a contextual message | Same; A-03 drafts but requires user click Send | Opens Messaging Drawer with **empty composer** |
+| **Broadcast Drawer compose** | A-03 pre-fills draft based on bulk-action context | A-03 drafts, user reviews + sends | Empty composer; user writes from scratch |
+| **Renegotiate Terms** button | Fires renegotiation flow (when wired) | "A-01 has drafted the opening offer — review?" | Opens a manual renegotiation workspace; user enters offer position |
+| **"Initiate Renegotiation"** confirmation | Sage burst + "Agent drafting opening offer" | Same | "Renegotiation Initiated" without agent narrative |
+| **Comparative Delta Recommendation card** | "Recommend: Vendor A (faster, +Rp 35M cost)" — A-01 editorial | Same — surfaced for human decision | **Hidden** (A-01 editorial; only the data deltas remain) |
+| **"Message Winner"** CTA (Comparative Delta) | A-03 drafts message | A-03 drafts message | Opens Messaging Drawer with empty composer |
+| **Right-panel "Recommendations"** section | A-01's recommendation text on the relationship | Same | **Hidden** — no agent recommendation |
+
+### Real gaps (open backlog)
+
+1. **No proper Vendor Onboarding form.** The "Onboard New Vendor" Fortress banner routes to New Request — wrong page (it's a procurement wizard, not vendor intake). Vendor onboarding needs its own 4-step manual flow: Lead → KYC docs → Banking → First-PO terms. (Already flagged in REALISM-AUDIT.md § 5 #12.) **Biggest gap on this page.**
+2. **Per-vendor `agentNotes` field is the only narrative on the dossier.** Reads like agent-authored ("A-01 detected a 6.2% price gap..."). In Off mode this should fall back to user-entered notes or hide entirely. Today it renders agent narrative regardless of mode.
+3. **`assignedAgent` is required on every Supplier** — no concept of "manually-managed vendor with no agent assigned." In Off mode every supplier still shows `A-NN · Role` chip. Should hide chip in Off, or render "Self-managed."
+4. **Journey Stage Module modal in Manual Takeover** has copy assuming Active Handshake (agent picks up from human). In Off mode no Active Handshake should exist; the modal should be pure form input.
+5. **No "Manual Action Log" per vendor** alongside `messageHistory`. Other manual actions (vendor onboarded, terms renegotiated, contract signed, score adjusted) don't get logged. Audit trail incomplete in Off mode.
+6. **Manual QC-fail event dispatch unverified.** `qcAlerts` come from Orders Stage 5 failure firing `finns-qc-failure`. When a user manually marks Stage 5 as `qcOutcome: fail` (no agent involved), this event needs to fire the same way. Today this path may or may not dispatch — needs verification. **Bug-risk gap.**
+7. **"Initiate Renegotiation"** is a one-click animation today; no actual renegotiation workspace exists (REALISM-AUDIT § 5 #9). In Off mode this gap is starker because there's no agent to fake the work.
+
+### Proposed fix shape
+
+- **Vendor Onboarding mini-wizard** (4 steps) replaces the broken "Onboard New Vendor" → New Request redirect. Manual-first design; agents (A-01) optionally enrich in Auto.
+- **Mode-aware `agentNotes` fallback**: when global mode is Off, render a "Notes" surface (user-editable) instead of agent narrative.
+- **`assignedAgent` becomes optional on Supplier** — type allows `null` for self-managed; chip hides when null OR when mode is Off.
+- **Unified Action Log per vendor** alongside messageHistory — actor-tagged (`you | A-01 | A-03`), captures every state change on the relationship.
+- **Manual QC-fail event dispatch verification**: confirm Orders' manual Stage 5 advance with `qcOutcome: fail` fires the `finns-qc-failure` event identically to the agent path. If not, add it.
+- **Renegotiation workspace**: proper modal/page with opening position, vendor response field, rounds, red-line, signed amendment. Manual-first; A-01 can pre-draft in Assist/Auto.
+
+---
+
 # 6. Spending Page
 
 Category grid → category detail ledger. Per-venue spend split surfaces inline.

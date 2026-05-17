@@ -61,6 +61,17 @@ interface AtlasMessage {
   content: string;
 }
 
+// ── Legacy agent id → Finn's A-NN roster ─────────────────────────
+// Most SpendingPage references touch Pricing (#6), Group Buying (#18),
+// Demand Forecast (#3), Sustainability (#29), Payments (#28). Mapped
+// to A-01..A-05 by their closest Finn's role.
+const LEGACY_AGENT_MAP: Record<number, string> = {
+  1: 'A-04', 3: 'A-02', 5: 'A-01', 6: 'A-01', 7: 'A-05',
+  8: 'A-02', 9: 'A-05', 10: 'A-04', 13: 'A-03', 14: 'A-04',
+  18: 'A-04', 21: 'A-01', 25: 'A-02', 28: 'A-04', 29: 'A-01', 33: 'A-04',
+};
+const agentLabel = (id: number) => LEGACY_AGENT_MAP[id] ?? 'A-01';
+
 // ── Semantic Color Palette (fixed, enforced everywhere) ───────────
 
 const COLORS = {
@@ -82,7 +93,7 @@ const CATEGORIES: Category[] = [
     savingsUnlocked: 1840, agentActions: 7, co2Kg: 320, stockoutRisk: 12,
     trend6: [12000, 13100, 13800, 14500, 13900, 14200],
     topAgent: { id: 6, name: 'Pricing Agent', contribution: 52 },
-    atlasPrompts: ['Why did Agent #6 switch suppliers?', 'Alternative beef suppliers?', 'What is the Protein forecast?'],
+    atlasPrompts: ['Why did A-01 switch suppliers?', 'Alternative beef suppliers?', 'What is the Protein forecast?'],
   },
   {
     id: 'seafood', name: 'Seafood', spend: 7800, budget: 8500, drift: -8.2, driftStatus: 'under',
@@ -90,7 +101,7 @@ const CATEGORIES: Category[] = [
     savingsUnlocked: 2100, agentActions: 5, co2Kg: 180, stockoutRisk: 6,
     trend6: [8500, 8200, 7900, 7600, 7800, 7800],
     topAgent: { id: 18, name: 'Group Buying', contribution: 45 },
-    atlasPrompts: ['Group buy opportunities?', 'Cold chain risk?', 'Agent #18 performance this month'],
+    atlasPrompts: ['Group buy opportunities?', 'Cold chain risk?', 'A-04 performance this month'],
   },
   {
     id: 'produce', name: 'Produce', spend: 8400, budget: 8200, drift: 2.4, driftStatus: 'on-track',
@@ -135,15 +146,15 @@ const CATEGORIES: Category[] = [
 ];
 
 const LEDGER: LedgerEntry[] = [
-  { id: 'l1', actorType: 'agent', agentId: 6, actorLabel: 'Agent #6', action: 'Switched to PT Maju for lamb shoulder — 6.2% price gap detected, quality parity confirmed', saving: 840, supplier: 'PT Maju Jaya', date: '20 Apr', invoiceRef: 'INV-2024-8821', categoryId: 'protein' },
-  { id: 'l2', actorType: 'agent', agentId: 18, actorLabel: 'Agent #18', action: 'Joined consortium order — Atlantic salmon, 6 operators, tier-3 volume discount', saving: 1200, supplier: 'Ocean Fresh Co.', date: '19 Apr', invoiceRef: 'INV-2024-8815', categoryId: 'seafood' },
-  { id: 'l3', actorType: 'override', agentId: 3, actorLabel: 'Admin', action: 'Kept preferred local dairy supplier despite Agent #3 lower-cost recommendation', saving: -120, supplier: 'FreshDairy Nusantara', date: '18 Apr', invoiceRef: 'INV-2024-8810', categoryId: 'dairy', overrideOf: 'Agent #3 (Demand Forecast)' },
-  { id: 'l4', actorType: 'agent', agentId: 3, actorLabel: 'Agent #3', action: 'Reduced dairy PO by 12% — 8-day surplus window predicted with 87% confidence', saving: 380, supplier: 'FreshDairy Nusantara', date: '18 Apr', invoiceRef: 'INV-2024-8809', categoryId: 'dairy' },
-  { id: 'l5', actorType: 'agent', agentId: 29, actorLabel: 'Agent #29', action: 'Rerouted dry goods via low-emission carrier — 3.1t CO2 reduction, +$8 cost delta', saving: 120, supplier: 'GreenHaul Logistics', date: '18 Apr', invoiceRef: 'INV-2024-8807', categoryId: 'dry-goods' },
-  { id: 'l6', actorType: 'agent', agentId: 6, actorLabel: 'Agent #6', action: 'Negotiated Q2 bulk commitment on chuck roll — 490 kg at locked price', saving: 490, supplier: 'Agri Prime', date: '17 Apr', invoiceRef: 'INV-2024-8801', categoryId: 'protein' },
+  { id: 'l1', actorType: 'agent', agentId: 6, actorLabel: 'A-01', action: 'Switched to PT Maju for lamb shoulder — 6.2% price gap detected, quality parity confirmed', saving: 840, supplier: 'PT Maju Jaya', date: '20 Apr', invoiceRef: 'INV-2024-8821', categoryId: 'protein' },
+  { id: 'l2', actorType: 'agent', agentId: 18, actorLabel: 'A-04', action: 'Joined consortium order — Atlantic salmon, 6 operators, tier-3 volume discount', saving: 1200, supplier: 'Ocean Fresh Co.', date: '19 Apr', invoiceRef: 'INV-2024-8815', categoryId: 'seafood' },
+  { id: 'l3', actorType: 'override', agentId: 3, actorLabel: 'Admin', action: 'Kept preferred local dairy supplier despite A-02 lower-cost recommendation', saving: -120, supplier: 'FreshDairy Nusantara', date: '18 Apr', invoiceRef: 'INV-2024-8810', categoryId: 'dairy', overrideOf: 'A-02 (Demand Forecast)' },
+  { id: 'l4', actorType: 'agent', agentId: 3, actorLabel: 'A-02', action: 'Reduced dairy PO by 12% — 8-day surplus window predicted with 87% confidence', saving: 380, supplier: 'FreshDairy Nusantara', date: '18 Apr', invoiceRef: 'INV-2024-8809', categoryId: 'dairy' },
+  { id: 'l5', actorType: 'agent', agentId: 29, actorLabel: 'A-01', action: 'Rerouted dry goods via low-emission carrier — 3.1t CO2 reduction, +$8 cost delta', saving: 120, supplier: 'GreenHaul Logistics', date: '18 Apr', invoiceRef: 'INV-2024-8807', categoryId: 'dry-goods' },
+  { id: 'l6', actorType: 'agent', agentId: 6, actorLabel: 'A-01', action: 'Negotiated Q2 bulk commitment on chuck roll — 490 kg at locked price', saving: 490, supplier: 'Agri Prime', date: '17 Apr', invoiceRef: 'INV-2024-8801', categoryId: 'protein' },
   { id: 'l7', actorType: 'admin', actorLabel: 'Admin', action: 'Manual PO for heritage tomatoes — local farm relationship, no agent sourcing', saving: 0, supplier: 'Kebun Segar', date: '16 Apr', invoiceRef: 'INV-2024-8798', categoryId: 'produce' },
-  { id: 'l8', actorType: 'agent', agentId: 18, actorLabel: 'Agent #18', action: 'Pooled produce order across 6 operators — volume tier 3, 8.4% blended discount', saving: 310, supplier: 'Local Harvest Co.', date: '16 Apr', invoiceRef: 'INV-2024-8794', categoryId: 'produce' },
-  { id: 'l9', actorType: 'override', agentId: 6, actorLabel: 'Admin', action: 'Rejected Agent #6 lower-cost beverage supplier — quality concern flagged', saving: -60, supplier: 'BevCorp Standard', date: '15 Apr', invoiceRef: 'INV-2024-8789', categoryId: 'beverages', overrideOf: 'Agent #6 (Pricing)' },
+  { id: 'l8', actorType: 'agent', agentId: 18, actorLabel: 'A-04', action: 'Pooled produce order across 6 operators — volume tier 3, 8.4% blended discount', saving: 310, supplier: 'Local Harvest Co.', date: '16 Apr', invoiceRef: 'INV-2024-8794', categoryId: 'produce' },
+  { id: 'l9', actorType: 'override', agentId: 6, actorLabel: 'Admin', action: 'Rejected A-01 lower-cost beverage supplier — quality concern flagged', saving: -60, supplier: 'BevCorp Standard', date: '15 Apr', invoiceRef: 'INV-2024-8789', categoryId: 'beverages', overrideOf: 'A-01 (Pricing)' },
 ];
 
 // ── Temporal data ─────────────────────────────────────────────────
@@ -201,46 +212,46 @@ function getAtlasResponse(q: string, catId: string | null, totalSpend: number, o
   const totalSavings = CATEGORIES.reduce((s, c) => s + c.savingsUnlocked, 0);
 
   // Agent-specific questions — reference ledger data
-  if ((lq.includes('agent #6') || lq.includes('agent 6')) && (lq.includes('switch') || lq.includes('why'))) {
-    return 'Agent #6 (Pricing) detected a 6.2% price gap between your current supplier and PT Maju Jaya for lamb shoulder on Apr 20. The switch fell within Agent #6\'s policy envelope for this category — exact thresholds are managed in Governance → Agent Policies. This saved $840 and is logged in INV-2024-8821.';
+  if ((lq.includes('a-01') || lq.includes('sourcing')) && (lq.includes('switch') || lq.includes('why'))) {
+    return 'A-01 (Pricing) detected a 6.2% price gap between your current supplier and PT Maju Jaya for lamb shoulder on Apr 20. The switch fell within A-01\'s policy envelope for this category — exact thresholds are managed in Governance → Agent Policies. This saved $840 and is logged in INV-2024-8821.';
   }
-  if (lq.includes('agent #18') || lq.includes('group buy')) {
-    return 'Agent #18 (Group Buying) contributed 45% of Seafood savings this month by forming a 6-operator consortium for Atlantic salmon. The tier-3 volume discount yielded $1,200 savings on INV-2024-8815. It is currently monitoring 3 additional group buy windows this quarter.';
+  if (lq.includes('a-04') || lq.includes('spend watchdog') || lq.includes('group buy')) {
+    return 'A-04 (Group Buying) contributed 45% of Seafood savings this month by forming a 6-operator consortium for Atlantic salmon. The tier-3 volume discount yielded $1,200 savings on INV-2024-8815. It is currently monitoring 3 additional group buy windows this quarter.';
   }
-  if (lq.includes('agent #29') || lq.includes('sustainability') || lq.includes('carbon')) {
-    if (cat) return `${cat.name} contributes ${cat.co2Kg} kg CO2e this month. Agent #29 has pre-qualified 2 low-emission carriers for this category at equivalent cost, saving an estimated 3.1t CO2. ${cat.co2Kg > 200 ? '⚠️ High-emission flag active.' : 'Currently within sustainable range.'}`;
-    return 'Agent #29 (Sustainability) rerouted 3 dry-goods orders to low-emission carriers this month, cutting 3.1t CO2 at a +$8 marginal cost. Total platform emission: 940 kg CO2e, down 12% vs last month.';
+  if (lq.includes('sustainability') || lq.includes('carbon')) {
+    if (cat) return `${cat.name} contributes ${cat.co2Kg} kg CO2e this month. A-01 has pre-qualified 2 low-emission carriers for this category at equivalent cost, saving an estimated 3.1t CO2. ${cat.co2Kg > 200 ? '⚠️ High-emission flag active.' : 'Currently within sustainable range.'}`;
+    return 'A-01 (Sustainability) rerouted 3 dry-goods orders to low-emission carriers this month, cutting 3.1t CO2 at a +$8 marginal cost. Total platform emission: 940 kg CO2e, down 12% vs last month.';
   }
   if (lq.includes('override')) {
-    return 'You overrode 2 agent recommendations this month — both related to supplier quality standards. The override pattern has been noted; future quality-sensitive switches in Dairy and Beverages will be surfaced for your review before Agent #6 acts. Adjust the policy directly in Governance → Agent Policies if you want to formalise it.';
+    return 'You overrode 2 agent recommendations this month — both related to supplier quality standards. The override pattern has been noted; future quality-sensitive switches in Dairy and Beverages will be surfaced for your review before A-01 acts. Adjust the policy directly in Governance → Agent Policies if you want to formalise it.';
   }
 
   // Category-specific intelligence
   if (cat) {
     if (lq.includes('why') && (lq.includes('over') || lq.includes('drift') || lq.includes('budget'))) {
       return cat.driftStatus === 'over'
-        ? `${cat.name} is +${cat.drift}% over budget this month. Primary drivers: (1) seasonal price increase on core SKUs (+4.1%), (2) unplanned spot buy on Apr 14 (+$420). Agent #${cat.topAgent.id} has identified $${cat.savingsUnlocked.toLocaleString()} in recoverable savings — activate the Trade-off Engine to commit.`
-        : `${cat.name} is ${Math.abs(cat.drift)}% under budget — strong performance. Agent #${cat.topAgent.id} negotiated early-commitment discounts and pooled orders where possible.`;
+        ? `${cat.name} is +${cat.drift}% over budget this month. Primary drivers: (1) seasonal price increase on core SKUs (+4.1%), (2) unplanned spot buy on Apr 14 (+$420). ${agentLabel(cat.topAgent.id)} has identified $${cat.savingsUnlocked.toLocaleString()} in recoverable savings — activate the Trade-off Engine to commit.`
+        : `${cat.name} is ${Math.abs(cat.drift)}% under budget — strong performance. ${agentLabel(cat.topAgent.id)} negotiated early-commitment discounts and pooled orders where possible.`;
     }
     if (lq.includes('alternative') || lq.includes('supplier')) {
-      return `For ${cat.name}, Agent #6 has 3 pre-qualified alternative suppliers on standby: all within 5km radius, quality score ≥92%, delivery reliability ≥94%. Switching to the best alternative could reduce spend by up to ${((cat.savingsUnlocked / cat.spend) * 100).toFixed(1)}% with a 2-week transition window.`;
+      return `For ${cat.name}, A-01 has 3 pre-qualified alternative suppliers on standby: all within 5km radius, quality score ≥92%, delivery reliability ≥94%. Switching to the best alternative could reduce spend by up to ${((cat.savingsUnlocked / cat.spend) * 100).toFixed(1)}% with a 2-week transition window.`;
     }
     if (lq.includes('forecast') || lq.includes('next month')) {
       const forecastSpend = cat.spend * (1 + (cat.drift / 100) * 0.6);
       return `Next-month ${cat.name} forecast: $${forecastSpend.toLocaleString(undefined, { maximumFractionDigits: 0 })} (92% confidence). If you lock the Trade-off Engine at current settings, projected spend drops to $${(forecastSpend - cat.savingsUnlocked * 0.8).toLocaleString(undefined, { maximumFractionDigits: 0 })}. Key risk: seasonal volatility ±8% in this category.`;
     }
     if (lq.includes('stockout') || lq.includes('risk')) {
-      return `${cat.name} stockout risk is currently ${cat.stockoutRisk}%. Moving the resilience slider above 60% drops this to ~${(cat.stockoutRisk * 0.35).toFixed(1)}% by prioritising backup supplier pre-orders. Agent #3 is monitoring 2 active demand signals.`;
+      return `${cat.name} stockout risk is currently ${cat.stockoutRisk}%. Moving the resilience slider above 60% drops this to ~${(cat.stockoutRisk * 0.35).toFixed(1)}% by prioritising backup supplier pre-orders. A-02 is monitoring 2 active demand signals.`;
     }
-    return `Viewing ${cat.name}: ${cat.drift > 0 ? '+' : ''}${cat.drift}% budget drift, $${cat.savingsUnlocked.toLocaleString()} optimization potential, ${cat.co2Kg} kg CO2e. Agent #${cat.topAgent.id} (${cat.topAgent.name}) leads this category with ${cat.topAgent.contribution}% savings attribution. What aspect would you like to explore?`;
+    return `Viewing ${cat.name}: ${cat.drift > 0 ? '+' : ''}${cat.drift}% budget drift, $${cat.savingsUnlocked.toLocaleString()} optimization potential, ${cat.co2Kg} kg CO2e. ${agentLabel(cat.topAgent.id)} (${cat.topAgent.name}) leads this category with ${cat.topAgent.contribution}% savings attribution. What aspect would you like to explore?`;
   }
 
   // Global queries
   if (lq.includes('savings') || lq.includes('unlock')) {
-    return `Total unlockable savings: $${totalSavings.toLocaleString()} across 7 categories. Highest opportunity: Seafood ($2,100 via Agent #18 group buying), then Protein ($1,840 via Agent #6 pricing). Lock savings through the Trade-off Engine in each category view.`;
+    return `Total unlockable savings: $${totalSavings.toLocaleString()} across 7 categories. Highest opportunity: Seafood ($2,100 via A-04 group buying), then Protein ($1,840 via A-01 pricing). Lock savings through the Trade-off Engine in each category view.`;
   }
   if (lq.includes('trend') || lq.includes('forecast') || lq.includes('next month')) {
-    return `Total spend tracking ${Math.abs(overallDrift).toFixed(1)}% ${overallDrift > 0 ? 'above' : 'below'} budget. Agent #28 forecasts next month at $47.2K (92% confidence). Key risks: Protein and Dairy show consistent +8% drift. Recommend activating Trade-off Engine on both.`;
+    return `Total spend tracking ${Math.abs(overallDrift).toFixed(1)}% ${overallDrift > 0 ? 'above' : 'below'} budget. A-04 forecasts next month at $47.2K (92% confidence). Key risks: Protein and Dairy show consistent +8% drift. Recommend activating Trade-off Engine on both.`;
   }
   if (lq.includes('which') && lq.includes('optimis')) {
     return 'Prioritise: (1) Seafood — $2,100 potential, under budget so low risk. (2) Protein — $1,840 potential, actively over budget. (3) Dairy — $780 potential, highest stockout risk at 22%. Optimize these three to recover $4,760 this month.';
@@ -634,7 +645,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
               <div className="flex items-center justify-between mb-1">
                 <h3 className={`text-sm font-semibold ${t.textPrimary}`}>Trade-off Engine</h3>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
-                  Finance Intelligence · Agent #28
+                  Finance Intelligence · A-04
                 </span>
               </div>
               <p className={`text-xs mb-4 ${t.textMuted}`}>Balance cost savings against supply chain resilience</p>
@@ -889,10 +900,10 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                       <CatIcon className="h-3 w-3 shrink-0" style={{ color: cat.color }} />
                       <span className={`text-[10px] font-medium ${t.textPrimary}`}>{cat.name}</span>
                     </div>
-                    <span className="text-[10px] font-semibold text-[#87986a]">Agent #{cat.topAgent.id}</span>
+                    <span className="text-[10px] font-semibold text-[#87986a]">{agentLabel(cat.topAgent.id)}</span>
                   </div>
                   <p className={`text-[10px] leading-snug ${t.textSecondary}`}>
-                    Agent #{cat.topAgent.id} ({cat.topAgent.name}) contributed{' '}
+                    {agentLabel(cat.topAgent.id)} ({cat.topAgent.name}) contributed{' '}
                     <strong className={t.textPrimary}>{cat.topAgent.contribution}%</strong> of {cat.name} savings
                   </p>
                   <div className={`h-1 rounded-full ${t.progressTrack}`}>
@@ -910,7 +921,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
             <Leaf className={`h-4 w-4 ${t.sageIcon}`} />
             <div>
               <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Scope 3 Carbon</h3>
-              <p className={`text-[10px] ${t.textMuted}`}>Agent #29 · Sustainability</p>
+              <p className={`text-[10px] ${t.textMuted}`}>A-01 · Sustainability</p>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -933,7 +944,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                   <span className="text-[10px] text-green-400">−12%</span>
                 </div>
               </div>
-              <p className={`text-[9px] mt-1 ${t.textMuted}`}>Agent #29 rerouted 3 orders to low-emission carriers</p>
+              <p className={`text-[9px] mt-1 ${t.textMuted}`}>A-01 rerouted 3 orders to low-emission carriers</p>
             </div>
           </div>
         </div>
@@ -1028,7 +1039,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
             value={atlasInput}
             onChange={(e) => setAtlasInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleAtlasSubmit(); }}
-            placeholder={selected ? `e.g. "${selected.atlasPrompts[0]}"` : 'e.g. "Why did Agent #6 switch suppliers?"'}
+            placeholder={selected ? `e.g. "${selected.atlasPrompts[0]}"` : 'e.g. "Why did A-01 switch suppliers?"'}
             className={`flex-1 text-[10px] bg-transparent outline-none ${t.textSecondary} placeholder:${t.textMuted}`}
           />
           <button

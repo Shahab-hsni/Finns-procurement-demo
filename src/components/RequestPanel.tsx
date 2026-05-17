@@ -233,6 +233,39 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     ? rfqRecords.find(r => r.id === wizardRfqId) ?? null
     : null;
 
+  // 5g — Multi-vendor split. Group items by their top-suggested vendor
+  // (A-01's first relevance pick). When items map to N > 1 vendors,
+  // Step 4 offers a one-click "Split into N POs" alternative to the
+  // single-PO submit. Doesn't apply to the RFQ path — RFQ already
+  // sends to multiple vendors and resolves to one winner.
+  interface ProposedSplit {
+    vendorId: string;
+    vendorName: string;
+    items: LineItem[];
+  }
+  const proposedSplits: ProposedSplit[] = useMemo(() => {
+    if (items.length === 0) return [];
+    const groups = new Map<string, ProposedSplit>();
+    items.forEach(it => {
+      const [topId] = suggestVendorsForItems([it.name], 1);
+      if (!topId) return;
+      const vendor = finnsSuppliers.find(v => v.id === topId);
+      if (!vendor) return;
+      const existing = groups.get(topId);
+      if (existing) {
+        existing.items.push(it);
+      } else {
+        groups.set(topId, { vendorId: topId, vendorName: vendor.name, items: [it] });
+      }
+    });
+    return Array.from(groups.values());
+  }, [items]);
+  const [splitMode, setSplitMode] = useState(false);
+  // If items change such that there's no split need, drop split mode.
+  useEffect(() => {
+    if (proposedSplits.length <= 1 && splitMode) setSplitMode(false);
+  }, [proposedSplits.length, splitMode]);
+
   // 5c — Auto-mode pre-pick: when entering Step 2 with the 'pick' path
   // and no vendor chosen yet, auto-select the top-suggested vendor
   // based on the items already in the wizard. The user can still
@@ -460,13 +493,16 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   }
 
   // ── Step 5 — final wizard Submit ──────────────────────────────
-  // Two paths converge here:
+  // Three paths converge here:
   //   1. Direct vendor (sourcingPath === 'pick') — no PO exists yet.
   //      Mint one with the wizard data + selected vendor.
   //   2. RFQ award (sourcingPath === 'rfq' && awardedQuote) — the PO
   //      was created at Award time. Update it with delivery details.
-  // Both routes navigate to Orders deep-linked to the PO so the user
-  // can run Approve & Execute (Stage 2 → 3) from one place.
+  //   3. Multi-vendor split (splitMode === true) — items group by
+  //      top-suggested vendor. Mint N POs, one per group. Same
+  //      delivery info applies to all. Routes to the first PO.
+  // All routes navigate to Orders deep-linked so Approve & Execute is
+  // one click away.
   function handleSubmit() {
     const meta = PLAYBOOK_META[playbook];
     const playbookLabel = finnsPlaybooks.find(p => p.id === playbook)?.name ?? 'Standard';
@@ -483,6 +519,70 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     const totalIdr = items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
 
     let poId: string;
+
+    // ── Path 3: Multi-vendor split ──
+    if (splitMode && proposedSplits.length > 1) {
+      const createdIds: string[] = [];
+      const venueChip: VenueTag | 'Multi' =
+        venueLabel === 'BC' || venueLabel === 'RC' || venueLabel === 'ST' || venueLabel === 'SP'
+          ? venueLabel : 'Multi';
+      proposedSplits.forEach((group, idx) => {
+        const id = `PO-${3050 + Math.floor(Math.random() * 200) + idx}`;
+        const vendor = finnsSuppliers.find(v => v.id === group.vendorId);
+        const supplierName = vendor?.name ?? group.vendorName;
+        const amContact = vendor
+          ? `${vendor.accountManager.name} · ${vendor.accountManager.whatsapp}`
+          : 'TBD';
+        const splitItemSummary = group.items.map(it =>
+          `${it.name} ${it.qty}${it.unit}${it.venues?.length ? ` · ${it.venues.join(' + ')}` : ''}`
+        );
+        const splitTotal = group.items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
+        const po: RuntimePO = {
+          id,
+          supplier: supplierName,
+          items: splitItemSummary,
+          amount: splitTotal,
+          group: 'needs-action',
+          actionKind: 'approve',
+          humanAction: 'Approve',
+          humanStatus: `Awaiting your approval · split ${idx + 1}/${proposedSplits.length}`,
+          humanDescription: `${meta.agent} (Sourcing) · ${playbookLabel} playbook. Delivery to ${targetVenues.join(' + ') || 'BC'} on ${neededBy}. Split from a combined request — ${group.items.length} item${group.items.length === 1 ? '' : 's'} routed to ${supplierName}.`,
+          eta: `${neededBy}`,
+          dagStage: 1,
+          agentReasoning: `Auto-split: A-01 grouped ${group.items.length} item${group.items.length === 1 ? '' : 's'} to ${supplierName} based on category-vendor overlap. ${vendor ? `Composite ${vendor.metrics.composite}, on-time ${vendor.metrics.onTime}%, lead ${vendor.metrics.leadTimeDays}d.` : ''} Vendor confirmation will arrive via ${vendor?.accountManager.whatsapp ? 'WhatsApp' : 'email'} once each PO is issued.`,
+          agentAgent: `${meta.agent} (Sourcing)`,
+          assignedAgent: { id: 5, role: 'Sourcing' },
+          workflowTemplate: playbook,
+          status: 'live',
+          createdAt: new Date().toISOString(),
+          quoteChannel: 'none',
+          quoteFrom: amContact,
+        };
+        createPO(po);
+        createdIds.push(id);
+        logUserAction({
+          kind: 'po-create',
+          entity: { type: 'po', id },
+          summary: `Authorized ${id} (split ${idx + 1}/${proposedSplits.length}) · ${supplierName} · Rp ${(splitTotal / 1_000_000).toFixed(2)}M`,
+          venue: venueChip,
+          details: `${group.items.length} item${group.items.length === 1 ? '' : 's'} from combined wizard request. Delivery to ${targetVenues.join(', ')} on ${neededBy}.`,
+          meta: { poId: id, vendorId: group.vendorId, totalIdr: splitTotal, path: 'split', playbook, splitIndex: idx + 1, splitTotal: proposedSplits.length },
+        });
+      });
+      toast.success(`${createdIds.length} POs authorized · routed to Orders`, {
+        description: `Split across ${createdIds.length} vendors. Each PO is at Stage 2 awaiting your approval.`,
+      });
+      setStep(5);
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.location.hash = `order=${createdIds[0]}`;
+        }
+        onNavigate?.('orders');
+      }, 1400);
+      return;
+    }
+
+    // ── Path 1 & 2 (unchanged) ──
     if (awardedQuote) {
       // ── RFQ path: PO exists, fill in delivery details ──
       poId = awardedQuote.poId;
@@ -1721,6 +1821,71 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             {/* ── STEP 4: Review ───────────────────────────────────── */}
             {step === 4 && (
               <>
+                {/* 5g — Smart split detected.
+                    When items map to multiple top-suggested vendors AND
+                    the user isn't on the RFQ path, show a "split" card
+                    that lets them mint N POs instead of one. */}
+                {!awardedQuote && proposedSplits.length > 1 && (
+                  <div className={`p-4 rounded-xl border ${
+                    splitMode
+                      ? isDark ? 'bg-[#87986a]/10 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                      : isDark ? 'bg-amber-500/8 border-amber-500/25' : 'bg-amber-50 border-amber-200'
+                  }`}>
+                    <div className="flex items-start gap-2 mb-3">
+                      <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${
+                        splitMode
+                          ? isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                          : isDark ? 'text-amber-300' : 'text-amber-700'
+                      }`} />
+                      <div className="min-w-0">
+                        <p className={`text-[11px] font-bold ${labelClass}`}>
+                          Smart split detected — these items typically come from {proposedSplits.length} different vendors
+                        </p>
+                        <p className={`text-[10px] mt-1 leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {splitMode
+                            ? `Submitting will mint ${proposedSplits.length} POs, one per vendor. Same delivery date (${neededBy}) and venues apply to all. Your Step 2 vendor pick is bypassed.`
+                            : `A-01 grouped your items by best-fit vendor. You can keep the single-PO path (everything goes to ${primaryVendor?.name ?? 'your selected vendor'}) or split into ${proposedSplits.length} POs.`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 mb-3">
+                      {proposedSplits.map(g => (
+                        <div key={g.vendorId} className={`p-2.5 rounded-lg border ${
+                          isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+                        }`}>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className={`text-xs font-semibold ${labelClass}`}>{g.vendorName}</span>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                              {g.items.length} item{g.items.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <p className={`text-[10px] mt-1 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                            {g.items.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button onClick={() => setSplitMode(true)}
+                        className={`text-[11px] px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                          splitMode
+                            ? 'bg-[#87986a] text-white'
+                            : isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e6ecda]'
+                        }`}>
+                        {splitMode ? '✓ Will split into ' : 'Split into '}{proposedSplits.length} POs
+                      </button>
+                      <button onClick={() => setSplitMode(false)}
+                        className={`text-[11px] px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                          !splitMode
+                            ? isDark ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-900'
+                            : isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'
+                        }`}>
+                        {!splitMode ? '✓ Send as one combined PO' : 'Send as one combined PO'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className={cardClass}>
                   <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Authorize Procurement</h2>
                   <div className="space-y-3">
@@ -1769,11 +1934,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     ← Back
                   </Button>
                   <Button onClick={handleSubmit} className={SAGE.primary(isDark)}>
-                    {autonomyMode === 'off'
-                      ? 'Authorize · Route to Orders'
-                      : autonomyMode === 'assist'
-                        ? 'Authorize · Send for A-04 review'
-                        : 'Authorize · Hand off to A-04'}
+                    {splitMode && proposedSplits.length > 1
+                      ? `Authorize · Create ${proposedSplits.length} POs`
+                      : autonomyMode === 'off'
+                        ? 'Authorize · Route to Orders'
+                        : autonomyMode === 'assist'
+                          ? 'Authorize · Send for A-04 review'
+                          : 'Authorize · Hand off to A-04'}
                     <ChevronRight className="h-3 w-3 ml-1" />
                   </Button>
                 </div>

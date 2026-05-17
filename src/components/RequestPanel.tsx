@@ -23,6 +23,7 @@ import { useAutonomyMode } from "../lib/autonomy";
 import { useRFQs, awardRFQ, cancelRFQ, type RFQQuote } from "../lib/rfqStore";
 import { createPO, updatePO, type RuntimePO } from "../lib/poStore";
 import { logUserAction } from "../lib/actionLog";
+import { detectItem, suggestVendorsForItems } from "../lib/itemIntel";
 
 interface RequestPanelProps {
   theme?: 'dark' | 'light';
@@ -127,6 +128,20 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   const [newItemUnit, setNewItemUnit] = useState("kg");
   const [newItemPrice, setNewItemPrice] = useState("");
   const [newItemVenues, setNewItemVenues] = useState<VenueTag[]>(['BC']);
+  // Smart-detect (5b): tracks whether the user manually overrode the
+  // auto-filled fields so we stop guessing for them. Resets on add.
+  const [overridden, setOverridden] = useState<{
+    category?: boolean; unit?: boolean; venues?: boolean;
+  }>({});
+  const detectedFromName = useMemo(() => detectItem(newItemName), [newItemName]);
+  useEffect(() => {
+    if (!detectedFromName) return;
+    if (!overridden.category) setNewItemCategory(detectedFromName.category);
+    if (!overridden.unit && detectedFromName.unit) setNewItemUnit(detectedFromName.unit);
+    if (!overridden.venues && detectedFromName.venues && detectedFromName.venues.length > 0) {
+      setNewItemVenues(detectedFromName.venues);
+    }
+  }, [detectedFromName, overridden]);
   const [playbook, setPlaybook] = useState<PlaybookId>('WF-STD');
 
   // Step 2 — Sourcing (5a)
@@ -273,6 +288,8 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     setNewItemName("");
     setNewItemQty("1");
     setNewItemPrice("");
+    // Reset smart-detect override flags so the next typed item auto-fills again.
+    setOverridden({});
   }
 
   function removeItem(id: string) {
@@ -986,26 +1003,51 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     ))}
                   </div>
 
-                  {/* Add new item */}
+                  {/* Add new item — smart-detect (5b) auto-fills category /
+                      unit / venues as the user types the item name. */}
                   <div className={`p-3 rounded-lg border border-dashed ${isDark ? 'bg-[#2a2a2a]/40 border-gray-700' : 'bg-white border-gray-300'}`}>
                     <Label className={`text-[10px] uppercase tracking-wide ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Add Line Item</Label>
                     <div className="mt-2 grid grid-cols-12 gap-2">
-                      <Input placeholder="Item name" value={newItemName} onChange={e => setNewItemName(e.target.value)}
+                      <Input placeholder='Item name (try "Wagyu Ribeye", "Yellowfin Tuna", "Bintang Beer"…)'
+                        value={newItemName} onChange={e => setNewItemName(e.target.value)}
                         className={`col-span-5 ${inputClass} mt-0`} />
-                      <select value={newItemCategory} onChange={e => setNewItemCategory(e.target.value as FinnsCategory)}
+                      <select value={newItemCategory}
+                        onChange={e => { setNewItemCategory(e.target.value as FinnsCategory); setOverridden(o => ({ ...o, category: true })); }}
                         className={`col-span-3 rounded-md px-2 text-xs ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white' : 'bg-white border border-gray-200'}`}>
                         {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                       <Input placeholder="Qty" value={newItemQty} onChange={e => setNewItemQty(e.target.value)} type="number"
                         className={`col-span-2 ${inputClass} mt-0`} />
-                      <Input placeholder="Unit" value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)}
+                      <Input placeholder="Unit" value={newItemUnit}
+                        onChange={e => { setNewItemUnit(e.target.value); setOverridden(o => ({ ...o, unit: true })); }}
                         className={`col-span-2 ${inputClass} mt-0`} />
                       <Input placeholder="Unit price (Rp)" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)} type="number"
                         className={`col-span-8 ${inputClass} mt-0`} />
                       <div className="col-span-4 flex items-center gap-2">
-                        <VenueChips venues={newItemVenues} isDark={isDark} onToggle={v => setNewItemVenues(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])} />
+                        <VenueChips venues={newItemVenues} isDark={isDark}
+                          onToggle={v => {
+                            setNewItemVenues(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
+                            setOverridden(o => ({ ...o, venues: true }));
+                          }} />
                       </div>
                     </div>
+
+                    {/* Smart-detect hint */}
+                    {detectedFromName && newItemName.trim().length > 0 && (
+                      <div className={`mt-2 inline-flex items-center gap-2 px-2 py-1 rounded-md text-[10px] ${
+                        isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                      }`}>
+                        <Sparkles className="h-3 w-3" />
+                        <span className="font-semibold">A-01 detected:</span>
+                        <span>{detectedFromName.category}</span>
+                        {detectedFromName.unit && (<><span className="opacity-50">·</span><span>unit "{detectedFromName.unit}"</span></>)}
+                        {detectedFromName.venues && detectedFromName.venues.length > 0 && (
+                          <><span className="opacity-50">·</span><span>typically {detectedFromName.venues.join(' / ')}</span></>
+                        )}
+                        <span className={`opacity-60 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>· auto-filled (edit to override)</span>
+                      </div>
+                    )}
+
                     <Button onClick={addItem} disabled={!newItemName.trim()} size="sm"
                       className={`mt-3 h-7 text-[11px] ${SAGE.primary(isDark)}`}>
                       <Plus className="h-3 w-3 mr-1" /> Add Item
@@ -1094,7 +1136,20 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 )}
 
                 {/* ── Path A: Pick directly ───────────────────────────── */}
-                {!wizardRfqId && sourcingPath === 'pick' && (
+                {!wizardRfqId && sourcingPath === 'pick' && (() => {
+                  // 5b — rank vendors by relevance to the items in Step 1.
+                  // Suggested vendors (overlap > 0) render first; the rest
+                  // come after, still composite-sorted.
+                  const suggestedIds = suggestVendorsForItems(items.map(it => it.name), 10);
+                  const suggestedSet = new Set(suggestedIds);
+                  const suggested = suggestedIds
+                    .map(id => finnsSuppliers.find(v => v.id === id)!)
+                    .filter(Boolean);
+                  const rest = finnsSuppliers
+                    .filter(v => !suggestedSet.has(v.id))
+                    .sort((a, b) => b.metrics.composite - a.metrics.composite);
+                  const ordered = [...suggested, ...rest];
+                  return (
                   <div className={cardClass}>
                     <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Approved Directory</h2>
                     <AgentCTA
@@ -1102,39 +1157,58 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       variant="inline"
                       className="mb-2"
                       agentLabel="A-01 · Sourcing Agent"
-                      reasoning="A-01 ranks the directory by composite, on-time, and cold-chain SLA. Pick one or more — the first selected becomes the primary. After approval the PO is forwarded to the vendor via their preferred channel (WhatsApp first, email if formal)."
+                      reasoning={`A-01 ranks the directory by overlap with your items + composite + SLA. ${suggested.length > 0 ? `Top ${suggested.length} match your categories.` : ''} Pick one or more — the first selected becomes the primary. After approval the PO is forwarded via the vendor's preferred channel (WhatsApp first, email if formal).`}
                       offModeMessage="Pick one or more vendors from your approved directory. The first selected becomes the primary. Sort by composite, on-time, or cold-chain SLA using the metrics on each row. After approval the PO is sent via WhatsApp or email."
                     />
                     <div className="mt-4 space-y-2">
-                      {finnsSuppliers.map(v => {
+                      {ordered.map((v, idx) => {
                         const selected = selectedVendors.includes(v.id);
                         const isPrimary = selected && selectedVendors[0] === v.id;
+                        const isSuggested = suggestedSet.has(v.id) && idx < suggested.length;
+                        const isFirstNonSuggested = idx === suggested.length && suggested.length > 0;
                         return (
-                          <button key={v.id} onClick={() => toggleVendor(v.id)}
-                            className={`w-full text-left p-3 rounded-lg border transition-colors ${selected ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)}`}>
-                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`text-xs font-semibold ${labelClass}`}>{v.name}</span>
-                                {isPrimary && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${SAGE.badge(isDark)}`}>Primary</span>}
-                                <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.region} · {v.type}</span>
+                          <div key={v.id}>
+                            {isFirstNonSuggested && (
+                              <div className={`flex items-center gap-2 my-2 text-[9px] uppercase tracking-wide ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                                <span className={`flex-1 h-px ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
+                                <span>Other approved vendors</span>
+                                <span className={`flex-1 h-px ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{v.metrics.composite}</span>
-                                <VenueChips venues={v.venuesServed} isDark={isDark} />
+                            )}
+                            <button onClick={() => toggleVendor(v.id)}
+                              className={`w-full text-left p-3 rounded-lg border transition-colors ${selected ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)}`}>
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`text-xs font-semibold ${labelClass}`}>{v.name}</span>
+                                  {isPrimary && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${SAGE.badge(isDark)}`}>Primary</span>}
+                                  {isSuggested && !isPrimary && (
+                                    <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                      isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                                    }`}>
+                                      <Sparkles className="h-2.5 w-2.5" /> Match
+                                    </span>
+                                  )}
+                                  <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.region} · {v.type}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{v.metrics.composite}</span>
+                                  <VenueChips venues={v.venuesServed} isDark={isDark} />
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-3 mt-1.5">
-                              <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>On-time {v.metrics.onTime}%</span>
-                              <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Cold-chain {v.metrics.coldChain}%</span>
-                              <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Lead {v.metrics.leadTimeDays}d</span>
-                              <span className={`ml-auto text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.categories.join(', ')}</span>
-                            </div>
-                          </button>
+                              <div className="flex items-center gap-3 mt-1.5">
+                                <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>On-time {v.metrics.onTime}%</span>
+                                <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Cold-chain {v.metrics.coldChain}%</span>
+                                <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Lead {v.metrics.leadTimeDays}d</span>
+                                <span className={`ml-auto text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.categories.join(', ')}</span>
+                              </div>
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* ── Path B: Compose RFQ (pre-send) ──────────────────── */}
                 {!wizardRfqId && sourcingPath === 'rfq' && (

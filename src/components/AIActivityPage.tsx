@@ -504,7 +504,12 @@ function formatRelativeTime(iso: string): string {
 }
 
 function ActionLogPanel({ isDark, t, autonomyMode, actorFilter, setActorFilter, entries }: ActionLogPanelProps) {
-  const offEmpty = autonomyMode === 'off' && actorFilter === 'agent' && entries.length === 0;
+  // 6d: Manual/Auto only — the old "Off empty hint" only fired when
+  // global gated agents off, which no longer exists. Per-entity Manual
+  // entities can still have agent insights logged. Keep the hint
+  // narrow: empty 'agent' actor filter is just an empty filter.
+  void autonomyMode; // retained on props for forward compat
+  const offEmpty = false;
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -614,12 +619,11 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
   const [highlightEventId, setHighlightEventId] = useState<string | null>(null);
 
   // ── Action Log feed (Phase 4f.3) ─────────────────────────────────
-  // Reads from the unified action log. Actor chip has a mode-aware
-  // default: Off → 'admin' (your actions), Assist/Auto → 'all'.
+  // Reads from the unified action log. Actor chip starts on 'all'
+  // (default user wants the full feed). The pause state below can
+  // re-tint via the system-wide kill switch indicator.
   const autonomyMode = useAutonomyMode();
-  const [actorFilter, setActorFilter] = useState<'all' | ActorType>(
-    autonomyMode === 'off' ? 'admin' : 'all',
-  );
+  const [actorFilter, setActorFilter] = useState<'all' | ActorType>('all');
   const actionLogEntries = useActionLog({
     actorType: actorFilter,
     limit: 20,

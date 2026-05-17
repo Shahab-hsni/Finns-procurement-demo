@@ -19,7 +19,7 @@ import type {
 import { AgentCTA } from "./AgentCTA";
 import { RFQComposerModal } from "./RFQComposerModal";
 import { RFQTrackerModal } from "./RFQTrackerModal";
-import { useAutonomyMode } from "../lib/autonomy";
+import { useAutonomyMode, type AutonomyMode } from "../lib/autonomy";
 import { useRFQs, awardRFQ, cancelRFQ, type RFQQuote } from "../lib/rfqStore";
 import { createPO, updatePO, type RuntimePO } from "../lib/poStore";
 import { logUserAction, readActionLog } from "../lib/actionLog";
@@ -165,13 +165,20 @@ function VendorNotePanel({
 export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) {
   const isDark = theme === 'dark';
   const [step, setStep] = useState(1);
-  const autonomyMode = useAutonomyMode();
   const [rfqOpen, setRfqOpen] = useState(false);
   const [rfqTrackerOpen, setRfqTrackerOpen] = useState(false);
   const rfqRecords = useRFQs();
   const activeRfqCount = rfqRecords.filter(r =>
     r.status === 'awaiting' || r.status === 'partial' || r.status === 'received'
   ).length;
+
+  // ── Per-PO autonomy (Phase 6) ────────────────────────────────────
+  // Picked on Step 1 (next to the playbook selector). Drives Step 2
+  // auto-pre-pick + Step 4/5 copy + the new PO's laborMode at submit.
+  // Defaults to the system default (currently 'auto' — Finn's treats
+  // AI as the feature that's on unless flipped).
+  const systemDefaultMode = useAutonomyMode();
+  const [poAutonomy, setPoAutonomy] = useState<AutonomyMode>(systemDefaultMode);
 
   // Step 1 — Items. Empty by default; populated only when the wizard
   // is entered through an express deep-link (restock from Inventory,
@@ -192,18 +199,17 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   }>({});
   const detectedFromName = useMemo(() => detectItem(newItemName), [newItemName]);
   useEffect(() => {
-    // 5c — Off mode disables auto-fill. The chip still hides, the
-    // form stays manual. Assist + Auto both auto-fill the same way
-    // because the difference between them is in how vendors are
-    // suggested downstream (Step 2), not how items are categorised.
-    if (autonomyMode === 'off') return;
+    // 6d — Smart-detect is always on. It's autocomplete-with-categories,
+    // not an agent action. Even on a Manual PO the user is glad to have
+    // the category auto-filled. Manual just means "user drives the
+    // sourcing decision"; smart UX is unaffected.
     if (!detectedFromName) return;
     if (!overridden.category) setNewItemCategory(detectedFromName.category);
     if (!overridden.unit && detectedFromName.unit) setNewItemUnit(detectedFromName.unit);
     if (!overridden.venues && detectedFromName.venues && detectedFromName.venues.length > 0) {
       setNewItemVenues(detectedFromName.venues);
     }
-  }, [detectedFromName, overridden, autonomyMode]);
+  }, [detectedFromName, overridden]);
   const [playbook, setPlaybook] = useState<PlaybookId>('WF-STD');
 
   // Step 2 — Sourcing (5a)
@@ -266,19 +272,19 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     if (proposedSplits.length <= 1 && splitMode) setSplitMode(false);
   }, [proposedSplits.length, splitMode]);
 
-  // 5c — Auto-mode pre-pick: when entering Step 2 with the 'pick' path
-  // and no vendor chosen yet, auto-select the top-suggested vendor
-  // based on the items already in the wizard. The user can still
-  // override by clicking another row. Assist + Off leave selection
-  // empty so the user always makes the call.
+  // 6d — Auto-mode pre-pick keys off the PER-PO autonomy setting
+  // (picked on Step 1), not the system default. When the user has
+  // chosen Auto for this PO and lands on Step 2 with no vendor picked,
+  // the top-suggested vendor is auto-selected. Manual leaves the
+  // selection empty so the user always makes the call.
   useEffect(() => {
-    if (autonomyMode !== 'auto') return;
+    if (poAutonomy !== 'auto') return;
     if (step !== 2 || sourcingPath !== 'pick' || wizardRfqId) return;
     if (selectedVendors.length > 0) return;
     if (items.length === 0) return;
     const [topId] = suggestVendorsForItems(items.map(it => it.name), 1);
     if (topId) setSelectedVendors([topId]);
-  }, [autonomyMode, step, sourcingPath, wizardRfqId, items, selectedVendors.length]);
+  }, [poAutonomy, step, sourcingPath, wizardRfqId, items, selectedVendors.length]);
 
   // ── 5e · Right-panel insights ────────────────────────────────────
   // Category mix for Step 1 — counts items by detected category.
@@ -980,8 +986,8 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 </div>
               )}
 
-              {/* 5e — Similar past POs (only Assist + Auto) */}
-              {autonomyMode !== 'off' && similarPastPOs.length > 0 && (
+              {/* 5e — Similar past POs (insight; always shown) */}
+              {similarPastPOs.length > 0 && (
                 <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
                   <div className="flex items-center gap-1.5 mb-2">
                     <ScrollText className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
@@ -1211,29 +1217,26 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 acted on. Page header stays clean. */}
           </div>
 
-          {/* Mode-aware banner (5c). One row, mode-tinted, always visible
-              while in the wizard so the user knows what the page will do
-              for them at each step. */}
+          {/* Phase 6 — per-PO autonomy banner. Tiny, persistent, lives
+              under the SourcingDAG and reflects the per-PO picker on
+              Step 1 (not a global state). Tinted so the user sees the
+              wizard's downstream behaviour at a glance. */}
           {step < 5 && (
             <div className={`mt-3 p-2.5 rounded-lg border text-[11px] flex items-center gap-2 flex-wrap ${
-              autonomyMode === 'off'
-                ? isDark ? 'bg-amber-500/8 border-amber-500/25 text-amber-300/90' : 'bg-amber-50 border-amber-200 text-amber-700'
-                : autonomyMode === 'assist'
-                  ? isDark ? 'bg-blue-500/8 border-blue-500/25 text-blue-300/90' : 'bg-blue-50 border-blue-200 text-blue-700'
-                  : isDark ? 'bg-[#87986a]/10 border-[#87986a]/30 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#dbe3ce] text-[#6b7a54]'
+              poAutonomy === 'auto'
+                ? isDark ? 'bg-[#87986a]/10 border-[#87986a]/30 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#dbe3ce] text-[#6b7a54]'
+                : isDark ? 'bg-amber-500/8 border-amber-500/25 text-amber-300/90' : 'bg-amber-50 border-amber-200 text-amber-700'
             }`}>
               <span className="font-bold uppercase tracking-wide text-[9px]">
-                {autonomyMode === 'off' ? 'Off mode' : autonomyMode === 'assist' ? 'Assist mode' : 'Auto mode'}
+                This PO · {poAutonomy === 'auto' ? 'Auto' : 'Manual'}
               </span>
               <span>·</span>
               <span>
-                {autonomyMode === 'off' &&
-                  'No category auto-fill, no vendor ranking, no pre-selection. Use Step 2\'s "Compare quotes (RFQ)" path to source manually.'}
-                {autonomyMode === 'assist' &&
-                  'A-01 suggests as you type — category + unit + venues from the item name, vendors ranked by relevance. Nothing pre-selected; you approve every step.'}
-                {autonomyMode === 'auto' &&
-                  'A-01 auto-fills item categories, pre-picks the top-matched vendor on Step 2, and surfaces the RFQ path when there is no clear winner. Override anything to keep control.'}
+                {poAutonomy === 'auto'
+                  ? 'A-01 pre-picks the top-matched vendor on Step 2 and surfaces RFQ when there is no clear winner. You always have override.'
+                  : 'You drive Step 2 — pick a vendor or send an RFQ. Smart suggestions are still visible; nothing is pre-selected.'}
               </span>
+              <span className="ml-auto text-[9px] opacity-70">Switch on Step 1</span>
             </div>
           )}
 
@@ -1376,8 +1379,12 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       </div>
                     </div>
 
-                    {/* Smart-detect hint — Assist + Auto only (5c) */}
-                    {autonomyMode !== 'off' && detectedFromName && newItemName.trim().length > 0 && (
+                    {/* Smart-detect hint — always visible when there's
+                        a match. Detection is autocomplete UX, not an
+                        agent action; it runs on every PO regardless of
+                        Manual / Auto. (Phase 6 — was gated in 5c, now
+                        decoupled.) */}
+                    {detectedFromName && newItemName.trim().length > 0 && (
                       <div className={`mt-2 inline-flex items-center gap-2 px-2 py-1 rounded-md text-[10px] ${
                         isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
                       }`}>
@@ -1389,7 +1396,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                           <><span className="opacity-50">·</span><span>typically {detectedFromName.venues.join(' / ')}</span></>
                         )}
                         <span className={`opacity-60 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                          · {autonomyMode === 'auto' ? 'auto-filled' : 'suggestion'} (edit to override)
+                          · auto-filled (edit to override)
                         </span>
                       </div>
                     )}
@@ -1401,10 +1408,46 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   </div>
                 </div>
 
+                {/* Per-PO autonomy picker (Phase 6d) — sits on Step 1
+                    so the choice is locked before Step 2's auto-pre-pick
+                    runs. Default = Auto. Manual flips the wizard's
+                    downstream behaviour: no vendor auto-pre-pick, Submit
+                    routes to Orders without handing off to A-04. */}
+                <div className={cardClass}>
+                  <h2 className={`text-sm font-semibold mb-2 ${labelClass}`}>How should this PO be handled?</h2>
+                  <p className={hintClass}>Per-PO choice — you can flip later from the labor switch on the order itself.</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button onClick={() => setPoAutonomy('auto')}
+                      className={`text-left p-3 rounded-lg border transition-colors ${
+                        poAutonomy === 'auto' ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)
+                      }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Zap className={`h-3.5 w-3.5 ${poAutonomy === 'auto' ? SAGE.icon(isDark) : (isDark ? 'text-gray-500' : 'text-gray-500')}`} />
+                        <span className={`text-xs font-bold ${labelClass}`}>Auto · AI agent</span>
+                      </div>
+                      <p className={`text-[10px] leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                        A-01 pre-picks the top-matched vendor on Step 2. After authorize, A-04 gates the policy stack and runs the lifecycle within rules. You review exceptions.
+                      </p>
+                    </button>
+                    <button onClick={() => setPoAutonomy('manual')}
+                      className={`text-left p-3 rounded-lg border transition-colors ${
+                        poAutonomy === 'manual' ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)
+                      }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <ShieldCheck className={`h-3.5 w-3.5 ${poAutonomy === 'manual' ? SAGE.icon(isDark) : (isDark ? 'text-gray-500' : 'text-gray-500')}`} />
+                        <span className={`text-xs font-bold ${labelClass}`}>Manual · you drive</span>
+                      </div>
+                      <p className={`text-[10px] leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                        You pick the vendor, run each stage. Agents still surface smart suggestions + Atlas chat is available, but no autonomous action without your sign-off.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Playbook selector */}
                 <div className={cardClass}>
                   <h2 className={`text-sm font-semibold mb-2 ${labelClass}`}>Playbook</h2>
-                  <p className={hintClass}>How the agents handle this request from intake to delivery.</p>
+                  <p className={hintClass}>How the order flows from intake to delivery.</p>
                   <div className="mt-3 space-y-2">
                     {finnsPlaybooks.map(p => {
                       const meta = PLAYBOOK_META[p.id];
@@ -1500,24 +1543,21 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
 
                 {/* ── Path A: Pick directly ───────────────────────────── */}
                 {!wizardRfqId && sourcingPath === 'pick' && (() => {
-                  // 5b/5c — In Assist + Auto, rank vendors by relevance to
-                  // the items in Step 1 (Match chip on suggestions). In
-                  // Off mode, render the directory in raw alphabetical
-                  // order — no agent attribution, no Match chips.
-                  const ranked = autonomyMode === 'off';
-                  const suggestedIds = !ranked
-                    ? suggestVendorsForItems(items.map(it => it.name), 10)
-                    : [];
+                  // 6d — Vendor relevance ranking is always on. It's
+                  // analysis (item-category overlap + composite), not
+                  // an agent action. The user benefits from "most
+                  // relevant vendors first" regardless of per-PO Manual
+                  // / Auto choice. Only the auto-pre-pick (selection)
+                  // is gated by the per-PO autonomy setting.
+                  const suggestedIds = suggestVendorsForItems(items.map(it => it.name), 10);
                   const suggestedSet = new Set(suggestedIds);
                   const suggested = suggestedIds
                     .map(id => finnsSuppliers.find(v => v.id === id)!)
                     .filter(Boolean);
-                  const rest = ranked
-                    ? finnsSuppliers.slice().sort((a, b) => a.name.localeCompare(b.name))
-                    : finnsSuppliers
-                        .filter(v => !suggestedSet.has(v.id))
-                        .sort((a, b) => b.metrics.composite - a.metrics.composite);
-                  const ordered = ranked ? rest : [...suggested, ...rest];
+                  const rest = finnsSuppliers
+                    .filter(v => !suggestedSet.has(v.id))
+                    .sort((a, b) => b.metrics.composite - a.metrics.composite);
+                  const ordered = [...suggested, ...rest];
                   return (
                   <div className={cardClass}>
                     <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Approved Directory</h2>
@@ -1936,11 +1976,9 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   <Button onClick={handleSubmit} className={SAGE.primary(isDark)}>
                     {splitMode && proposedSplits.length > 1
                       ? `Authorize · Create ${proposedSplits.length} POs`
-                      : autonomyMode === 'off'
+                      : poAutonomy === 'manual'
                         ? 'Authorize · Route to Orders'
-                        : autonomyMode === 'assist'
-                          ? 'Authorize · Send for A-04 review'
-                          : 'Authorize · Hand off to A-04'}
+                        : 'Authorize · Hand off to A-04'}
                     <ChevronRight className="h-3 w-3 ml-1" />
                   </Button>
                 </div>
@@ -1955,11 +1993,9 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 </div>
                 <h2 className={`text-base font-semibold ${labelClass}`}>PO Authorized</h2>
                 <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {autonomyMode === 'off'
-                    ? `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). Agents are off — every downstream stage is yours to drive. Routing you to Orders…`
-                    : autonomyMode === 'assist'
-                      ? `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). ${PLAYBOOK_META[playbook].agent} will surface recommendations at each stage — you approve every one. Routing you to Orders…`
-                      : `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). ${PLAYBOOK_META[playbook].agent} picks it up at Stage 2 within policy. Routing you to Orders…`}
+                  {poAutonomy === 'manual'
+                    ? `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). You drive every downstream stage — agents observe + surface insights. Routing you to Orders…`
+                    : `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). ${PLAYBOOK_META[playbook].agent} picks it up at Stage 2 within policy. Routing you to Orders…`}
                 </p>
                 <div className={`mt-4 inline-flex items-center gap-1.5 text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
                   <Truck className="h-3 w-3" />

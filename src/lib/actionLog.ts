@@ -61,6 +61,8 @@ export type ActionKind =
   // Suppliers
   | 'vendor-onboard' | 'vendor-message' | 'vendor-broadcast'
   | 'vendor-renegotiate' | 'vendor-labor-switch' | 'vendor-pause' | 'vendor-resume'
+  // Sourcing
+  | 'rfq-send' | 'rfq-quote-received' | 'rfq-award'
   // Spending
   | 'savings-lock' | 'savings-manual-add' | 'budget-update'
   // Activity & Governance

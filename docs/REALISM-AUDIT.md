@@ -113,7 +113,7 @@ Every page assumes the click succeeds. No network error, no permission denied, n
 
 **Concrete missing manual surfaces** that the audit surfaces:
 1. **Vendor Onboarding mini-wizard** (4 steps: Lead → KYC → Banking → First-PO terms). Today "Onboard New Vendor" redirects to New Request which is the wrong page. (See § 5 #12 below — pre-dates the mode audit, but is the #1 gap in the page-7-audit too.)
-2. **Multi-vendor RFQ Composer** modal reachable from Orders Stage 2 + New Request Step 2 + Suppliers vendor page. Today Source Bridge is 1-on-1 only — there's no way to ask N vendors for a quote from inside the platform.
+2. ~~**Multi-vendor RFQ Composer** modal~~ — **shipped in Phase 4h** (`RFQComposerModal.tsx`). Triggered from the New Request header. Submission logs `kind: 'rfq-send'` to the action log. Off mode shows an inline hint pointing here. Still pending: trigger duplicates on Orders Stage 2 + Suppliers vendor page (low priority — the New Request header is the canonical entry); "Pending RFQ" tracker (4h.2); quote ingestion + bid comparison (4h.3).
 3. **"Add Manual Saving" entry** on Spending Category Detail — record renegotiation savings achieved without agent involvement.
 4. **Renegotiation Workspace** with opening position / vendor responses / rounds / red-line / signed amendment. Today the "Initiate Renegotiation" CTA is a one-click confetti animation (§ 5 #9).
 5. **Tabbed Activity & Governance left panel** (Activity / Agents / Policy / Disputes). Today only the Activity feed renders. Roster view + policy list view + dispute panel are all blocked on this. (See § 7 gaps below for detail.)

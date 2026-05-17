@@ -16,6 +16,8 @@ import type {
   VenueTag, FinnsCategory, PlaybookId, FinnsAgentId,
 } from "../lib/types";
 import { AgentCTA } from "./AgentCTA";
+import { RFQComposerModal } from "./RFQComposerModal";
+import { useAutonomyMode } from "../lib/autonomy";
 
 interface RequestPanelProps {
   theme?: 'dark' | 'light';
@@ -98,6 +100,8 @@ const PLAYBOOK_META: Record<PlaybookId, { icon: typeof Zap; tagline: string; age
 export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) {
   const isDark = theme === 'dark';
   const [step, setStep] = useState(1);
+  const autonomyMode = useAutonomyMode();
+  const [rfqOpen, setRfqOpen] = useState(false);
 
   // Step 1 — Items
   const [requestName, setRequestName] = useState("Weekly produce restock");
@@ -610,7 +614,30 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
               <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{stepSubtitle[step]}</p>
               {step < 5 && <SourcingDAG />}
             </div>
+            {/* RFQ Composer trigger — manual sourcing surface (4h) */}
+            {step < 5 && (
+              <button onClick={() => setRfqOpen(true)}
+                title="Manually request quotes from multiple vendors before committing to a PO."
+                className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  isDark
+                    ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10'
+                    : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                }`}>
+                <Sparkles className="h-3.5 w-3.5" />
+                Compose RFQ
+              </button>
+            )}
           </div>
+
+          {/* Off-mode RFQ hint */}
+          {autonomyMode === 'off' && step < 5 && (
+            <div className={`mt-3 p-2.5 rounded-lg border text-[11px] flex items-center gap-2 ${
+              isDark ? 'bg-amber-500/8 border-amber-500/25 text-amber-300/90' : 'bg-amber-50 border-amber-200 text-amber-700'
+            }`}>
+              <span className="font-bold">Agents are off — </span>
+              <span>use <strong>Compose RFQ</strong> above to source manually from the approved directory.</span>
+            </div>
+          )}
 
           {/* Express Mode banner */}
           {expressMode && expressMode !== 'restock' && step < 5 && (
@@ -999,6 +1026,9 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       <div className={`w-80 h-full border-l shrink-0 ${isDark ? 'border-gray-800 bg-[#1a1a1a]' : 'border-gray-200 bg-white'}`}>
         {rightPanel}
       </div>
+
+      {/* RFQ Composer modal (manual sourcing — 4h) */}
+      <RFQComposerModal isDark={isDark} isOpen={rfqOpen} onClose={() => setRfqOpen(false)} />
     </div>
   );
 }

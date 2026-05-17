@@ -19,6 +19,7 @@ import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
 import { AgentCTA } from './AgentCTA';
 import { VendorOnboardingModal } from './VendorOnboardingModal';
+import { RenegotiationModal } from './RenegotiationModal';
 
 interface SuppliersPageProps {
   theme: 'dark' | 'light';
@@ -855,12 +856,19 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
     // selected stays so relationship workspace shows
   }, []);
 
+  // Renegotiation Workspace (Phase 4k). The old confetti animation
+  // (setHardenedName + setShowHardened) is preserved as the *post*-sign
+  // micro-celebration — fired by the modal's onClose after a successful
+  // sign. The CTA now opens the modal instead of skipping straight to
+  // the burst.
+  const [renegotiationOpen, setRenegotiationOpen] = useState(false);
   const handleExecuteRenegotiate = useCallback(() => {
     if (!selected) return;
-    setHardenedName(selected.name);
-    setShowHardened(true);
-    setTimeout(() => setShowHardened(false), 2800);
+    setRenegotiationOpen(true);
   }, [selected]);
+  const handleRenegotiationClose = useCallback(() => {
+    setRenegotiationOpen(false);
+  }, []);
 
   const handleOpenMessaging = useCallback(() => {
     setMessagingOpen(true);
@@ -2906,6 +2914,14 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
 
       {/* Vendor Onboarding mini-wizard (Phase 4i) */}
       <VendorOnboardingModal isDark={isDark} isOpen={onboardingOpen} onClose={() => setOnboardingOpen(false)} />
+
+      {/* Renegotiation Workspace (Phase 4k) */}
+      <RenegotiationModal
+        isDark={isDark}
+        isOpen={renegotiationOpen}
+        vendor={selected ? { id: selected.id, name: selected.name } : null}
+        onClose={handleRenegotiationClose}
+      />
     </>
   );
 }

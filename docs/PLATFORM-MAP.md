@@ -454,7 +454,7 @@ Cockpit for every PO. The most morphologically complex page in the platform.
 
 **Auto-mode engine + HITL gates**
 
-The Orders page hosts the auto-progress engine (`useEffect` in `NewOrdersPage.tsx`, 8s cadence) that walks every Auto PO from Stage 0 → 4 without admin clicks, writing real per-stage artifacts to `agentStageData`. It halts only at:
+The Orders page hosts the auto-progress engine (`useEffect` in `NewOrdersPage.tsx`, 8s cadence) that walks every Auto PO from Stage 0 → 4 without admin clicks, writing real per-stage artifacts to `agentStageData`. The engine's state (`forceCompletedStages`, `agentStageData`, `completedIds`, etc.) **persists to localStorage** (Phase 6w) so it doesn't re-fire on every page reload — previously each remount caused the engine to re-walk seeded POs from their starting `dagStage`, polluting the action log with duplicate `po-stage-advance` entries. The engine now reads the persisted state, hits the appropriate gate on resume, and stops. It halts only at:
 
 | Gate | Trigger | Admin's action |
 |------|---------|----------------|

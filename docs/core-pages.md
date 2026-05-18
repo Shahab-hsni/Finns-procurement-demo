@@ -570,10 +570,12 @@ Uses **Archetype A — Selection Data Grid** (see DESIGN.md).
 | `live` | Open Full Workspace | Collapses Audit Mode and loads the Single Order Journey |
 
 Secondary actions always available:
-- **View reasoning** (Phase 6v) — opens the **Reasoning Chain modal** locally. Shows top-level agent narrative, per-stage logic up to current effective stage (Trigger / Proof / Verified-at), and the unified action-log entries filtered to this PO. Closes back to Quick Journey + Audit Mode intact. No navigation away.
-- **Message Supplier** (Phase 6v) — opens the Source Bridge thread as a right-panel takeover, working in Audit Mode (previously this button silently did nothing because `bridgePanel` only rendered through the non-audit `rightPanel`).
+- **View reasoning** — opens the **Reasoning Chain modal** locally. Shows top-level agent narrative, per-stage logic up to current effective stage (Trigger / Proof / Verified-at), and the unified action-log entries filtered to this PO. Closes back to Quick Journey + Audit Mode intact. No navigation away. Available on the non-audit Single Order Journey too (Phase 6w) — sits in the tertiary action row next to Track / Message supplier / Repeat order.
+- **Message Supplier** — opens the Source Bridge thread as a right-panel takeover. Works in Audit Mode (right-panel render condition handles the bridge takeover in either mode).
 
 The previous behaviour — live rows silently collapsed Audit Mode, historical rows had a broken Quick Journey, View reasoning navigated to a context-less A&G page, Message Supplier did nothing — is fixed.
+
+**Reasoning Chain modal — action-log dedupe (Phase 6w)**: The action log can carry multiple `po-stage-advance` entries for the same `(poId, fromStage→toStage)` pair when the auto-progress engine re-fired across sessions (pre-6w, `forceCompletedStages` didn't persist). The modal deduplicates on event signature — stage-advances dedupe on `kind::fromStage->toStage`, other events dedupe on `kind::summary` — so the user sees the canonical timeline rather than a wall of repeats. Persisted state in 6w prevents the duplicates from accumulating going forward.
 
 ### Grid view
 
@@ -589,6 +591,22 @@ See § 1.4 Right Panel — Audit Mode subsections (Operations Insights / Quick J
 - `auditFilters: { status, date, supplier, stage, agent, venue, workflow, search }`
 - `auditSelected: Set<orderId>` (for export)
 - `auditViewMode: 'table' | 'grid'`
+
+### Orders page persisted state (Phase 6w)
+
+Order-lifecycle state survives page reload via `localStorage` (via `usePersistedJSON` / `usePersistedSet` hooks in `NewOrdersPage.tsx`). Without persistence the auto-progress engine RE-FIRED on every mount: seeded `dagStage` was the starting point each time, so PO-3041 walked 1→2→3→4 again and logged three new `po-stage-advance` entries per session. Now the engine reads the already-advanced state and halts at the appropriate gate (perishable QC, dispute, etc.) so the action log doesn't pollute.
+
+Persisted keys:
+
+| Key | Shape | Purpose |
+|---|---|---|
+| `finns-orders-completedIds` | `string[]` | Terminal orders (sage Completed badge sticks). |
+| `finns-orders-actionTakenIds` | `string[]` | Auto orders where the admin cleared the gate; they've left the priority feed but aren't terminal. |
+| `finns-orders-laborMode` | `Record<orderId, 'auto' \| 'manual'>` | Per-PO labor switch. |
+| `finns-orders-forceCompletedStages` | `Record<orderId, stageIndex>` | Furthest stage marked complete (by user or engine). |
+| `finns-orders-manualStageData` | `Record<orderId, Record<stage, Record<field, value>>>` | Admin Task Module entries. |
+| `finns-orders-agentStageData` | `Record<orderId, Record<stage, Record<field, value>>>` | Auto-progress engine artifacts (PO PDF, policy ref, carrier, etc.). |
+| `finns-orders-stageCompletedAt` | `Record<orderId, Record<stage, ISO>>` | Real timestamps for the audit Paper Trail. |
 
 ---
 

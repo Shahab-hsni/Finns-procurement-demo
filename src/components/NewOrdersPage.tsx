@@ -81,6 +81,57 @@ function hashStr(s: string) {
   return Math.abs(h);
 }
 
+// ── 6w · Persisted state ───────────────────────────────────────────
+//
+// The Orders cockpit state (which stages advanced, which orders are
+// completed, what agents wrote per stage, manual entries, etc.) used
+// to be component-local useState — reset on every mount. That made
+// the auto-progress engine RE-FIRE on every page load: the engine
+// saw seeded dagStages, advanced PO-3041 from 1 → 4 again, logged
+// three new po-stage-advance entries each time. Action log filled
+// with duplicates.
+//
+// Persisting these keys to localStorage means the engine sees the
+// already-advanced state on remount, hits the perishable QC gate,
+// and stops — no spam. The user picks up where they left off.
+function usePersistedJSON<T>(key: string, initial: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [val, setVal] = useState<T>(() => {
+    if (typeof window === 'undefined') return initial;
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as T) : initial;
+    } catch {
+      return initial;
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(val));
+    } catch { /* quota / private mode — demo only */ }
+  }, [key, val]);
+  return [val, setVal];
+}
+
+function usePersistedSet(key: string): [Set<string>, React.Dispatch<React.SetStateAction<Set<string>>>] {
+  const [val, setVal] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify([...val]));
+    } catch { /* ignore */ }
+  }, [key, val]);
+  return [val, setVal];
+}
+
 // ── HITL: Authorization-gated stages ────────────────────────────────
 // Stage 1 (Request) and Stage 5 (Delivered & Checked) have human
 // gatekeepers — even in Agent mode, the primary action remains
@@ -683,7 +734,11 @@ function makeHistoricalOrders(): Order[] {
       humanStatus: 'Disputed',
       humanDescription: `Dispute opened — ${RESOLUTIONS.disputed[seed % RESOLUTIONS.disputed.length]}.`,
       eta: 'Dispute pending',
-      dagStage: 4,
+      // 6w — vary the dagStage at which the dispute was raised so the
+      // Quick Journey rail isn't identical for every disputed row.
+      // 2 = PO Approved (quality concern pre-shipment), 3 = In Transit
+      // (lane risk escalation), 4 = Delivered (QC fail).
+      dagStage: 2 + (seed % 3),
       agentReasoning: 'Exception flagged at delivery. A-05 (Logistics) escalated to admin review.',
       agentAgent: agentLabel(agent),
       assignedAgent: agent,
@@ -715,7 +770,10 @@ function makeHistoricalOrders(): Order[] {
       humanStatus: 'Cancelled',
       humanDescription: RESOLUTIONS.cancelled[seed % RESOLUTIONS.cancelled.length],
       eta: '—',
-      dagStage: Math.max(1, seed % 5),
+      // 6w — cancelled at 0..2 (Request / Quote / PO Approved). Post-
+      // dispatch cancellations are vanishingly rare and would become
+      // disputes anyway.
+      dagStage: seed % 3,
       agentReasoning: 'Order halted before dispatch on admin authorization.',
       agentAgent: agentLabel(agent),
       assignedAgent: agent,
@@ -908,12 +966,14 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
   const [selectedIds, setSelectedIds]       = useState<Set<string>>(new Set());
   const [chatInput, setChatInput]           = useState('');
-  const [completedIds, setCompletedIds]     = useState<Set<string>>(new Set());
+  // 6w — persisted: completed terminal orders survive remount so the
+  // sage Completed badge sticks across reloads.
+  const [completedIds, setCompletedIds]     = usePersistedSet('finns-orders-completedIds');
   // 6p — orders where the admin took the gate action but the journey
   // hasn't terminated yet. These leave the Needs-Action card (the
   // agent is now driving the next stage) but should NOT show the sage
   // "Completed" badge. completedIds remains reserved for terminal POs.
-  const [actionTakenIds, setActionTakenIds] = useState<Set<string>>(new Set());
+  const [actionTakenIds, setActionTakenIds] = usePersistedSet('finns-orders-actionTakenIds');
   // 6s — id of the PO whose Approve button has been clicked. Pops the
   // Approval Confirmation modal (Auto + cap gate active flow).
   const [approvalForId, setApprovalForId]   = useState<string | null>(null);
@@ -933,18 +993,18 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   // ── Labor Switch (Manual Takeover) — Wayne doctrine ────────────
   // Per-order steering mode. Default 'auto' for every order. Aligns
   // with the per-PO autonomy picker on the New Request wizard's Step 1.
-  const [laborMode, setLaborMode] = useState<Record<string, LaborMode>>({});
+  const [laborMode, setLaborMode] = usePersistedJSON<Record<string, LaborMode>>('finns-orders-laborMode', {});
   // Per-order force-completed stages (for Manual Takeover of the 5-stage journey).
-  const [forceCompletedStages, setForceCompletedStages] = useState<Record<string, number>>({});
+  const [forceCompletedStages, setForceCompletedStages] = usePersistedJSON<Record<string, number>>('finns-orders-forceCompletedStages', {});
   // Per-order manual stage data: { [orderId]: { [stageIdx]: { fieldKey: value } } }.
   // Doubles as the audit trail and the basis for the Resumption Handshake.
-  const [manualStageData, setManualStageData] = useState<Record<string, Record<number, Record<string, string>>>>({});
+  const [manualStageData, setManualStageData] = usePersistedJSON<Record<string, Record<number, Record<string, string>>>>('finns-orders-manualStageData', {});
   // 6r — parallel store for the data the AUTO agent wrote when the
   // auto-progress engine completed a stage. Same shape as manualStageData
   // but separate so attribution stays accurate: a field is "Admin
   // Verified" only when manualStageData has a value for it; agent
   // writes never flip the badge to admin.
-  const [agentStageData, setAgentStageData] = useState<Record<string, Record<number, Record<string, string>>>>({});
+  const [agentStageData, setAgentStageData] = usePersistedJSON<Record<string, Record<number, Record<string, string>>>>('finns-orders-agentStageData', {});
   // Active Handshake delegations: { [orderId]: { [stageIdx]: true } }.
   // Persists across Save Draft — order can be in Manual Mode while a
   // specific sub-task is delegated back to Atlas.
@@ -958,7 +1018,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   // Per-stage completion timestamps. Captured when a stage is marked complete
   // (via Mark Complete or Force Complete). Drives Review Mode "cleared at" line.
-  const [stageCompletedAt, setStageCompletedAt] = useState<Record<string, Record<number, string>>>({});
+  const [stageCompletedAt, setStageCompletedAt] = usePersistedJSON<Record<string, Record<number, string>>>('finns-orders-stageCompletedAt', {});
   // In Review Mode, fields the Admin has flipped back to Input Mode for editing.
   const [editingFields, setEditingFields] = useState<Set<string>>(new Set());
 
@@ -2470,21 +2530,34 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               )}
             </div>
 
-            {/* Compact 5-stage dot rail */}
-            <div className="space-y-1">
-              {DAG_STAGES.map((s, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${
-                    i < selectedOrder.dagStage  ? 'bg-[#87986a]' :
-                    i === selectedOrder.dagStage ? 'bg-amber-500 animate-pulse' :
-                    isDark ? 'bg-gray-700' : 'bg-gray-200'
-                  }`} />
-                  <span className={`text-[10px] ${i <= selectedOrder.dagStage ? t.textPrimary : t.textMuted}`}>
-                    {i + 1}. {s.label}
-                  </span>
+            {/* 6w — Compact rail reads effectiveStage so live orders the
+                auto-progress engine has advanced render at their CURRENT
+                position, not the seeded dagStage. For historical rows
+                (no force-complete entry) eff === dagStage so the rail
+                reflects where the order actually ended. */}
+            {(() => {
+              const eff = Math.max(selectedOrder.dagStage, forceCompletedStages[selectedOrder.id] ?? 0);
+              const isTerminal = completedIds.has(selectedOrder.id);
+              return (
+                <div className="space-y-1">
+                  {DAG_STAGES.map((s, i) => {
+                    // Terminal completed orders → every stage filled sage.
+                    const filled = isTerminal ? true : i < eff;
+                    const current = !isTerminal && i === eff;
+                    const dotClass = filled ? 'bg-[#87986a]'
+                                   : current ? 'bg-amber-500 animate-pulse'
+                                             : isDark ? 'bg-gray-700' : 'bg-gray-200';
+                    const textClass = (filled || current) ? t.textPrimary : t.textMuted;
+                    return (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${dotClass}`} />
+                        <span className={`text-[10px] ${textClass}`}>{i + 1}. {s.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
             {/* 6u — Status-aware primary action.
                   Completed / Cancelled → Re-order
@@ -3232,7 +3305,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                           description: 'Agent recommendation rejected — it will not re-suggest without new data.',
                         });
                       }}
-                      className={`inline-flex items-center gap-1.5 text-xs transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}>
+                      // 6w — Decline is the negative-action counterpart to
+                      // Approve & Execute. Red text + red hover state makes
+                      // the destructive nature explicit.
+                      className={`inline-flex items-center gap-1.5 text-xs font-semibold transition-colors ${isDark ? 'text-red-400 hover:text-red-300 hover:bg-red-500/10' : 'text-red-600 hover:text-red-700 hover:bg-red-50'} px-3 py-1.5 rounded-md`}>
                       <ThumbsDown className="h-3 w-3" /> Decline
                     </button>
                   </div>
@@ -3256,37 +3332,49 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 </div>
               ) : null}
 
-              {/* Tertiary actions — stage-gated */}
-              {(stage >= 3 || completedIds.has(selectedOrder.id)) && (
-                <div className={`flex items-center justify-center gap-5 pt-2 border-t ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-                  {stage >= 3 && (
-                    <button className={`inline-flex items-center gap-1 text-[11px] transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700'}`}>
-                      <MapPin className="h-3 w-3" /> Track
-                    </button>
-                  )}
+              {/* 6w — Tertiary actions. Same set + visual weight whether or
+                  not the order is past Stage 3. Track is just gated by
+                  stage (only meaningful once dispatched). Restyled as
+                  outlined sage chips so they don't look like ghost text.
+                  View reasoning is now available on the live journey too
+                  (was previously audit-mode-only). */}
+              <div className={`flex items-center justify-center gap-2 pt-3 mt-1 border-t flex-wrap ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+                {stage >= 3 && (
                   <button
-                    onClick={() => setBridgeTarget({ orderId: selectedOrder.id, supplier: selectedOrder.supplier, channel: 'whatsapp', message: '' })}
-                    className={`inline-flex items-center gap-1 text-[11px] transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700'}`}>
-                    <MessageCircle className="h-3 w-3" /> Message supplier
+                    title="Track this shipment"
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${
+                      isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'
+                    }`}>
+                    <MapPin className="h-3 w-3" /> Track
                   </button>
-                  {completedIds.has(selectedOrder.id) && (
-                    <button
-                      onClick={() => openDraftSheet({ kind: 'reorder', sourceOrderId: selectedOrder.id })}
-                      className={`inline-flex items-center gap-1 text-[11px] transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700'}`}>
-                      <RefreshCw className="h-3 w-3" /> Repeat
-                    </button>
-                  )}
-                </div>
-              )}
-              {stage < 3 && !completedIds.has(selectedOrder.id) && (
-                <div className={`flex items-center justify-center pt-2 border-t ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+                )}
+                <button
+                  onClick={() => setBridgeTarget({ orderId: selectedOrder.id, supplier: selectedOrder.supplier, channel: 'whatsapp', message: '' })}
+                  title="Open the Source Bridge thread with this supplier"
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${
+                    isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'
+                  }`}>
+                  <MessageCircle className="h-3 w-3" /> Message supplier
+                </button>
+                <button
+                  onClick={() => setReasoningForId(selectedOrder.id)}
+                  title="See the full reasoning chain — agent narrative, per-stage logic, action log."
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${
+                    isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'
+                  }`}>
+                  <History className="h-3 w-3" /> View reasoning
+                </button>
+                {completedIds.has(selectedOrder.id) && (
                   <button
-                    onClick={() => setBridgeTarget({ orderId: selectedOrder.id, supplier: selectedOrder.supplier, channel: 'whatsapp', message: '' })}
-                    className={`inline-flex items-center gap-1 text-[11px] transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700'}`}>
-                    <MessageCircle className="h-3 w-3" /> Message supplier
+                    onClick={() => openDraftSheet({ kind: 'reorder', sourceOrderId: selectedOrder.id })}
+                    title="Carbon-copy this PO into a new request"
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold transition-colors ${
+                      isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e6ecda]'
+                    }`}>
+                    <RefreshCw className="h-3 w-3" /> Repeat order
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>{/* end detail card */}
 
             {/* Live Tracking — only from Stage 4 (In Transit) onwards */}
@@ -5135,10 +5223,27 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         if (!order) return null;
         const eff = Math.max(order.dagStage, forceCompletedStages[order.id] ?? 0);
         // Pull this PO's action-log entries from the unified log.
-        const poEvents = readActionLog({ limit: 200 })
-          .filter(e => e.entity?.type === 'po' && e.entity?.id === order.id
+        // 6w — Filter + dedupe. The auto-progress engine has historically
+        // re-fired across sessions (forceCompletedStages didn't persist
+        // until 6w), so the log can contain multiple stage-advance entries
+        // for the same (poId, fromStage→toStage) pair from different
+        // sessions. We keep only the MOST RECENT entry per logical event
+        // signature, so the user sees the canonical timeline.
+        const allPoEvents = readActionLog({ limit: 500 })
+          .filter(e => (e.entity?.type === 'po' && e.entity?.id === order.id)
                     || e.meta?.poId === order.id
                     || e.meta?.synthesisedPoId === order.id);
+        const seen = new Set<string>();
+        const poEvents = allPoEvents.filter(e => {
+          // Stage-advance signature = kind + fromStage→toStage. Other
+          // event kinds dedupe on (kind, summary).
+          const sig = e.kind === 'po-stage-advance' && e.meta
+            ? `${e.kind}::${e.meta.fromStage}->${e.meta.toStage}`
+            : `${e.kind}::${e.summary}`;
+          if (seen.has(sig)) return false;
+          seen.add(sig);
+          return true;
+        });
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                style={{ background: 'rgba(0,0,0,0.55)' }}

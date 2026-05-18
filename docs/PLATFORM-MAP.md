@@ -381,42 +381,60 @@ Two-mode workspace. Default center shows a Velocity Map. When a SKU is selected 
 ### 7.3 New Request
 
 - **Route**: `/request`
-- **One-line**: 5-step wizard: Items → Vendors → Delivery → Review → Done.
+- **One-line**: 5-step sourcing wizard with three multi-PO modes. Authorize on Step 4 can mint 1 PO or N POs in one shot.
 
 **Purpose**
 
-Sourcing wizard. The center panel morphs entirely through 5 steps. On the Review step, "Authorize" submits and routes the user to Orders.
+Sourcing wizard. Center panel morphs entirely through 5 steps. The user picks a **per-PO autonomy** (`auto` / `manual`) on Step 1, a **sourcing path** on Step 2 (`pick` direct or `rfq` compare quotes), and lands on Step 4 with one of four submit shapes:
+
+- Single vendor (direct pick)
+- Manual multi-vendor (user picked 2+ vendors, items greedily assigned per category)
+- Auto-split (system grouped items by top-suggested vendor)
+- Multi-award RFQ (each vendor's quote was awarded for the items they cover)
 
 **States**
 
 | State | Description |
 |-------|-------------|
-| Step 1 — Items | Add line items with categories and venue tags. Budget framing surfaces inline. |
-| Step 2 — Vendors | Pick vendors from the internal directory; Sourcing Agent suggestions surface in the right panel. |
-| Step 3 — Delivery | Logistics + delivery preferences, target venue(s), date window. |
-| Step 4 — Review | Pre-submit summary; Authorize button lands here. |
-| Step 5 — Done | Confirmation; PO lands in Orders. |
+| Step 1 — Items | Line items + per-PO autonomy + playbook. Smart-detect autocomplete fills category/unit/venues. Atlas inline banners: **Market Price Trends** (top) + **Suggested Items** (bottom, `[+ Add]` to drop into basket). |
+| Step 2 — Vendors | Two paths: **Path A** approved directory (multi-select) or **Path B** RFQ composer + waiting view. Cross-category banner mints when basket spans ≥2 categories and no single vendor covers all. Multi-vendor selection on Path A triggers the Vendor Assignment card. Multi-award RFQ on Path B awards each quote independently. Atlas inline: **Vendor Intel** (directory summary) + **A-01 · {vendor}** history snippet when one vendor is picked. |
+| Step 3 — Delivery | Target venues + date window + receiving contact. Award context banner mints when arrived via Path B (single or multi-award). Atlas **Logistics Intel** (`A-05`) shows day-of-week + flex assessment, branching to per-vendor mini-summaries on multi-vendor flows. |
+| Step 4 — Review | Summary + per-vendor breakdown for any of the three multi-PO modes. Atlas **Ready to Launch / Review Before Launch** banner. **Authorize gate** blocks the button when items are unassigned or a single-vendor cross-category basket isn't fully covered. |
+| Step 5 — Done | Confirmation. Copy adapts to single vs multi-PO mode. Routes to Orders. |
 
 **Actions**
 
 | Action | Description | Navigates to |
 |--------|-------------|--------------|
 | Step indicator | Backward step navigation. | — |
-| Next | Advance to the next step. | — |
-| Back | Return to the previous step. | — |
-| Add item | Adds a line item. | — |
-| Remove item | Removes a line item. | — |
-| Suggested category tag | Filters by category. | — |
-| Venue tag selector | Assigns one or more venues to a line item. | — |
-| Vendor checkbox | Toggle vendor selection. | — |
-| Authorize | Submits the request and routes to Orders. | **Orders** |
-| Atlas chat send | Sends a message to Atlas. | — |
+| Next / Back | Step navigation. | — |
+| Add item / Remove item | Step 1 line-item mutation. | — |
+| `[+ Add]` Atlas suggestion | Drops a suggested complementary item into the basket. | — |
+| Smart-detect chip click | Accepts A-01's category/unit/venue autofill. | — |
+| Per-PO autonomy button | Sets `poAutonomy` (`auto` / `manual`) for this PO. | — |
+| Playbook chip | Sets `WF-STD` / `WF-RSH` / `WF-REC`. | — |
+| Path picker (Pick / RFQ) | Sets `sourcingPath`. | — |
+| Cross-category Auto-split | Sets `splitMode`, jumps to Step 3. | — |
+| Cross-category Send RFQ | Opens the RFQ Composer modal. | — |
+| Cross-category Pick manually | Dismisses the banner (multi-select directory stays active). | — |
+| Vendor row click | Toggles the vendor in/out of `selectedVendors`. Clears `splitMode`. | — |
+| Open RFQ Composer | Opens the composer with the basket pre-filled. | — |
+| Send RFQ | Creates an `RFQRecord`, dispatches mock vendor replies, transitions to waiting view. | — |
+| Award (per quote) | Mints a PO with the awarded items only; advances to Step 3 only when every item is covered. | — |
+| Cancel RFQ | Cancels (hidden once any award has minted a PO). | — |
+| Venue / date / window | Step 3 inputs. | — |
+| Authorize | Mints PO(s), advances to Step 5. **Disabled** by the Authorize gate when coverage is incomplete. | **Orders** |
+| Atlas chat send | Sends a message to Atlas (canned response today). | — |
+| Dismiss restock banner | Dispatches `finns-restock-intent-failed`. | — |
 
-**Modals**: *(none)*
+**Modals**
+
+- **RFQ Composer** — category-grouped vendor picker; sends RFQ via WhatsApp / email; basket items pre-filled with stable ids so quotes can be scoped per-item.
+- **RFQ Tracker** — standalone in-flight RFQ list; supports the same multi-award flow as the in-wizard waiting view; reachable from the Step 2 "View all RFQs" link.
 
 **Outgoing navigation**
 
-- **→ Orders** (Authorize; sets `#order=PO-XXXX` after a 1.4s celebratory delay on Step 5)
+- **→ Orders** (Authorize; deep-link `#order=PO-XXXX` after a 1.4s celebratory delay on Step 5. For multi-PO modes the link goes to the first PO id; the user navigates between siblings inside Orders.)
 - **→ Inventory** *(data edge)* — Dismissing the inventory-prefilled restock banner dispatches `finns-restock-intent-failed`. Inventory shows an amber alert on the affected SKU next time the user visits.
 
 ---

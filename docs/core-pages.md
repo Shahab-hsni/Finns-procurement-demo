@@ -1026,54 +1026,73 @@ Inventory must be fully usable in `Off` mode — every SKU adjustment, par floor
 
 # 4. New Request Page
 
-The 5-step sourcing wizard. The center panel morphs entirely per step. Express modes (re-order / restock) pre-fill state and may jump straight to Review.
+The 5-step sourcing wizard. The center panel morphs entirely per step. Express modes (re-order / restock) pre-fill state and may jump straight to Review. The wizard supports three sourcing patterns (single-vendor direct, multi-vendor manual split, multi-vendor RFQ award) and can mint **one or N POs** in a single authorization.
 
 ---
 
 ## 4.1 Data Model
 
-### Request draft
+### Wizard local state
 
 ```ts
-type RequestDraft = {
-  id: string;                    // "REQ-DRAFT-001"
-  items: LineItem[];
-  vendors: string[];             // supplier ids
-  delivery: {
-    venues: VenueTag[];
-    targetDate: ISODate;
-    windowDays: number;
-  };
-  urgency: 'standard' | 'urgent' | 'recurring';
-  workflowTemplate: 'WF-STD' | 'WF-RSH' | 'WF-REC';
-  notes?: string;
-  expressMode?: 'reorder' | 'restock' | 'blank';
-  expressSource?: { from?: string; vendor?: string; sku?: string };
-};
-
-type LineItem = {
-  sku?: string;                   // optional — new items may not exist in catalog yet
+// Step 1 — basket
+interface LineItem {
+  id: string;                  // stable client-side id (Date.now() based)
   name: string;
-  category: Category;
+  category: FinnsCategory;
   qty: number;
-  uom: string;
-  venues: VenueTag[];
-};
+  unit: string;                // free-text; defaults to detected unit
+  unitPriceIdr: number;        // 0 if user left it blank — budget hint, not invoice price
+  venues: VenueTag[];          // BC / RC / ST / SP; multi-tag allowed
+}
+
+// Step 1 — per-PO autonomy choice (locks before Step 2's auto-pre-pick)
+type PoAutonomy = 'auto' | 'manual';   // default = system autonomy, overridable
+
+// Step 2 — sourcing path
+type SourcingPath = 'pick' | 'rfq';
+// selectedVendors: string[]  — multi-select on Path A
+// wizardRfqId: string | null — points at the in-flight RFQ on Path B
+
+// Step 2 — Path B award outcomes (one entry per awarded vendor)
+interface AwardedQuote {
+  vendorId: string;
+  vendorName: string;
+  itemIds: string[];           // items locked to this vendor by this award
+  totalIdr: number;
+  leadTimeDays: number;
+  channel: 'whatsapp' | 'email';
+  receivedAt: string;
+  rfqId: string;
+  poId: string;                // mint-time id; updated again at Step 5 Submit
+  amContact: string;
+  note?: string;
+}
+// awardedQuotes: AwardedQuote[]
 ```
 
 ### Express mode hash inputs
 
 | Hash | Behavior |
 |------|----------|
-| `#restock=SKU&items=...&vendor=...` | Restock express. Pre-fills items, sets urgency=urgent, skips to Step 1 with banner. |
-| `#intent=express&mode=reorder&from=PO-XXXX&vendor=...&items=...` | Re-order express. Pre-fills the lot, jumps to Step 4 (Review). |
-| `#intent=express&mode=blank` | Manual express. Empty state, single-step authorize available from Step 4. |
+| `#restock=SKU&items=...&vendor=...` | Restock express. Pre-fills items, sets urgency=urgent, lands on Step 1 with banner. |
+| `#intent=express&mode=reorder&from=PO-XXXX&vendor=...&items=...` | Re-order express. Pre-fills everything, jumps to Step 4 (Review). |
+| `#intent=express&mode=blank` | Manual express. Empty state. |
 
 ---
 
-## 4.2 Left Panel
+## 4.2 Left Panel — Draft Summary
 
-Compact step indicator + workflow badge + draft summary card. Click a previous step to jump back.
+Compact draft summary that updates as the wizard progresses. Sections:
+
+- **Request** name
+- **Items** (first 5; +N more chip if longer)
+- **Playbook** badge + name
+- **Target venues** chips (when set on Step 3)
+- **Primary vendor** name + region + composite (when one is selected on Path A)
+- **Subtotal** in IDR
+
+The header carries `Step N/5 · {step label}`. The step indicator at the top of the center panel (sage dots + amber pulse on current step) is the real navigation control — click any completed step to jump back.
 
 ---
 
@@ -1081,58 +1100,141 @@ Compact step indicator + workflow badge + draft summary card. Click a previous s
 
 ### Step 1 — Items
 
-- Line items table (add / remove / qty / uom / category / venue chips)
-- Suggested category tags (clickable filters)
-- Budget framing widget (right side, inline): shows monthly category budget remaining and where this request lands
-- Express-restock banner (when entered via `#restock=...`)
+**Inputs**
+- Request name (required) + free-text Context
+- Line items table — each row carries name + category + qty + unit + budget hint + venue chips
+- Add-line panel with smart-detect autocomplete (A-01 fills category / unit / typical venues as the user types — always on, not gated by autonomy)
+- **Per-PO autonomy picker** — `Auto · AI agent` vs `Manual · you drive`. Default reads the system-level autonomy; the user can override per PO. This setting drives:
+  - whether Step 2 auto-pre-picks the top-suggested vendor
+  - whether the Step 5 success copy says "A-04 takes Stage 3" vs "Route to Orders"
+  - whether new POs land with `laborMode: 'auto'` or `'manual'`
+- Playbook selector — `WF-STD` / `WF-RSH` / `WF-REC` (one chip per row, sage badges)
+
+**Inline Atlas insights (always on, in the center column)**
+- **Atlas · Market Price Trends** banner at the very top of Step 1 — synthesized 30d trend across the basket. Per-item ↓/↑ chips + a recommendation ("Lock pricing now to capture the dip" / "Pricing pressure on the upside — lock now to cap risk"). Hidden when the basket is empty.
+- **Atlas · Suggested Items** card between Line Items and the autonomy picker — items that frequently co-occur with the current basket categories. Each row has `[+ Add]` that drops the item into the basket. Hidden when there are no remaining suggestions.
 
 ### Step 2 — Vendors
 
-- Vendor cards from the directory, filterable by category and venue capability
-- Multi-select with primary-vendor radio (one vendor leads if multiple selected)
-- Sourcing Agent (A-01) suggestions surface in the right panel
-- Vendor reliability metrics inline (composite / on-time / cold-chain)
+**Sourcing path picker** (two big buttons at the top, only visible before an RFQ is in flight):
+- `I know my vendor` → **Path A**, the approved directory.
+- `Compare quotes (RFQ)` → **Path B**, opens the multi-vendor RFQ composer.
+
+#### Cross-category guard
+
+When the basket spans ≥2 categories AND no single vendor in the directory covers them all, an **amber banner** mints above the directory before any vendor is picked. Three CTAs:
+
+1. **Auto-split into N POs →** flips `splitMode` on and skips straight to Step 3. A-01 has greedily grouped items by top-suggested vendor.
+2. **Send a multi-vendor RFQ** opens the RFQ Composer with the basket pre-filled.
+3. **Pick vendors manually →** dismisses the banner — the directory below supports multi-select; the user can compose the same vendor-set themselves.
+
+#### Path A — Direct vendor pick (multi-select)
+
+- The approved directory ranks by category overlap + composite + SLA (handled by `suggestVendorsForItems()`). "Match" badges flag A-01's top hits; a divider separates them from the rest.
+- Each row shows composite + on-time % + cold-chain % + lead time + categories + venues served.
+- **Coverage chip** (only when items span ≥2 categories): `✓ Covers all` (sage) or `Covers X/Y` (amber).
+- **Team Note chip** appears when an admin has left a note on that vendor (read-only here; editable on Suppliers).
+- **Multi-vendor selection** — clicking a vendor toggles them in/out. With 2+ vendors picked, a **Vendor Assignment card** mints below the directory:
+  - Each picked vendor (in pick order) greedily claims items in categories they cover. Picks are labeled `Selected #1`, `Selected #2`, ….
+  - Per-PO breakdown rows show the items each vendor will receive (qty + unit + name).
+  - **Unassigned bucket** flags items no picked vendor can supply — these block Authorize on Step 4 until the user picks a vendor that covers them.
+  - Selecting a vendor on Path A while `splitMode` was on auto-clears `splitMode` (the user's manual pick wins over the auto-split).
+- **Atlas inline insight** when exactly one vendor is selected: `A-01 · {vendor name}` summarizes past interaction count + on-time % + a recommended buffer.
+
+#### Path B — RFQ composer + tracker
+
+- **RFQ Composer modal** (Phase 6j category-aware) — vendors are grouped into tiers:
+  - *Tier 1: Cover all categories* (when the basket spans 2+ and any vendor covers them).
+  - *Tier 2: Per-category lists* — one section per missing category.
+  - Each row carries a `Quotes on N/M` chip and a "Will quote on: …" item list so the user knows what each vendor will be asked to bid on.
+- On send, the composer creates an `RFQRecord` and the wizard transitions to a **waiting view** in place of the directory:
+  - Per-vendor quote rows arrive live (mock latency 10–30s). Each shows price, lead time, channel pill (WhatsApp / email), and the "Quote covers: …" item list.
+  - **Progress meter** at the top: `X/Y items awarded` + sage progress bar.
+- **Award** mints a PO immediately at Stage 1 with the awarded items only. The wizard supports **multi-award**: each vendor's quote can be awarded independently, locking only the items in that quote (already-awarded items are filtered out). Once every item has an award, the wizard auto-advances to Step 3. Until then it stays on Step 2 so the user can award the remaining vendors.
+- **Cancel RFQ** is disabled once any award has minted a PO draft.
 
 ### Step 3 — Delivery
 
-- Target venue chips (multi-select)
-- Date window picker (target date + flex window)
-- Logistics risk surfaces in the right panel (lane risk map)
+- Target venue chips (multi-select; default `BC + RC`).
+- Delivery window — target date + flex days (number input).
+- Receiving contact + special instructions.
+- For `WF-REC` only: Recurring schedule toggle + frequency (weekly / biweekly / monthly).
+
+**Award context banner** (when arrived via Path B):
+- Single award: vendor name + amount + lead time + channel (WhatsApp / email) + AM contact.
+- Multi-award: header `N vendors · N PO drafts · total Rp X.XM` + per-PO rows listing items each draft will carry. *"Delivery details below apply to **all drafts**."*
+
+**Atlas · Logistics Intel** (`A-05`):
+- **Single-vendor** flow: day-of-week + catalog lead + on-time / cold-chain % + flex-window assessment chip (`tight` / `ok` / `comfortable`). Surfaces conflicts when other POs are already landing the same date.
+- **Multi-vendor** flow (any of multi-award, auto-split, or manual split): header `A-05 · Logistics Intel · N vendors` + per-vendor mini-summaries (one card per leg) + a top-level "tight on N legs" warning if any leg has zero flex.
 
 ### Step 4 — Review
 
-- Pre-submit summary: items list, vendors, delivery, urgency, projected total, savings vs market
-- 6-row audit checklist (vendor trust, spend cap, par alignment, etc.)
-- **Authorize** primary CTA (sage)
-- "Back to edit" tertiary
+**Atlas · Ready to Launch / Review Before Launch** banner at the top — green when every policy check passes, amber when any check is `review` or `warn`. Includes spend-cap headroom (`Cap headroom after this PO: Rp X.XM`) or excess line (`This PO exceeds the cap by Rp Y.YM`).
+
+**Authorize Procurement summary card** — 7 rows:
+- Request name
+- Items (count + IDR subtotal; uses multi-award total when applicable)
+- Playbook
+- Vendor / Vendors (label adapts: `Primary Vendor` for single, `Vendors` + `N vendors · N PO drafts` for multi-PO modes)
+- Target venues
+- Target date + flex window
+- Recurring (yes/no + frequency)
+
+**Per-vendor breakdown** — minted under the summary in any of the three multi-PO modes:
+- *Multi-award RFQ* — one row per `awardedQuotes` entry (PO id, vendor, total, lead time, items).
+- *Auto-split* — one row per `proposedSplits` group (`PO N`, vendor, total, item count, items).
+- *Manual split* — one row per `manualAssignments.groups` entry (`PO N`, vendor, total, item count, items) **plus** a separate warning row if any items remain unassigned.
+
+**Single-vendor coverage warning** (amber card) — fires only on Path A when the picked vendor doesn't cover every category in a cross-category basket. CTAs: "Switch to auto-split" or "Back to vendor pick".
+
+**Auto-split / combine toggle** (amber→sage card) — when `proposedSplits.length > 1`, lets the user pick between "Split into N POs" and "Send as one combined PO". The split detection runs against the basket continuously.
+
+**Audit Checklist** — sage card with 6 ticks (display-only; the real checks run on `policyPreview`):
+1. Vendor trust score above floor (70)
+2. Spend cap headroom available for this category
+3. Par alignment with current inventory state
+4. Venue receiving windows respected
+5. FX lock applied to USD line items (where applicable)
+6. No conflict with active recurring schedule
+
+**Authorize gate** — the Authorize button is **disabled** in two cases, with an amber "Authorize blocked" banner:
+- *Manual multi-vendor with unassigned items* — pick a vendor that covers the missing categories, or remove those items.
+- *Single vendor on a cross-category basket without full coverage* — pick another vendor or switch to auto-split.
+
+Authorize button copy adapts:
+- Multi-award RFQ → `Authorize · Finalize N POs`
+- Auto-split → `Authorize · Create N POs`
+- Manual multi-vendor → `Authorize · Create N POs`
+- Single vendor, `auto` autonomy → `Authorize · Hand off to A-04`
+- Single vendor, `manual` autonomy → `Authorize · Route to Orders`
 
 ### Step 5 — Done
 
-- Big sage check icon
-- "PO-XXXX created" headline
-- Workflow assigned (WF-STD / WF-RSH / WF-REC)
-- Auto-routes to Orders with `#order=PO-XXXX` after 1.4s
+- Sage check icon + headline (`PO Authorized` for single, `N POs Authorized` for multi-PO modes)
+- Subline adapts: multi-award routes "from RFQ X · N vendors", auto/manual split says "Each PO is at Stage 2 awaiting your Approve & Execute", single-vendor `manual` says "You drive every downstream stage", single-vendor `auto` says "{Agent} picks it up at Stage 2 within policy"
+- Auto-routes to Orders with `#order={first PO id}` after 1.4s
 
 ---
 
 ## 4.4 Right Panel — Atlas Copilot
 
-See `RIGHT-PANEL-MAP.md § 4`. Subtitle is `"Step N · {step name}"`. Content morphs per step:
+See `RIGHT-PANEL-MAP.md § 3`. Subtitle is `"Step N · {step name}"`. Content morphs per step (the right panel still holds the slower-burn cards — the *fast* per-step insights that shape the choice the user is making are inline in the center, per Pillar 3 Proximity of Action):
 
-| Step | Card |
-|------|------|
-| 1 | Strategic Intent (sage) — "Describe **why** — not just **what**." |
-| 2 | Vendor Reliability — 3 metrics for primary vendor + Recurring vendor card (if applicable) |
-| 3 | Logistics Risk Map — 3 risk items (e.g. monsoon, port congestion, all-clear) + Venue lane preferences |
-| 4 | Audit Summary — 6-row pre-authorize checklist + Spending Pulse (this request vs monthly category budget) |
-| 5 | Hand-off complete — quick links to Orders + Inventory |
+| Step | Cards |
+|------|-------|
+| 1 | **Strategic Intent** (sage AgentCTA — "Describe why…") + **Spending Pulse** mini bar + **Category mix** (when items exist) + **Similar past POs** (when matching action-log entries exist) |
+| 2 | **Vendor Reliability** card for the primary vendor (composite / on-time / cold-chain bars + AM WhatsApp) + **VendorNotePanel** (read-only team note from `entityNotes`) |
+| 3 | **Logistics Risk Map** (Java monsoon · Tanjung Priok · Bali-local) + **Venue Lane Preferences** reminder |
+| 4 | **Audit Summary** (6-row mini-summary) + **Policy preview** card listing each active rule's status (`pass` / `review` / `warn`) — this is what A-04 will run at Stage 3 |
+| 5 | **Hand-off complete** — playbook agent + Stage 2 reminder |
 
 Express-mode opening line on first Atlas message:
 
 | `expressMode` | Atlas line |
 |---------------|------------|
 | `reorder` | *"I've validated this re-order from {source}. Prices stable, vendor reliability holding at {N}, Agent A-01 ready to deploy. Skip to authorization when you're ready."* |
-| `restock` | *"I've validated this restock. Critical SKU items locked, vendor pre-selected, urgency set to urgent. Pick your autonomy tier and deploy."* |
+| `restock` | *"I've validated this restock. Critical SKU items locked, vendor pre-selected, urgency set to urgent."* |
 | `blank` | *"Express lane open. Add line items below — I'll validate prices against the 30-day market median in real time."* |
 
 ---
@@ -1142,83 +1244,126 @@ Express-mode opening line on first Atlas message:
 | Action | Where | Effect |
 |--------|-------|--------|
 | Next / Back | Step navigation | Advances or reverts step |
-| Step indicator click | Left panel | Jump to a prior step |
+| Step indicator click | Stepper | Jump back to a prior step |
 | Add item / Remove item | Step 1 | Line item mutation |
-| Suggested category tag | Step 1 | Filter line items |
-| Venue tag selector | Step 1 / Step 3 | Assigns target venue(s) |
-| Vendor checkbox | Step 2 | Toggle vendor selection |
-| Primary vendor radio | Step 2 | Sets the lead vendor |
-| Date / window picker | Step 3 | Sets delivery window |
-| Authorize | Step 4 | Creates PO, advances to Step 5 |
+| `[+ Add]` on Atlas suggestion | Step 1 complementary card | Drops the suggested item into the basket |
+| Smart-detect chip click | Step 1 add panel | Accepts A-01's category/unit/venue autofill |
+| Per-PO autonomy button | Step 1 | Sets `poAutonomy` for this PO (`auto` / `manual`) |
+| Playbook chip | Step 1 | Sets playbook (WF-STD / WF-RSH / WF-REC) |
+| Path picker (Pick / RFQ) | Step 2 | Sets `sourcingPath` |
+| Cross-category CTA — Auto-split | Step 2 banner | Sets `splitMode = true`, jumps to Step 3 |
+| Cross-category CTA — Send RFQ | Step 2 banner | Opens RFQ Composer |
+| Cross-category CTA — Pick manually | Step 2 banner | Dismisses banner; multi-select directory remains active |
+| Vendor row click | Step 2 (Path A) | Toggles the vendor in/out of `selectedVendors`. Clears `splitMode`. |
+| Open RFQ Composer | Step 2 (Path B) | Opens the composer modal |
+| Send RFQ | RFQ Composer | Creates an `RFQRecord`, dispatches mock vendor replies, returns to Step 2 waiting view |
+| Award (per quote) | Step 2 waiting view | Appends an `AwardedQuote`, mints a PO, advances to Step 3 only when every item is covered |
+| Cancel RFQ | Step 2 waiting view | Cancels the RFQ (hidden once any award has minted a PO) |
+| Venue chip | Step 3 | Toggles target venue |
+| Date / flex pickers | Step 3 | Sets delivery window |
+| Receiving contact / special instructions | Step 3 | Free-text inputs |
+| Recurring toggle + frequency | Step 3 (WF-REC only) | Sets recurring schedule |
+| Authorize | Step 4 | Mints the PO(s), advances to Step 5. **Disabled** by the Authorize gate in two cases (see § 4.3 Step 4). |
 | Atlas chat send | Right panel | Question to Atlas |
-| Dismiss restock banner | Step 1 (when express=restock) | Dispatches `finns-restock-intent-failed` |
+| Dismiss restock banner | Step 1 (express=restock) | Dispatches `finns-restock-intent-failed` |
 
 ---
 
 ## 4.6 Flows
 
-### Standard flow (no express)
+### Standard flow — single vendor (Path A)
 
-1. User clicks "New Request" → Step 1 Items
-2. Fills items, picks vendors, sets delivery
-3. Step 4 Review → Authorize
-4. Step 5 Done → routes to Orders
+1. Step 1 — add items, pick playbook, set per-PO autonomy
+2. Step 2 — pick a single vendor from the directory
+3. Step 3 — set delivery
+4. Step 4 — review summary → Authorize · Route to Orders (manual) **or** Hand off to A-04 (auto)
+5. Step 5 → routed to Orders deep-linked to the new PO
+
+### Manual multi-vendor flow (Path A, ≥2 vendors)
+
+1. Step 1 — add items spanning 2+ categories
+2. Step 2 — directory shows the cross-category banner. User clicks "Pick vendors manually" (or just ignores the banner) and picks 2+ vendors. Vendor Assignment card mints with greedy item-to-vendor assignment.
+3. Step 3 — same delivery details apply to all drafts. Logistics Intel branches into per-vendor mini-summaries.
+4. Step 4 — per-vendor breakdown shows the items each PO will carry; Authorize button reads `Create N POs`.
+5. Step 5 → N POs minted, routed to Orders (deep-link goes to the first PO id; user navigates between them from Orders).
+
+### Auto-split flow (cross-category, system-picked vendors)
+
+1. Step 1 — add items spanning 2+ categories
+2. Step 2 — cross-category banner shows. User clicks "Auto-split into N POs". `splitMode` flips on; wizard jumps to Step 3.
+3. Step 3 — same delivery details for all auto-split POs.
+4. Step 4 — per-vendor breakdown (one row per `proposedSplits` group); Authorize reads `Create N POs`.
+5. Step 5 → N POs minted, routed to Orders.
+
+### Multi-vendor RFQ flow (Path B)
+
+1. Step 1 — add items.
+2. Step 2 — pick `Compare quotes (RFQ)`. RFQ Composer opens with the basket pre-filled and vendors grouped by category coverage.
+3. Send the RFQ → wizard transitions to the waiting view (live quote arrivals via `rfqStore.scheduleMockQuotes`).
+4. As each quote arrives, the user can Award. Each award mints a PO immediately at Stage 1 with the awarded items only. Multi-award allowed — the wizard stays on Step 2 until every item is covered.
+5. Once `allItemsAwarded` is true, auto-advance to Step 3 with the award context banner.
+6. Step 3 + Step 4 + Step 5 as above; Authorize re-stamps the drafted POs with the delivery details and routes to Orders.
 
 ### Restock express flow
 
-1. From Inventory: Restock Now → routes here with `#restock=...`
-2. Wizard lands on Step 1 with items pre-filled and `urgency: urgent`
-3. User confirms vendor (Step 2) or skips if pre-selected
-4. Step 4 → Authorize → Done
+1. From Inventory: Restock Now → `#restock=...` → Step 1 with items pre-filled and `urgency: urgent`.
+2. User confirms vendor (Step 2) or skips if pre-selected.
+3. Step 4 → Authorize → Done.
 
 ### Re-order express flow
 
-1. From Orders: Re-order on a completed PO → routes here with `#intent=express&mode=reorder&...`
-2. Wizard jumps to Step 4 with all fields pre-filled
-3. User reviews → Authorize → Done
+1. From Orders: Re-order on a delivered PO → `#intent=express&mode=reorder&...` → wizard jumps to Step 4 with all fields pre-filled.
+2. User reviews → Authorize → Done.
 
 ### Restock dismissed (data edge out)
 
-1. In Step 1 of a restock-express run, user dismisses the inventory banner
-2. `finns-restock-intent-failed` dispatched
-3. Inventory page shows amber alert on that SKU on next visit
+1. In Step 1 of a restock-express run, user dismisses the inventory banner.
+2. `finns-restock-intent-failed` dispatched.
+3. Inventory page shows amber alert on that SKU on next visit.
 
 ---
 
 ## 4.7 Mode-Awareness · Manual Baseline Audit
 
-New Request is the entry point for every procurement. It must work end-to-end in `Off` mode — every input typed by hand, no agent recommendations, the resulting PO landing in manual mode on Orders. See `PLATFORM-MAP.md § 3a` for the global model.
+> ⚠ See the global note at the top of this doc. The 3-tier `Off · Assist · Auto` model is gone — current model is **per-entity `manual` | `auto`** + a system-wide pause. Atlas chat, Atlas inline insights, smart-detect, vendor relevance ranking, and similar-past-PO summaries are **always on**. Only *agent actions* (auto-pre-pick, auto-execute, A-04 hand-off) are gated by `poAutonomy`.
 
-### Sensing surfaces + manual mechanics (always on)
+### Sensing surfaces + manual mechanics (always on, regardless of autonomy)
 
-- The 5-step wizard mechanics: every input (request name, line items, venue tags, vendor checkbox, date picker, recurring frequency) is typed/clicked by the user. No autopilot path through the wizard.
-- **Vendor cards** in Step 2 — `finnsSuppliers` data, reliability scores from data.
-- **Spending Pulse** card on Step 1 (right panel) — budget bar showing this-request impact. Data calc.
-- **Logistics Risk Map** on Step 3 — known monsoon / port-congestion / Bali-local conditions. Observation.
-- **Venue Lane Preferences** (BC receives 06:00–10:00, ST evening only) — static rules per venue.
-- **Step 4 audit checklist** rows (spend cap headroom, vendor trust floor, par alignment) — threshold checks against current state.
-- **Express-mode hash deep links** (#restock=, #intent=express&mode=reorder, #intent=express&mode=blank) — user-initiated from another page; always work.
-- **Atlas right panel** — header, step-aware subtitle ("Step 2 · Vendors"), data summaries (vendor metrics, risk map, audit checklist), chat input. Never gated.
+- The 5-step wizard mechanics: every input is typed/clicked by the user. There is no path through the wizard that skips human inputs.
+- Smart-detect autocomplete (A-01) — fills category / unit / venues as the user types an item name. Always on.
+- Vendor relevance ranking — `suggestVendorsForItems()` reorders the directory by category overlap + composite. Always on.
+- Inline Atlas insights (Market Price Trends, Suggested Items, Vendor Intel, Vendor History, Logistics Intel, Ready to Launch). Always on.
+- Cross-category detection + coverage chips on Step 2. Always on.
+- Step 4 policy preview (right panel). Always on.
+- Express-mode hash deep links. Always on.
+- Atlas right panel — header, step-aware subtitle, step-specific cards, chat input. Never gated.
 
-### Mode-aware CTAs (action layer)
+### Per-PO autonomy choices (action layer)
 
-| Surface | Auto | Assist | Off |
-|---------|------|--------|-----|
-| Step 1 Strategic Intent card | "Describe why — A-01 picks vendors / playbook downstream" | Same | "Describe why — clearer intent → clearer follow-up tasks for your team" |
-| Step 2 Recurring Vendor card | "PT Indo Sayur runs your weekly produce — switch to WF-REC?" | Same prompt | **Hidden** (A-01 recommendation, not raw data) |
-| Step 4 Mission Brief Active | "5 stages mapped, A-01 will start at Stage 2 on authorize" | "A-01 will surface the quote for your approval at each gate" | "5 stages mapped — you'll progress them manually from Orders" |
-| Step 4 Authorize CTA | "Authorize · Deploy Agent →" | "Authorize · Queue for review →" | **"Authorize · Create PO →"** (no deployment language) |
-| Step 5 Done splash | "PO routed to Orders. A-01 on Stage 2 now." | "PO routed to Orders. A-01 will surface the quote for your approval." | "PO created. Continue manually from Orders." |
-| Express-mode opening Atlas message | "I've validated this re-order. Prices stable. A-01 ready to deploy." | "I've validated this re-order. Recommend reviewing." | "Re-ordering from PO-XXXX. Inputs cloned — review and submit." |
-| New PO `laborMode` after Authorize | `'agent'` | `'manual'` (so Orders surfaces it for human progression) | `'manual'` |
+The Step 1 per-PO autonomy picker flips three things:
 
-### Real gaps (open backlog)
+| Surface | `auto` | `manual` |
+|---------|--------|----------|
+| Step 2 auto-pre-pick of top-suggested vendor on Path A | Runs (when `selectedVendors.length === 0`) | Does not run — user picks every vendor |
+| Step 4 Authorize button copy (single-vendor case) | `Authorize · Hand off to A-04` | `Authorize · Route to Orders` |
+| Step 5 success splash copy | "{Agent} picks it up at Stage 2 within policy" | "You drive every downstream stage — agents observe + surface insights" |
+| New PO `laborMode` after Authorize | `'auto'` | `'manual'` |
 
-1. **`agentNotes` / "Sourcing Agent" language is hardcoded throughout the wizard's right panel** (Strategic Intent, Mission Brief, Step 5 confirmation). No mode-awareness yet. Fix: read `useAutonomyMode()` + flip copy strings.
-2. **`handleSubmit` hardcodes new PO `laborMode: 'agent'`.** Should use `defaultLaborMode(mode)` from `lib/autonomy.ts` so POs created in Off/Assist land as manual.
-3. **No "manual continuation" guidance after Authorize.** In Off mode, the user is routed to Orders but has no breadcrumb explaining the next manual steps. Add an Off-mode "what to do next" card on Step 5.
-4. **No RFQ dispatch surface inside the wizard.** Step 2 picks vendors but doesn't compose the RFQ. In Auto mode A-01 auto-fires it; in Off mode the user has no way to ask vendors for a quote from inside New Request. Either inline composer in Step 2 or routed to Suppliers → Source Bridge after Authorize. **Biggest manual gap on this page.**
-5. **Mission Brief preview** (`deployedWorkflow` flag) is a half-feature even in Auto mode — needs proper wiring or removal.
+System-wide pause (set on Activity & Governance → Agents tab) freezes Auto entities everywhere — including any wizard-minted POs that landed with `laborMode: 'auto'`. Manual POs are unaffected.
+
+### Resolved gaps (Phase 5 + Phase 6)
+
+- ✅ **RFQ dispatch from inside the wizard** — Path B + RFQ Composer + tracker shipped (Phase 5a + 6j + 6k). Was the biggest open gap.
+- ✅ **Multi-award RFQ** — `awardedQuotes[]` + per-quote `itemIds` + `partially-awarded` RFQ status + multi-PO submit (Phase 6k).
+- ✅ **Cross-category basket detection** at Step 2 + Authorize gate at Step 4 (Phase 6i + 6m).
+- ✅ **Manual multi-vendor split** on Path A (Phase 6m) — closes the loophole where a single vendor could be picked for a cross-category basket.
+- ✅ **Inline Atlas insights** restored across all 4 steps (Phase 6l) — were stripped during the Buyamia → Finn's reshape; now back in the center column where they belong.
+
+### Open backlog
+
+1. **Atlas chat is canned.** `sendAtlas()` posts a fixed placeholder response. The cards on the right panel are real; the chat isn't yet wired to an LLM.
+2. **Mid-RFQ edit lock** — user can still go back to Step 1 and mutate `items` while an RFQ is in flight. The RFQ snapshot doesn't update. Should either lock the back navigation or warn.
+3. **Express-mode `restock=...` interaction with the autonomy picker.** Restock express jumps to Step 1; the per-PO autonomy picker defaults to system mode regardless of "urgency: urgent". Worth a UX pass — urgent restocks may want `manual` by default.
 
 ---
 

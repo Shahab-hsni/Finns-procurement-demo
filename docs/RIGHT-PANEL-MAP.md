@@ -80,40 +80,57 @@ These rules apply to **every** right panel in the platform. If you propose a des
 **Right panel name:** Atlas Copilot
 **Header subtitle:** `"Step N · {step name}"` — content morphs **completely** per step.
 
+> **Inline Atlas insights are in the CENTER, not the right.** Phase 6l restored the Buyamia-style inline banners (Market Price Trends, Suggested Items, Vendor Intel, Vendor History, Logistics Intel, Ready to Launch) inline next to the data they shape — Pillar 3 Proximity of Action. The right panel still holds the slower-burn step-reactive cards documented below. Rule 1 (AI-exclusive surface) bans **mutate actions** from the right panel, not AI in the center.
+
 ### Header subtitle by step
 
 | Step | Subtitle |
 |------|----------|
-| 1 | Items + budget framing. |
+| 1 | Items + venue targets + playbook. |
 | 2 | `primaryVendor ? "Reliability for [name]" : "Vendor reliability + alternatives."` |
 | 3 | Logistics risk on this lane. |
 | 4 | Final audit summary before deploy. |
 | 5 | Hand-off complete. |
 
-### Step-reactive intelligence cards
+### Step-reactive intelligence cards (right panel)
 
 | Step | Card | Description |
 |------|------|-------------|
-| 1 | **Strategic Intent** | Sage card: *"Describe **why** — not just **what**. The clearer your intent, the better I can recommend agents and pools downstream."* + **Spending Pulse** (budget progress bar with this-request preview) + **Safety Buffer** (amber, only when `inventoryContext`) |
-| 2 | **Vendor Reliability** | 3 metrics for `primaryVendor`: Composite / On-time / Cold-chain — each with progress bar |
-| 2 | **Recurring Vendor card** | Sage: *"PT Indo Sayur runs your weekly produce — switch to recurring playbook?"* (appears when vendor pattern matches a candidate recurring SKU) |
-| 3 | **Logistics Risk Map** | 3 risk items: 🌧️ Java Monsoon (+1d) amber · ⚠ Tanjung Priok Port congestion (+6h, +12h) red · ✓ Bali local (all clear) green |
-| 3 | **Venue Lane Preferences** | Per-venue receiving window reminder (e.g. "BC kitchen receives 06:00–10:00, ST evening only") |
-| 4 | **Audit Summary** | 6-row pre-authorize checklist: vendor trust, spend cap, par alignment, venue routing, currency lock, recurring conflict check |
-| 4 | **Mission Brief Active** *(if deployed)* | *"5 DAG stages mapped, agent classes briefed. Stage 1 will trigger immediately on authorization."* |
-| 5 | **Hand-off Summary** | PO id, assigned workflow (`WF-STD` / `WF-RSH` / `WF-REC`), Sourcing Agent name, route to Orders link |
+| 1 | **Strategic Intent** | Sage AgentCTA card — *"Describe **why** — not just **what**. The clearer your intent, the better A-01 (Sourcing) can recommend vendors and playbooks."* + **Spending pulse** mini-row (this-request preview vs the Rp 12jt monthly budget anchor) |
+| 1 | **Category mix** | Per-category line counts + sage progress bars (when basket is non-empty) |
+| 1 | **Similar past POs** | Up to 3 cards from the action log filtered by category overlap (when matches exist) |
+| 2 | **Vendor Reliability** | Composite / on-time / cold-chain bars for the primary vendor + AM WhatsApp line |
+| 2 | **VendorNotePanel** | Read-only team note from `entityNotes` for the primary vendor (editable on Suppliers) |
+| 3 | **Logistics Risk Map** | 3 risk items: 🌧️ Java monsoon · ⚠ Tanjung Priok port · ✓ Bali local |
+| 3 | **Venue Lane Preferences** | Per-venue receiving window reminder ("BC kitchen 06:00–10:00, ST evening only") |
+| 4 | **Audit Summary** | 6-row mini-summary (items, subtotal, playbook, vendor, venues, recurring) |
+| 4 | **Policy preview** | Per-rule pass/review/warn card list — same checks A-04 will run at Stage 3. The Step 4 Authorize gate (center) reads from this. |
+| 5 | **Hand-off complete** | One-line confirmation + playbook agent + Stage 2 reminder |
+
+### Inline Atlas insights (center column, for cross-reference)
+
+> The right panel cards above complement these — they don't duplicate them. The inline banners are where the user is making the decision; the right panel cards are the deeper read.
+
+| Step | Inline banner | Where |
+|------|----|-------|
+| 1 | **Atlas · Market Price Trends** | Above the Request Name card. Per-item ↓/↑ trend chips + recommendation. |
+| 1 | **Atlas · Suggested Items** | Between Line Items and the autonomy picker. Each suggestion has `[+ Add]` to drop into the basket (mutate — center only). |
+| 2 | **Atlas · Vendor Intel** | Above the directory. Directory summary (`N vendors cover this basket, X above trust floor, top match …`). |
+| 2 | **A-01 · {vendor}** history | Below the directory when one vendor is picked. Past interactions + on-time % + buffer recommendation. |
+| 3 | **A-05 · Logistics Intel** | Above the Delivery Window card. Day-of-week + flex assessment chip; branches to per-vendor mini-summaries on multi-vendor flows. |
+| 4 | **Atlas · Ready to Launch / Review Before Launch** | At the top of Step 4. Green when all policy checks pass, amber otherwise. |
 
 ### Express-mode validation (seeded as first Atlas message)
 
 | `expressMode` | Atlas opening line |
 |---------------|--------------------|
 | `reorder` | *"I've validated this re-order from [source]. Prices stable, vendor ([name]) reliability holding at [N], Sourcing Agent ready to deploy. Skip to authorization when you're ready."* |
-| `restock` | *"I've validated this restock. Critical SKU items locked, vendor pre-selected, urgency set to urgent. Pick your autonomy tier and deploy."* |
+| `restock` | *"I've validated this restock. Critical SKU items locked, vendor pre-selected, urgency set to urgent."* |
 | `blank` | *"Express lane open. Add line items below — I'll validate prices against the 30-day market median in real time."* |
 
 ### Always-on chat input (pinned bottom)
 
-Placeholder adapts to current step. Step-aware responses (e.g. Step 3: *"+1.5d buffer recommended for this lane (Java monsoon, Tanjung Priok congestion)."*).
+Placeholder adapts to current step (`Ask Atlas about {step label}…`). Currently the chat is canned — sendAtlas posts a fixed reply. Backlog item.
 
 ---
 
@@ -438,7 +455,7 @@ Examples:
 - AgentCTA reasoning chip reads **"Insight"** instead of "Auto" — same reasoning text, framed as reference material, not as a recommendation to approve.
 - No defer / decline tri-row (Phase 6 collapsed those — they were always toast-stubbed anyway).
 - Auto-pre-pick of vendor in the wizard does not run.
-- Submit button copy on Step 4 reads "Authorize · Route to Orders" (no agent hand-off).
+- New Request Step 4 Authorize button copy adapts: single-vendor manual reads `"Authorize · Route to Orders"`, single-vendor auto reads `"Authorize · Hand off to A-04"`. Multi-PO modes (multi-award RFQ, auto-split, manual multi-vendor) read `"Authorize · Create N POs"` / `"Authorize · Finalize N POs"`.
 
 **System pause (`agentsPaused === true`)**:
 - All Auto entities behave as if Manual until resumed.

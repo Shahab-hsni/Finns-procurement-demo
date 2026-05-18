@@ -29,7 +29,8 @@ interface SuppliersPageProps {
 }
 
 // ── Labor Switch (Manual Takeover) ────────────────────────────────
-type LaborMode = 'agent' | 'manual';
+// Phase 6: aligned with AutonomyMode in lib/autonomy.ts.
+type LaborMode = 'manual' | 'auto';
 
 // ── Semantic Category Palette ─────────────────────────────────────
 
@@ -518,11 +519,11 @@ function LaborSwitch({
   compact?: boolean;
   onOpenAgent?: () => void;
 }) {
-  const agentActive = mode === 'agent';
+  const agentActive = mode === 'auto';
   if (compact) {
     return (
       <button
-        onClick={(e) => { e.stopPropagation(); onChange(agentActive ? 'manual' : 'agent'); }}
+        onClick={(e) => { e.stopPropagation(); onChange(agentActive ? 'manual' : 'auto'); }}
         title={agentActive ? `${agentBadge(agent)} executing — click to take over manually` : 'Manual takeover active — click to release back to Agent'}
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border transition-colors whitespace-nowrap ${
           agentActive
@@ -538,7 +539,7 @@ function LaborSwitch({
   return (
     <div className={`inline-flex items-stretch rounded-full border ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-gray-200 bg-gray-50'}`}>
       <button
-        onClick={(e) => { e.stopPropagation(); onChange('agent'); onOpenAgent?.(); }}
+        onClick={(e) => { e.stopPropagation(); onChange('auto'); onOpenAgent?.(); }}
         className={`flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full text-[10px] font-semibold transition-colors ${
           agentActive
             ? 'bg-[#87986a] text-white shadow-sm'
@@ -587,7 +588,7 @@ function AgentStatusLine({
   const sageText = isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]';
   const amberText = 'text-amber-500';
   const subText = isDark ? 'text-gray-500' : 'text-gray-500';
-  if (mode === 'agent') {
+  if (mode === 'auto') {
     return (
       <div className={`flex items-center gap-1.5 ${dense ? 'text-[9px]' : 'text-[10px]'} ${subText}`}>
         <span className="relative flex h-1.5 w-1.5">
@@ -625,9 +626,9 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
   const panelBg = isDark ? 'bg-[#1a1a1a]' : 'bg-white';
 
   // ── Labor Switch (Manual Takeover) ─────────────────────────────
-  // Per-vendor steering mode. Default 'agent' for every vendor.
+  // Per-vendor steering mode. Default 'auto' for every vendor.
   const [laborMode, setLaborMode] = useState<Record<string, LaborMode>>({});
-  const getMode = useCallback((id: string): LaborMode => laborMode[id] ?? 'agent', [laborMode]);
+  const getMode = useCallback((id: string): LaborMode => laborMode[id] ?? 'auto', [laborMode]);
   const setMode = useCallback((id: string, mode: LaborMode) => {
     setLaborMode(prev => ({ ...prev, [id]: mode }));
   }, []);
@@ -1656,7 +1657,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
           <div className="flex items-center gap-1.5 ml-auto">
             {/* Bulk Labor Switch — pause / resume agents across the network */}
             <button
-              onClick={() => bulkSetMode(checkedIds, allManual ? 'agent' : 'manual')}
+              onClick={() => bulkSetMode(checkedIds, allManual ? 'auto' : 'manual')}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-colors whitespace-nowrap ${
                 allManual
                   ? isDark ? 'border-[#87986a]/50 bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25'
@@ -2076,9 +2077,9 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             <AgentCTA
               isDark={isDark}
               variant="inline"
+              forceMode={getMode(selected.id)}
               agentLabel={`${agentBadge(selected.assignedAgent)} · ${selected.assignedAgent.role}`}
               reasoning={selected.agentNotes}
-              offModeMessage={`Use the metrics above to evaluate ${selected.name}. Agent recommendations are suppressed.`}
             />
           )}
         </div>
@@ -2728,7 +2729,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
           <div className="ml-auto flex items-center gap-2 shrink-0">
             <div className={`hidden md:flex items-center gap-1.5 text-[10px] ${t.textMuted}`}>
               <Bot className="h-3 w-3" />
-              <span>{SUPPLIERS.reduce((sum, s) => sum + (getMode(s.id) === 'agent' ? s.assignedAgent.activeTasks : 0), 0)} agent tasks executing</span>
+              <span>{SUPPLIERS.reduce((sum, s) => sum + (getMode(s.id) === 'auto' ? s.assignedAgent.activeTasks : 0), 0)} agent tasks executing</span>
               <span className="opacity-50">·</span>
               <Hand className="h-3 w-3 text-amber-500" />
               <span>{SUPPLIERS.filter(s => getMode(s.id) === 'manual').length} on Manual</span>
@@ -3444,12 +3445,10 @@ function renderRelationshipWorkspace(
             <AgentCTA
               isDark={isDark}
               variant="inline"
+              forceMode={getMode(selected.id)}
               agentLabel={`${agentBadge(selected.assignedAgent)} · ${selected.assignedAgent.role}`}
               reasoning={selected.agentNotes}
-              offModeMessage={`Use the metrics, contract status, and order history above to assess ${selected.name}. Agent narrative is hidden in Off mode.`}
               autoExecutionNote={`${agentBadge(selected.assignedAgent)} is actively monitoring this vendor and will propose renegotiations / sourcing alternatives within policy.`}
-              onDefer={() => toast.info(`Deferred A-01 intelligence on ${selected.name}`, { description: 'Snoozed for 24h. SLA and contract sensors keep running.' })}
-              onDecline={() => toast.warning(`Dismissed A-01 intelligence on ${selected.name}`, { description: "Won't re-surface until SLA or pricing signal changes materially." })}
             />
           </div>
         )}

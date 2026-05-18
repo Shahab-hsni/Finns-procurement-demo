@@ -343,7 +343,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-014', name: 'PT Bali Seafood Lestari', type: 'local', region: 'Bali',
     categories: ['Seafood'], venuesServed: ['BC', 'ST', 'RC'],
-    laborMode: 'agent', agent: 'A-01',
+    laborMode: 'auto', agent: 'A-01',
     accountManager: { name: 'Wayan Sukma', whatsapp: '+62 812 3456 7890', telegram: '@wayanseafood' },
     metrics: { composite: 92, onTime: 96, coldChain: 98, quality: 94, leadTimeDays: 1, annualContractIdr: 2_100_000_000 },
     status: 'active', qcAlerts: [],
@@ -351,7 +351,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-021', name: 'CV Indo Sayur', type: 'local', region: 'Bali',
     categories: ['Produce'], venuesServed: ['BC', 'RC', 'SP'],
-    laborMode: 'agent', agent: 'A-01',
+    laborMode: 'auto', agent: 'A-01',
     accountManager: { name: 'Pak Made', whatsapp: '+62 813 5555 1234' },
     metrics: { composite: 88, onTime: 91, coldChain: 86, quality: 90, leadTimeDays: 1, annualContractIdr: 1_400_000_000 },
     status: 'active', qcAlerts: [],
@@ -359,7 +359,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-008', name: 'Krakatoa Coldstore', type: 'regional', region: 'Java',
     categories: ['Protein', 'Seafood'], venuesServed: ['BC', 'ST', 'RC'],
-    laborMode: 'agent', agent: 'A-01',
+    laborMode: 'auto', agent: 'A-01',
     accountManager: { name: 'Budi Hartono', whatsapp: '+62 821 9876 5432', telegram: '@krakatoacold' },
     metrics: { composite: 85, onTime: 89, coldChain: 94, quality: 92, leadTimeDays: 2, annualContractIdr: 3_400_000_000 },
     status: 'active', qcAlerts: [],
@@ -367,7 +367,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-031', name: 'Bintang Distribusi', type: 'regional', region: 'Java',
     categories: ['Beverages'], venuesServed: ['BC', 'RC', 'ST', 'SP'],
-    laborMode: 'agent', agent: 'A-03',
+    laborMode: 'auto', agent: 'A-03',
     accountManager: { name: 'Andi Wijaya', whatsapp: '+62 811 2233 4455' },
     metrics: { composite: 90, onTime: 95, coldChain: 88, quality: 91, leadTimeDays: 2, annualContractIdr: 4_800_000_000 },
     status: 'active', qcAlerts: [],
@@ -375,7 +375,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-007', name: 'Sumber Dairy', type: 'regional', region: 'East Java',
     categories: ['Dairy'], venuesServed: ['BC', 'RC', 'SP'],
-    laborMode: 'agent', agent: 'A-01',
+    laborMode: 'auto', agent: 'A-01',
     accountManager: { name: 'Sari Wahyuni', whatsapp: '+62 815 6677 8899' },
     metrics: { composite: 87, onTime: 92, coldChain: 95, quality: 88, leadTimeDays: 2, annualContractIdr: 1_900_000_000 },
     status: 'active', qcAlerts: [],
@@ -391,7 +391,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-018', name: 'Eka Packaging', type: 'local', region: 'Bali',
     categories: ['Other'], venuesServed: ['BC', 'RC', 'SP'],
-    laborMode: 'agent', agent: 'A-01',
+    laborMode: 'auto', agent: 'A-01',
     accountManager: { name: 'Eka Ratnasari', whatsapp: '+62 812 7777 8888' },
     metrics: { composite: 78, onTime: 82, coldChain: 100, quality: 80, leadTimeDays: 3, annualContractIdr: 620_000_000 },
     status: 'active', qcAlerts: [],
@@ -399,7 +399,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-009', name: 'AUS Premium Meats', type: 'import', region: 'Australia',
     categories: ['Protein'], venuesServed: ['ST', 'BC'],
-    laborMode: 'agent', agent: 'A-01',
+    laborMode: 'auto', agent: 'A-01',
     accountManager: { name: 'James Whitford', whatsapp: '+61 4 1234 5678' },
     metrics: { composite: 89, onTime: 87, coldChain: 96, quality: 97, leadTimeDays: 10, annualContractIdr: 6_800_000_000 },
     status: 'active', qcAlerts: [],
@@ -407,7 +407,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-027', name: 'Kopi Bali Roastery', type: 'local', region: 'Bali',
     categories: ['Beverages', 'Dry Goods'], venuesServed: ['BC', 'RC', 'ST', 'SP'],
-    laborMode: 'agent', agent: 'A-01',
+    laborMode: 'auto', agent: 'A-01',
     accountManager: { name: 'Ketut Astawa', whatsapp: '+62 819 5555 6666', telegram: '@kopibalir' },
     metrics: { composite: 93, onTime: 96, coldChain: 100, quality: 95, leadTimeDays: 1, annualContractIdr: 1_100_000_000 },
     status: 'active', qcAlerts: [],
@@ -415,7 +415,7 @@ export const finnsSuppliers: FinnsSupplier[] = [
   {
     id: 'SUP-052', name: 'Pulau Dry Goods', type: 'local', region: 'Bali',
     categories: ['Dry Goods'], venuesServed: ['BC', 'RC', 'SP'],
-    laborMode: 'agent', agent: 'A-01',
+    laborMode: 'auto', agent: 'A-01',
     accountManager: { name: 'Nyoman Suparta', whatsapp: '+62 813 1111 2222' },
     metrics: { composite: 84, onTime: 90, coldChain: 100, quality: 86, leadTimeDays: 2, annualContractIdr: 880_000_000 },
     status: 'active', qcAlerts: [],
@@ -426,42 +426,42 @@ export const finnsSuppliers: FinnsSupplier[] = [
 
 export const finnsSKUs: FinnsSKU[] = [
   // Seafood
-  { id: 'SKU-0421', name: 'Yellowfin Tuna (sashimi grade)', category: 'Seafood', venues: ['ST'],                     uom: 'kg',   onHand: 8,   par: 12,  burnRate: 4.2,  daysOfCover: 1.9,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3041' },
-  { id: 'SKU-0422', name: 'Yellowfin Tuna (food grade)',    category: 'Seafood', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 22,  par: 30,  burnRate: 7.5,  daysOfCover: 2.9,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3041' },
-  { id: 'SKU-0423', name: 'Prawns (large, head-on)',        category: 'Seafood', venues: ['BC', 'ST', 'RC'],         uom: 'kg',   onHand: 14,  par: 25,  burnRate: 6.8,  daysOfCover: 2.1,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0424', name: 'Mahi Mahi fillets',              category: 'Seafood', venues: ['BC', 'ST'],               uom: 'kg',   onHand: 18,  par: 20,  burnRate: 4.0,  daysOfCover: 4.5,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0421', name: 'Yellowfin Tuna (sashimi grade)', category: 'Seafood', venues: ['ST'],                     uom: 'kg',   onHand: 8,   par: 12,  burnRate: 4.2,  daysOfCover: 1.9,  agent: 'A-02', laborMode: 'auto', latestPO: 'PO-3041' },
+  { id: 'SKU-0422', name: 'Yellowfin Tuna (food grade)',    category: 'Seafood', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 22,  par: 30,  burnRate: 7.5,  daysOfCover: 2.9,  agent: 'A-02', laborMode: 'auto', latestPO: 'PO-3041' },
+  { id: 'SKU-0423', name: 'Prawns (large, head-on)',        category: 'Seafood', venues: ['BC', 'ST', 'RC'],         uom: 'kg',   onHand: 14,  par: 25,  burnRate: 6.8,  daysOfCover: 2.1,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0424', name: 'Mahi Mahi fillets',              category: 'Seafood', venues: ['BC', 'ST'],               uom: 'kg',   onHand: 18,  par: 20,  burnRate: 4.0,  daysOfCover: 4.5,  agent: 'A-02', laborMode: 'auto' },
 
   // Protein
-  { id: 'SKU-0101', name: 'AUS Wagyu Ribeye MB7+',          category: 'Protein', venues: ['ST'],                     uom: 'kg',   onHand: 5,   par: 8,   burnRate: 1.8,  daysOfCover: 2.8,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3043' },
-  { id: 'SKU-0102', name: 'Pork Belly, skin-on',            category: 'Protein', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 28,  par: 35,  burnRate: 8.4,  daysOfCover: 3.3,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0103', name: 'Chicken thighs, boneless',       category: 'Protein', venues: ['BC', 'RC', 'SP'],         uom: 'kg',   onHand: 42,  par: 50,  burnRate: 12.6, daysOfCover: 3.3,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0104', name: 'Lamb rack, frenched',            category: 'Protein', venues: ['ST'],                     uom: 'kg',   onHand: 9,   par: 12,  burnRate: 2.4,  daysOfCover: 3.8,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0101', name: 'AUS Wagyu Ribeye MB7+',          category: 'Protein', venues: ['ST'],                     uom: 'kg',   onHand: 5,   par: 8,   burnRate: 1.8,  daysOfCover: 2.8,  agent: 'A-02', laborMode: 'auto', latestPO: 'PO-3043' },
+  { id: 'SKU-0102', name: 'Pork Belly, skin-on',            category: 'Protein', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 28,  par: 35,  burnRate: 8.4,  daysOfCover: 3.3,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0103', name: 'Chicken thighs, boneless',       category: 'Protein', venues: ['BC', 'RC', 'SP'],         uom: 'kg',   onHand: 42,  par: 50,  burnRate: 12.6, daysOfCover: 3.3,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0104', name: 'Lamb rack, frenched',            category: 'Protein', venues: ['ST'],                     uom: 'kg',   onHand: 9,   par: 12,  burnRate: 2.4,  daysOfCover: 3.8,  agent: 'A-02', laborMode: 'auto' },
 
   // Produce
-  { id: 'SKU-0201', name: 'Mixed greens (rocket, lettuce)', category: 'Produce', venues: ['BC', 'RC', 'ST'],         uom: 'kg',   onHand: 15,  par: 18,  burnRate: 6.0,  daysOfCover: 2.5,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3042' },
-  { id: 'SKU-0202', name: 'Tomatoes, vine-ripened',         category: 'Produce', venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 36,  par: 40,  burnRate: 11.0, daysOfCover: 3.3,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3042' },
-  { id: 'SKU-0203', name: 'Avocado, hass',                  category: 'Produce', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 24,  par: 28,  burnRate: 7.0,  daysOfCover: 3.4,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0204', name: 'Lime, key',                      category: 'Produce', venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 32,  par: 35,  burnRate: 9.5,  daysOfCover: 3.4,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0201', name: 'Mixed greens (rocket, lettuce)', category: 'Produce', venues: ['BC', 'RC', 'ST'],         uom: 'kg',   onHand: 15,  par: 18,  burnRate: 6.0,  daysOfCover: 2.5,  agent: 'A-02', laborMode: 'auto', latestPO: 'PO-3042' },
+  { id: 'SKU-0202', name: 'Tomatoes, vine-ripened',         category: 'Produce', venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 36,  par: 40,  burnRate: 11.0, daysOfCover: 3.3,  agent: 'A-02', laborMode: 'auto', latestPO: 'PO-3042' },
+  { id: 'SKU-0203', name: 'Avocado, hass',                  category: 'Produce', venues: ['BC', 'RC'],               uom: 'kg',   onHand: 24,  par: 28,  burnRate: 7.0,  daysOfCover: 3.4,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0204', name: 'Lime, key',                      category: 'Produce', venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 32,  par: 35,  burnRate: 9.5,  daysOfCover: 3.4,  agent: 'A-02', laborMode: 'auto' },
 
   // Dairy
-  { id: 'SKU-0301', name: 'Butter, salted (Anchor)',        category: 'Dairy',   venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 24,  par: 30,  burnRate: 6.8,  daysOfCover: 3.5,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3045' },
-  { id: 'SKU-0302', name: 'Burrata',                        category: 'Dairy',   venues: ['ST'],                     uom: 'pcs',  onHand: 12,  par: 18,  burnRate: 4.0,  daysOfCover: 3.0,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0303', name: 'Milk, whole UHT (1L)',           category: 'Dairy',   venues: ['BC', 'RC', 'SP'],         uom: 'L',    onHand: 78,  par: 100, burnRate: 26.0, daysOfCover: 3.0,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0304', name: 'Cream, heavy (1L)',              category: 'Dairy',   venues: ['BC', 'RC', 'ST'],         uom: 'L',    onHand: 18,  par: 24,  burnRate: 6.5,  daysOfCover: 2.8,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0301', name: 'Butter, salted (Anchor)',        category: 'Dairy',   venues: ['BC', 'RC', 'ST', 'SP'],   uom: 'kg',   onHand: 24,  par: 30,  burnRate: 6.8,  daysOfCover: 3.5,  agent: 'A-02', laborMode: 'auto', latestPO: 'PO-3045' },
+  { id: 'SKU-0302', name: 'Burrata',                        category: 'Dairy',   venues: ['ST'],                     uom: 'pcs',  onHand: 12,  par: 18,  burnRate: 4.0,  daysOfCover: 3.0,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0303', name: 'Milk, whole UHT (1L)',           category: 'Dairy',   venues: ['BC', 'RC', 'SP'],         uom: 'L',    onHand: 78,  par: 100, burnRate: 26.0, daysOfCover: 3.0,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0304', name: 'Cream, heavy (1L)',              category: 'Dairy',   venues: ['BC', 'RC', 'ST'],         uom: 'L',    onHand: 18,  par: 24,  burnRate: 6.5,  daysOfCover: 2.8,  agent: 'A-02', laborMode: 'auto' },
 
   // Beverages
-  { id: 'SKU-0501', name: 'Bintang Beer 330ml (case 24)',   category: 'Beverages', venues: ['BC', 'RC', 'SP'],       uom: 'case', onHand: 84,  par: 100, burnRate: 32.0, daysOfCover: 2.6,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3044' },
-  { id: 'SKU-0502', name: 'Prosecco, Treviso DOC (750ml)',  category: 'Beverages', venues: ['RC', 'ST'],             uom: 'btl',  onHand: 96,  par: 120, burnRate: 22.0, daysOfCover: 4.4,  agent: 'A-02', laborMode: 'agent', latestPO: 'PO-3046' },
-  { id: 'SKU-0503', name: 'House red, Shiraz (AU)',         category: 'Beverages', venues: ['RC', 'ST'],             uom: 'btl',  onHand: 64,  par: 80,  burnRate: 14.0, daysOfCover: 4.6,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0504', name: 'Coca-Cola 330ml (case 24)',      category: 'Beverages', venues: ['BC', 'SP', 'RC'],       uom: 'case', onHand: 56,  par: 80,  burnRate: 25.0, daysOfCover: 2.2,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0501', name: 'Bintang Beer 330ml (case 24)',   category: 'Beverages', venues: ['BC', 'RC', 'SP'],       uom: 'case', onHand: 84,  par: 100, burnRate: 32.0, daysOfCover: 2.6,  agent: 'A-02', laborMode: 'auto', latestPO: 'PO-3044' },
+  { id: 'SKU-0502', name: 'Prosecco, Treviso DOC (750ml)',  category: 'Beverages', venues: ['RC', 'ST'],             uom: 'btl',  onHand: 96,  par: 120, burnRate: 22.0, daysOfCover: 4.4,  agent: 'A-02', laborMode: 'auto', latestPO: 'PO-3046' },
+  { id: 'SKU-0503', name: 'House red, Shiraz (AU)',         category: 'Beverages', venues: ['RC', 'ST'],             uom: 'btl',  onHand: 64,  par: 80,  burnRate: 14.0, daysOfCover: 4.6,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0504', name: 'Coca-Cola 330ml (case 24)',      category: 'Beverages', venues: ['BC', 'SP', 'RC'],       uom: 'case', onHand: 56,  par: 80,  burnRate: 25.0, daysOfCover: 2.2,  agent: 'A-02', laborMode: 'auto' },
 
   // Dry Goods
-  { id: 'SKU-0601', name: 'Olive oil, EV (5L tin)',         category: 'Dry Goods', venues: ['BC', 'RC', 'ST'],       uom: 'tin',  onHand: 14,  par: 18,  burnRate: 2.4,  daysOfCover: 5.8,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0602', name: 'Jasmine rice (25kg sack)',       category: 'Dry Goods', venues: ['BC', 'RC', 'SP'],       uom: 'sack', onHand: 22,  par: 30,  burnRate: 4.5,  daysOfCover: 4.9,  agent: 'A-02', laborMode: 'agent' },
-  { id: 'SKU-0603', name: 'Kopi Bali roasted (1kg)',        category: 'Dry Goods', venues: ['BC', 'RC', 'ST', 'SP'], uom: 'kg',   onHand: 38,  par: 45,  burnRate: 8.0,  daysOfCover: 4.8,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0601', name: 'Olive oil, EV (5L tin)',         category: 'Dry Goods', venues: ['BC', 'RC', 'ST'],       uom: 'tin',  onHand: 14,  par: 18,  burnRate: 2.4,  daysOfCover: 5.8,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0602', name: 'Jasmine rice (25kg sack)',       category: 'Dry Goods', venues: ['BC', 'RC', 'SP'],       uom: 'sack', onHand: 22,  par: 30,  burnRate: 4.5,  daysOfCover: 4.9,  agent: 'A-02', laborMode: 'auto' },
+  { id: 'SKU-0603', name: 'Kopi Bali roasted (1kg)',        category: 'Dry Goods', venues: ['BC', 'RC', 'ST', 'SP'], uom: 'kg',   onHand: 38,  par: 45,  burnRate: 8.0,  daysOfCover: 4.8,  agent: 'A-02', laborMode: 'auto' },
 
   // Packaging / Other
-  { id: 'SKU-0801', name: 'Takeaway box, 1000ml (case 100)', category: 'Other',   venues: ['BC', 'SP', 'RC'],        uom: 'case', onHand: 24,  par: 30,  burnRate: 5.5,  daysOfCover: 4.4,  agent: 'A-02', laborMode: 'agent' },
+  { id: 'SKU-0801', name: 'Takeaway box, 1000ml (case 100)', category: 'Other',   venues: ['BC', 'SP', 'RC'],        uom: 'case', onHand: 24,  par: 30,  burnRate: 5.5,  daysOfCover: 4.4,  agent: 'A-02', laborMode: 'auto' },
 ];
 
 // ── Live Orders (7) ──────────────────────────────────────────
@@ -475,7 +475,7 @@ export const finnsLiveOrders: FinnsOrder[] = [
     id: 'PO-3041', supplier: 'PT Bali Seafood Lestari', supplierId: 'SUP-014',
     managedBy: 'A-01', amount: 14_200_000, currency: 'IDR', venues: ['BC', 'ST'],
     category: 'Seafood', workflowTemplate: 'WF-STD',
-    stage: 2, status: 'live', laborMode: 'agent',
+    stage: 2, status: 'live', laborMode: 'auto',
     trace: [
       { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: _yesterday, completedAt: _yesterday },
       { stage: 2, outcome: 'in-progress', agent: 'A-01', startedAt: _yesterday },
@@ -490,7 +490,7 @@ export const finnsLiveOrders: FinnsOrder[] = [
     id: 'PO-3042', supplier: 'CV Indo Sayur', supplierId: 'SUP-021',
     managedBy: 'A-02', amount: 4_800_000, currency: 'IDR', venues: ['BC', 'SP'],
     category: 'Produce', workflowTemplate: 'WF-REC',
-    stage: 3, status: 'live', laborMode: 'agent',
+    stage: 3, status: 'live', laborMode: 'auto',
     trace: [
       { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: _twoDaysAgo, completedAt: _twoDaysAgo },
       { stage: 2, outcome: 'complete', agent: 'A-01', startedAt: _twoDaysAgo, completedAt: _yesterday },
@@ -506,7 +506,7 @@ export const finnsLiveOrders: FinnsOrder[] = [
     id: 'PO-3043', supplier: 'AUS Premium Meats', supplierId: 'SUP-009',
     managedBy: 'A-01', amount: 28_500_000, currency: 'IDR', amountUsd: 1840, fxRateAtQuote: 15490, venues: ['ST'],
     category: 'Protein', workflowTemplate: 'WF-RSH',
-    stage: 1, status: 'live', laborMode: 'agent',
+    stage: 1, status: 'live', laborMode: 'auto',
     trace: [
       { stage: 1, outcome: 'in-progress', agent: 'A-02', startedAt: _today },
       { stage: 2, outcome: 'pending' },
@@ -521,7 +521,7 @@ export const finnsLiveOrders: FinnsOrder[] = [
     id: 'PO-3044', supplier: 'Bintang Distribusi', supplierId: 'SUP-031',
     managedBy: 'A-05', amount: 9_400_000, currency: 'IDR', venues: ['BC', 'SP', 'RC'],
     category: 'Beverages', workflowTemplate: 'WF-STD',
-    stage: 4, status: 'live', laborMode: 'agent',
+    stage: 4, status: 'live', laborMode: 'auto',
     trace: [
       { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: '2026-05-12', completedAt: '2026-05-12' },
       { stage: 2, outcome: 'complete', agent: 'A-01', startedAt: '2026-05-12', completedAt: '2026-05-13' },
@@ -536,7 +536,7 @@ export const finnsLiveOrders: FinnsOrder[] = [
     id: 'PO-3045', supplier: 'Sumber Dairy', supplierId: 'SUP-007',
     managedBy: 'A-05', amount: 3_200_000, currency: 'IDR', venues: ['BC', 'RC'],
     category: 'Dairy', workflowTemplate: 'WF-STD',
-    stage: 5, status: 'live', laborMode: 'agent',
+    stage: 5, status: 'live', laborMode: 'auto',
     trace: [
       { stage: 1, outcome: 'complete', agent: 'A-02', startedAt: '2026-05-13', completedAt: '2026-05-13' },
       { stage: 2, outcome: 'complete', agent: 'A-01', startedAt: '2026-05-13', completedAt: '2026-05-14' },
@@ -587,7 +587,7 @@ export const finnsHistoricalOrders: FinnsOrder[] = [
     id: 'PO-2988', supplier: 'PT Bali Seafood Lestari', supplierId: 'SUP-014',
     managedBy: 'A-01', amount: 12_400_000, currency: 'IDR', venues: ['BC', 'ST'],
     category: 'Seafood', workflowTemplate: 'WF-STD',
-    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    stage: 5, status: 'completed', laborMode: 'auto', trace: [],
     humanDescription: 'Tuna delivery for BC + ST', createdAt: '2026-05-08', deliveredAt: '2026-05-10',
     qcOutcome: 'pass',
   },
@@ -595,7 +595,7 @@ export const finnsHistoricalOrders: FinnsOrder[] = [
     id: 'PO-2989', supplier: 'CV Indo Sayur', supplierId: 'SUP-021',
     managedBy: 'A-02', amount: 4_600_000, currency: 'IDR', venues: ['BC', 'SP'],
     category: 'Produce', workflowTemplate: 'WF-REC',
-    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    stage: 5, status: 'completed', laborMode: 'auto', trace: [],
     humanDescription: 'Weekly produce — recurring', createdAt: '2026-05-06', deliveredAt: '2026-05-09',
     qcOutcome: 'pass',
   },
@@ -603,7 +603,7 @@ export const finnsHistoricalOrders: FinnsOrder[] = [
     id: 'PO-2990', supplier: 'Krakatoa Coldstore', supplierId: 'SUP-008',
     managedBy: 'A-01', amount: 22_000_000, currency: 'IDR', venues: ['BC', 'RC'],
     category: 'Protein', workflowTemplate: 'WF-STD',
-    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    stage: 5, status: 'completed', laborMode: 'auto', trace: [],
     humanDescription: 'Pork belly + chicken thighs bulk', createdAt: '2026-05-04', deliveredAt: '2026-05-07',
     qcOutcome: 'pass',
   },
@@ -611,7 +611,7 @@ export const finnsHistoricalOrders: FinnsOrder[] = [
     id: 'PO-2991', supplier: 'Bintang Distribusi', supplierId: 'SUP-031',
     managedBy: 'A-03', amount: 8_900_000, currency: 'IDR', venues: ['BC', 'SP'],
     category: 'Beverages', workflowTemplate: 'WF-STD',
-    stage: 5, status: 'disputed', laborMode: 'agent', trace: [],
+    stage: 5, status: 'disputed', laborMode: 'auto', trace: [],
     humanDescription: 'Short delivery — 12 cases missing', createdAt: '2026-05-01', deliveredAt: '2026-05-04',
     qcOutcome: 'fail',
   },
@@ -619,7 +619,7 @@ export const finnsHistoricalOrders: FinnsOrder[] = [
     id: 'PO-2992', supplier: 'Sumber Dairy', supplierId: 'SUP-007',
     managedBy: 'A-05', amount: 3_400_000, currency: 'IDR', venues: ['BC', 'RC', 'SP'],
     category: 'Dairy', workflowTemplate: 'WF-STD',
-    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    stage: 5, status: 'completed', laborMode: 'auto', trace: [],
     humanDescription: 'Dairy run — burrata + butter', createdAt: '2026-04-28', deliveredAt: '2026-05-01',
     qcOutcome: 'pass',
   },
@@ -627,7 +627,7 @@ export const finnsHistoricalOrders: FinnsOrder[] = [
     id: 'PO-2993', supplier: 'AUS Premium Meats', supplierId: 'SUP-009',
     managedBy: 'A-01', amount: 31_200_000, currency: 'IDR', amountUsd: 2010, fxRateAtQuote: 15522, venues: ['ST'],
     category: 'Protein', workflowTemplate: 'WF-STD',
-    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    stage: 5, status: 'completed', laborMode: 'auto', trace: [],
     humanDescription: 'Wagyu MB7+ for Stake monthly', createdAt: '2026-04-20', deliveredAt: '2026-04-30',
     qcOutcome: 'pass',
   },
@@ -635,7 +635,7 @@ export const finnsHistoricalOrders: FinnsOrder[] = [
     id: 'PO-2994', supplier: 'Kopi Bali Roastery', supplierId: 'SUP-027',
     managedBy: 'A-01', amount: 6_800_000, currency: 'IDR', venues: ['BC', 'RC', 'ST', 'SP'],
     category: 'Beverages', workflowTemplate: 'WF-REC',
-    stage: 5, status: 'completed', laborMode: 'agent', trace: [],
+    stage: 5, status: 'completed', laborMode: 'auto', trace: [],
     humanDescription: 'Biweekly coffee — all venues', createdAt: '2026-04-22', deliveredAt: '2026-04-23',
     qcOutcome: 'pass',
   },

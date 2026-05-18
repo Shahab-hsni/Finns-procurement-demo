@@ -28,7 +28,8 @@ interface InventoryPageProps {
 }
 
 // ── Workforce attribution (6-agent flat roster) ──────────────────────
-type LaborMode = 'agent' | 'manual';
+// Phase 6: aligned with AutonomyMode in lib/autonomy.ts.
+type LaborMode = 'manual' | 'auto';
 type ParMode = 'ai' | 'manual';
 interface AssignedAgent { id: FinnsAgentId; role: string; }
 function agentBadge(a: AssignedAgent) { return a.id; }
@@ -544,7 +545,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
   // ── Wayne / Fortress: per-SKU steering & physical truth ───────────
   // Per-SKU labor mode (Agent vs Manual user). Default: agent.
   const [laborMode, setLaborMode] = useState<Record<string, LaborMode>>({});
-  const getLaborMode = useCallback((id: string): LaborMode => laborMode[id] ?? 'agent', [laborMode]);
+  const getLaborMode = useCallback((id: string): LaborMode => laborMode[id] ?? 'auto', [laborMode]);
   // setMode is declared further below (after the state it reads in the
   // Resumption Handshake) to avoid a TDZ on the dependency array.
   // Per-SKU par mode — AI Recommended (default) vs Manual Fixed (hard floor).
@@ -1072,7 +1073,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
     const dense = !!opts?.dense;
     return (
       <button
-        onClick={(e) => { e.stopPropagation(); setMode(item.id, isManual ? 'agent' : 'manual'); }}
+        onClick={(e) => { e.stopPropagation(); setMode(item.id, isManual ? 'auto' : 'manual'); }}
         title={isManual
           ? `Human Override active. Click to release back to ${agentLabel(agent)}.`
           : `${agentLabel(agent)} executing. Click to take over manually.`}
@@ -1481,9 +1482,9 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                     {agentLabel(skuAgent)} paused. Forecast and auto-restock suspended. Phase 2 execution stays a read-only mirror of Orders.
                   </div>
                 </div>
-                <button onClick={() => setMode(selected.id, 'agent')}
+                <button onClick={() => setMode(selected.id, 'auto')}
                   className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[10px] font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
-                  <Bot className="h-3 w-3" /> Resume Agent
+                  <Bot className="h-3 w-3" /> Resume Auto
                 </button>
               </div>
             )}
@@ -1530,7 +1531,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 </p>
                 {/* Mode toggle (state, not action) — compact pill */}
                 <div className={`inline-flex items-stretch rounded-full border text-[10px] ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-[#e5e5e0] bg-gray-50'}`}>
-                  <button onClick={() => setMode(selected.id, 'agent')}
+                  <button onClick={() => setMode(selected.id, 'auto')}
                     title={!skuIsManual ? `${agentLabel(skuAgent)} executing autonomously` : `Resume ${agentLabel(skuAgent)}`}
                     className={`flex items-center gap-1 pl-2 pr-2.5 py-0.5 rounded-full font-semibold transition-colors ${
                       !skuIsManual
@@ -2406,19 +2407,19 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               </div>
             )}
 
-            {/* Agent reasoning snippet — mode-aware via AgentCTA */}
+            {/* Agent reasoning snippet — forceMode honours this SKU's
+                per-entity labor switch so the card reflects per-SKU
+                setting, not the system default. */}
             {selected.agentReasoning && (
               <div className="px-4 pb-3">
                 <AgentCTA
                   isDark={isDark}
                   variant="inline"
+                  forceMode={getLaborMode(selected.id)}
                   className={`p-2.5 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}
                   agentLabel={selected.agentTrigger ?? 'A-02 (Restock)'}
                   reasoning={selected.agentReasoning}
-                  offModeMessage="Use the par level, on-hand, and burn rate above to decide if a restock is needed. Drive it via Restock Now."
                   autoExecutionNote={`${selected.agentTrigger ?? 'A-02'} will trigger a restock automatically when par is breached.`}
-                  onDefer={() => toast.info(`Deferred ${selected.name}`, { description: 'Restock proposal snoozed for 4h. Par checks keep running.' })}
-                  onDecline={() => toast.warning(`Declined ${selected.name}`, { description: "Won't auto-suggest again until par drops further or burn rate changes." })}
                 />
               </div>
             )}

@@ -271,7 +271,14 @@ export type OrderStatus =
   | 'cancelled'
   | 'on-hold';
 
-export type OrderLaborMode = 'agent' | 'manual';
+/**
+ * Per-entity labor mode. Aligns with `AutonomyMode` in `lib/autonomy.ts`.
+ * Was `'agent' | 'manual'` (Phase 4 vintage); migrated to `'manual' | 'auto'`
+ * in Phase 6 so per-entity values and the system default speak the same
+ * vocabulary. Old `'agent'` values in localStorage / mock data should
+ * be read as `'auto'` (see seed migration in mockData.ts).
+ */
+export type OrderLaborMode = 'manual' | 'auto';
 
 export interface FinnsOrder {
   id: string;                       // "PO-3041"

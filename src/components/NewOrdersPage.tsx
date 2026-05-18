@@ -28,7 +28,9 @@ interface OrdersPageProps {
 }
 
 // ── Labor Switch (Manual Takeover) ───────────────────────────────
-type LaborMode = 'agent' | 'manual';
+// Phase 6: aligned with AutonomyMode in lib/autonomy.ts.
+// Legacy `'agent'` reads as `'auto'`; the UI labels "Auto" / "Manual".
+type LaborMode = 'manual' | 'auto';
 
 interface AssignedAgent {
   id: number;     // legacy numeric slot; mapped to Finn's A-01..A-05 in agentBadge
@@ -762,7 +764,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   ]);
 
   // ── Labor Switch (Manual Takeover) — Wayne doctrine ────────────
-  // Per-order steering mode. Default 'agent' for every order.
+  // Per-order steering mode. Default 'auto' for every order. Aligns
+  // with the per-PO autonomy picker on the New Request wizard's Step 1.
   const [laborMode, setLaborMode] = useState<Record<string, LaborMode>>({});
   // Per-order force-completed stages (for Manual Takeover of the 5-stage journey).
   const [forceCompletedStages, setForceCompletedStages] = useState<Record<string, number>>({});
@@ -793,20 +796,21 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     items: string;        // multiline string of items
     recurring: boolean;
     frequency: 'weekly' | 'monthly';
-    assignment: 'agent' | 'manual';
+    // 'auto' / 'manual' aligns with LaborMode + AutonomyMode (Phase 6).
+    assignment: LaborMode;
     agentId: number;
   }
   const [draftSheet, setDraftSheet] = useState<DraftMode | null>(null);
   const [draft, setDraft] = useState<DraftState>({
     supplier: '', items: '', recurring: false, frequency: 'weekly',
-    assignment: 'agent', agentId: 7,
+    assignment: 'auto', agentId: 7,
   });
   // Schedules + drafts created in this session — surfaced on the dashboard.
   interface ScheduledEntry {
     id: string;
     label: string;          // e.g. "PO from PT Maju Bersama · 3 items"
     cadence?: 'one-off' | 'weekly' | 'monthly';
-    assignment: 'agent' | 'manual';
+    assignment: LaborMode;
     agentId: number;
     nextRunIso?: string;
   }
@@ -872,14 +876,14 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           items: src.items.join('\n'),
           recurring: false,
           frequency: 'weekly',
-          assignment: 'agent',
+          assignment: 'auto',
           agentId: src.assignedAgent.id,
         });
       }
     } else {
       setDraft({
         supplier: '', items: '', recurring: false, frequency: 'weekly',
-        assignment: 'agent', agentId: 7,
+        assignment: 'auto', agentId: 7,
       });
     }
     setDraftSheet(mode);
@@ -900,7 +904,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       agentId: draft.agentId,
       nextRunIso,
     }, ...prev]);
-    const ownerLabel = draft.assignment === 'agent'
+    const ownerLabel = draft.assignment === 'auto'
       ? `${LEGACY_AGENT_MAP[draft.agentId] ?? 'A-02'} (${draft.agentId === 7 ? 'Logistics' : draft.agentId === 6 ? 'Sourcing' : 'Operations'})`
       : 'You (Manual Takeover from start)';
     setChatMessages(prev => [...prev, {
@@ -913,7 +917,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   }, [draft, closeDraftSheet]);
 
 
-  const getMode = useCallback((id: string): LaborMode => laborMode[id] ?? 'agent', [laborMode]);
+  const getMode = useCallback((id: string): LaborMode => laborMode[id] ?? 'auto', [laborMode]);
 
   const setMode = useCallback((id: string, mode: LaborMode) => {
     setLaborMode(prev => ({ ...prev, [id]: mode }));
@@ -2366,11 +2370,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   // ── Labor Switch (single-order steering) ─────────────────────────
   const LaborSwitch = ({ order }: { order: Order }) => {
     const orderMode = getMode(order.id);
-    const agentActive = orderMode === 'agent';
+    const agentActive = orderMode === 'auto';
     return (
       <div className={`inline-flex items-stretch rounded-full border ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
         <button
-          onClick={() => setMode(order.id, 'agent')}
+          onClick={() => setMode(order.id, 'auto')}
           title={agentActive
             ? `${agentLabel(order.assignedAgent)} executing`
             : `Resume ${agentLabel(order.assignedAgent)}`}
@@ -2583,7 +2587,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     {agentLabel(selectedOrder.assignedAgent)} is in Standby. Every stage below is now an Edit / Execute / Plan task module — open one to log evidence and advance the journey.
                   </p>
                   <button
-                    onClick={() => setMode(selectedOrder.id, 'agent')}
+                    onClick={() => setMode(selectedOrder.id, 'auto')}
                     className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-[#6b7a54] hover:text-[#4a5a3a] transition-colors"
                   >
                     <PlayCircle className="h-3 w-3" /> Resume Agent →
@@ -2932,7 +2936,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                         </span>
                         <span>·</span>
                         <span className="inline-flex items-center gap-1">
-                          {entry.assignment === 'agent'
+                          {entry.assignment === 'auto'
                             ? <><Bot className="h-2.5 w-2.5" /> {LEGACY_AGENT_MAP[entry.agentId] ?? 'A-02'}</>
                             : <><Hand className="h-2.5 w-2.5 text-amber-500" /> Manual from start</>}
                         </span>
@@ -3175,7 +3179,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             the order is still under Agent Active mode. Tells the Admin
             why nothing here is editable and how to unlock. */}
         {selectedOrder && openStage?.orderId === selectedOrder.id
-          && getMode(selectedOrder.id) === 'agent'
+          && getMode(selectedOrder.id) === 'auto'
           && openStage.stageIdx < effectiveStage(selectedOrder)
           && !isBatch && (
           <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
@@ -3225,7 +3229,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     I am standing by. {agentLabel(order.assignedAgent)} suspended. Ask me for data to help you resolve this.
                   </p>
                   <button
-                    onClick={() => setMode(order.id, 'agent')}
+                    onClick={() => setMode(order.id, 'auto')}
                     className={`mt-2 inline-flex items-center gap-1 text-[10px] font-semibold transition-colors ${isDark ? 'text-[#a3b085] hover:text-white' : 'text-[#6b7a54] hover:text-[#4a5a3a]'}`}
                   >
                     <PlayCircle className="h-2.5 w-2.5" /> Resume Agent →
@@ -3344,25 +3348,21 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           );
         })()}
 
-        {/* ── Single: Agent reasoning (mode-aware via AgentCTA) ── */}
+        {/* ── Single: Agent reasoning (mode-aware via AgentCTA).
+            forceMode reflects this specific PO's labor switch so the
+            card respects the per-entity setting, not the system default. */}
         {selectedOrder && !isBatch && (
           <AgentCTA
             isDark={isDark}
+            forceMode={getMode(selectedOrder.id)}
             className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}
             agentLabel={selectedOrder.agentAgent}
             reasoning={selectedOrder.agentReasoning}
             autoExecutionNote={
               selectedOrder.actionKind === 'approve'
                 ? `${selectedOrder.agentAgent} drafted this and is waiting for your approval — above the auto-execute cap.`
-                : `${selectedOrder.agentAgent} is driving this stage in Auto mode.`
+                : `${selectedOrder.agentAgent} is driving this stage in Auto.`
             }
-            offModeMessage={
-              selectedOrder.actionKind === 'approve'
-                ? 'Review the supplier, quote, and ETA above. Approve from your own judgement using the button below — agent recommendations are suppressed in Off mode.'
-                : 'Drive this stage manually using the controls below. Agent reasoning is hidden while autonomy is Off.'
-            }
-            onDefer={() => toast.info(`Deferred ${selectedOrder.id}`, { description: 'The recommendation is snoozed for 4h. It will re-surface in the Needs Action queue after that.' })}
-            onDecline={() => toast.warning(`Declined ${selectedOrder.id}`, { description: 'Recommendation rejected. The agent will not re-suggest this PO without new data.' })}
           />
         )}
 
@@ -4151,9 +4151,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <div>
               <label className={`block text-[11px] font-semibold mb-1.5 ${t.textPrimary}`}>Assignment</label>
               <div className={`grid grid-cols-2 gap-2`}>
-                <button onClick={() => setDraft(d => ({ ...d, assignment: 'agent' }))}
+                <button onClick={() => setDraft(d => ({ ...d, assignment: 'auto' }))}
                   className={`p-3 rounded-lg border text-left transition-colors ${
-                    draft.assignment === 'agent'
+                    draft.assignment === 'auto'
                       ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/50 ring-1 ring-[#87986a]/30' : 'bg-[#f4f6f0] border-[#87986a]/50 ring-1 ring-[#87986a]/30'
                       : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:border-gray-700' : 'bg-white border-[#e5e5e0] hover:border-[#87986a]/30'
                   }`}>
@@ -4176,7 +4176,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>You drive every stage from the start.</p>
                 </button>
               </div>
-              {draft.assignment === 'agent' && (
+              {draft.assignment === 'auto' && (
                 <div className="mt-2 flex items-center gap-2 flex-wrap">
                   <span className={`text-[10px] font-semibold ${t.textMuted}`}>Agent:</span>
                   {agentOptions.map(a => (

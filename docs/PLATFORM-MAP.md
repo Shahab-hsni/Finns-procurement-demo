@@ -442,47 +442,64 @@ Sourcing wizard. Center panel morphs entirely through 5 steps. The user picks a 
 ### 7.4 Orders
 
 - **Route**: `/orders`
-- **One-line**: The cockpit. Order lists, single-order journey, batch console, Audit Mode ledger.
+- **One-line**: The cockpit. Order lists, single-order journey, batch console, Audit Mode ledger. Auto orders **ride the journey end-to-end** on an 8s demo cadence; Manual orders advance only via the Task Module Sheet.
 
 **Purpose**
 
 Cockpit for every PO. The most morphologically complex page in the platform.
 
-- **Left panel**: Groups orders by status (Triage Mode) or expands to a historical ledger (Audit Mode).
-- **Center panel**: Morphs through Default (scheduled / autonomous list), Single Order Journey (with 5-stage DAG), Batch Console (multi-select), and post-execute splashes — and **collapses to 0 width** while Audit Mode is active.
-- **Right panel**: Hosts Atlas chat, the Source Bridge takeover, or — in Audit Mode — Operations Insights / Quick Journey.
+- **Left panel**: Groups orders by **derived** state — Needs Your Action (current HITL gate) vs Autonomous Flow. Scrollable in Triage Mode; expands to full-width historical ledger in Audit Mode.
+- **Center panel**: Morphs through Default (scheduled list), Single Order Journey (with 5-stage DAG), Batch Console, and post-execute splashes — and **collapses to 0 width** while Audit Mode is active.
+- **Right panel**: Hosts Atlas chat, the Source Bridge takeover (full conversation thread per PO), or — in Audit Mode — Operations Insights / Quick Journey.
+
+**Auto-mode engine + HITL gates**
+
+The Orders page hosts the auto-progress engine (`useEffect` in `NewOrdersPage.tsx`, 8s cadence) that walks every Auto PO from Stage 0 → 4 without admin clicks, writing real per-stage artifacts to `agentStageData`. It halts only at:
+
+| Gate | Trigger | Admin's action |
+|------|---------|----------------|
+| Spend-cap approval | `finnsPolicyRules[RUL-001]` is active AND `order.amount > threshold`. **Default INACTIVE.** | Click Approve → Approval Confirmation modal → Confirm. |
+| Perishable QC | `PERISHABLE_KEYWORDS` match in items (wagyu, sashimi, burrata, foie, oyster, mb7). | Click Confirm Delivery → Stage 4 Task Module → upload POD + set QC → Mark Complete. |
+| Disputed | `order.status === 'disputed'`. | Click Resolve Issue → routes to Activity & Governance with `#dispute=PO-XXXX`. |
+
+System-wide pause (Activity & Governance → Agents tab) halts the engine globally.
 
 **States**
 
 | State | Description |
 |-------|-------------|
-| Default | Scheduled + autonomous orders list. |
-| Single Order Journey | Two-column: detail card (with primary CTA + tertiary row) + 5-stage DAG. |
+| Default | Priority feed + Autonomous Flow feed. Derived from `derivedActionKind(order, effectiveStage)`. |
+| Single Order Journey | Two-column: detail card (primary CTA + tertiary row) + 5-stage DAG with trace modals per stage. |
+| Approval Confirmation modal | Pops on Auto + cap-gate Approve click. One-screen: order summary + quote details + policy posture + agent reasoning. Confirm / Cancel / Switch to Manual. |
+| Stage Task Module | Manual-mode form per stage (Execute / Edit / Plan). Inputs vary per stage. Stage 1 pre-fills from RFQ runtime when `fromRfqId` is set. |
 | Batch Selected | Batch Console — approve / confirm / resolve counts across selected orders. |
 | Journey Complete | Single-order success splash with cost / labor savings. |
 | Batch Complete | Batch finalization splash. |
-| Audit Mode | Left panel expands to full width and surfaces the combined ledger of live + historical orders. Center collapses. Right panel swaps to Operations Insights (no row selected) or Quick Journey (row selected). 380ms cubic-bezier spring transition. Escape collapses back when no row is selected. |
+| Source Bridge thread | Right-panel takeover — full conversation history (inbound quote + admin messages + synthesized vendor replies). WhatsApp / Email channel picker. |
+| Audit Mode | Left expands full width, center collapses, right shows Operations Insights (no row) or Quick Journey (row). 380ms spring transition. |
 
 **Actions**
 
-General journey + chat:
-
 | Action | Description | Navigates to |
 |--------|-------------|--------------|
+| Approve (Auto + cap gate) | Opens Approval Confirmation modal. Confirm advances Stage 1 → 2; engine takes over from Stage 2. | — |
+| Approve (Manual) | Opens Stage 1 Task Module (admin fills channel/lead/amt). | — |
+| Confirm Delivery (any mode) | Opens Stage 4 Task Module (POD upload + QC outcome + receiver). Mark Complete → terminal. | — |
+| Resolve Issue | Routes to Activity & Governance disputes panel. | **Activity & Governance** |
 | Clear selection | Clears the multi-select set. | — |
 | ⌘K trigger | Opens the Command Palette. | — |
-| Track Shipment (⋯ menu) | Stage-gated; sets selection state. Visible when stage ≥ 4 (In Transit). | — |
-| Message Supplier (⋯ menu) | Opens the Source Bridge in the right panel. | — |
-| Repeat Order (⋯ menu) | Stage-gated; opens the Draft Sheet pre-filled. Visible when stage = 5 (Delivered & Checked). | — |
+| Track Shipment (⋯ menu) | Stage-gated; visible when effectiveStage ≥ 3 (In Transit). | — |
+| Message Supplier (⋯ menu) | Opens the Source Bridge thread in the right panel. | — |
+| Repeat Order (⋯ menu) | Stage-gated; opens the Draft Sheet pre-filled. Visible when effectiveStage = 4 (Delivered & Checked). | — |
 | Re-order | Carbon-copies a delivered order into New Request. | **New Request** |
-| Resume Agent | Returns the order from Manual Takeover to agent mode. | — |
+| Resume Auto | Returns the order from Manual Takeover to Auto mode. | — |
 | Back to orders | Clears single-order selection. | — |
-| Advance Stage | Advances the 5-stage DAG. | — |
 | Execute Batch | Runs the action across all selected orders. | — |
-| Stage module — Save Draft | Saves manual-mode stage entries. | — |
-| Stage module — Save & Mark Complete | Saves and closes the stage module. | — |
+| Stage module — Save Draft | Saves manual-mode stage entries without advancing. | — |
+| Stage module — Save & Mark Complete | Writes to manualStageData + forceCompleteStage. Stage 4 also stamps completedIds (terminal). | — |
 | Draft Sheet — Submit | Creates a new order from the draft. | — |
-| Atlas chat send | Sends a message to Atlas. | — |
+| Source Bridge — Send | Appends to the per-PO conversation thread + logs to action log. Panel stays open. | — |
+| Atlas chat send | Sends a message to Atlas (canned response today). | — |
 | Managed by · Agent A-NN | Tertiary link — jumps to that agent's profile in Activity & Governance. | **Activity & Governance** |
 
 Audit Mode:
@@ -512,16 +529,18 @@ Audit Mode:
 
 | Modal | Description |
 |-------|-------------|
-| Task Module Sheet | 5-stage interactive sheet — Review or Execute mode. |
+| Task Module Sheet | 5-stage interactive sheet — Review or Execute mode. Reads from manualStageData → agentStageData → synthesizer as fallback. |
+| Approval Confirmation modal | Auto + cap-gate sign-off pop-up. Confirm advances Stage 1 → 2; Switch to Manual flips the entity and opens the Stage 1 Task Module instead. |
 | Draft Sheet | New / re-order draft form (recurring, frequency, labor assignment, target venue). |
 | ⌘K Command Palette | Fuzzy search across orders. |
-| Source Bridge | Right-panel takeover — WhatsApp / Telegram supplier composer. |
+| Source Bridge | Right-panel takeover — full conversation thread per PO. WhatsApp / Email channels (no Telegram — Bali rule). |
 
 **Outgoing navigation**
 
 - **→ Activity & Governance** (Managed by · Agent link)
+- **→ Activity & Governance** (Resolve Issue on a disputed PO; sets `#dispute=PO-XXXX`)
 - **→ New Request** (Re-order; sets `#intent=express&mode=reorder&from=...&vendor=...&items=...`, jumps to Step 4 pre-filled)
-- **→ Suppliers** *(data edge)* — Stage 5 (Delivered & Checked) outcome=fail dispatches `finns-qc-failure`. Suppliers pushes an amber alert card into its alert state. No navigation.
+- **→ Suppliers** *(data edge)* — Stage 4 (Delivered & Checked) outcome=fail dispatches `finns-qc-failure`. Suppliers pushes an amber alert card into its alert state. No navigation.
 
 ---
 

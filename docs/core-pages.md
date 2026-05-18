@@ -435,27 +435,63 @@ Compiled list of every mutating action on this page (excludes navigation, filter
 2. ⋯ → "Repeat Order" → Draft Sheet opens pre-filled with the original line items + vendor
 3. User edits if needed → Submit, OR clicks **Re-order** in the journey detail card → routes to New Request Step 4 (Review) pre-filled
 
-### Single order approval flow
+### Auto-mode autonomous flow (default)
 
-1. PO at `stage: 2` lands in Triage with Spend Watchdog flag
-2. User opens the order → reviews Atlas reasoning + quote details
-3. **Approve & Execute** → Stage 3 advances → PO sent to vendor
-4. Atlas chat posts "PO-XXXX issued to {supplier}"
+Auto orders **ride the journey end-to-end without admin clicks**. The auto-progress engine (`NewOrdersPage` useEffect, 8s cadence) walks each Auto order through stages 0 → 1 → 2 → 3 → 4, halting only at real HITL gates. Each advance:
+
+1. Writes realistic stage artifacts to `agentStageData` (policy ref, carrier, tracking, POD filename, real receiving-lead names).
+2. Stamps `stageCompletedAt[orderId][fromStage]`.
+3. Posts a stage-specific Atlas chat narration ("A-04 cleared the policy stack on PO-XXXX. Policy ref POL-2026-YYYYY. PO PO-XXXX_PO_v1.pdf issued to {supplier}.").
+4. Logs an `auto: true` action entry to the action log.
+
+When the order reaches Stage 4 on a **non-perishable** basket, the engine auto-clears it (auto-QC pass → `completedIds`). Zero clicks end-to-end.
+
+### Auto-mode HITL gates
+
+Auto orders **only halt** at one of three gates:
+
+| Gate | Trigger | What the admin does |
+|------|---------|---------------------|
+| **Stage 1 — Spend cap approval** | Cap rule (`finnsPolicyRules[id=RUL-001]`) is **active** AND `order.amount > threshold`. Default state is INACTIVE — the demo flows end-to-end. Admin enables it from A&G → Policy tab if they want segregation-of-duties for material spend. | Click **Approve** → **Approval Confirmation modal** opens (one-screen review: quote summary + policy posture + agent reasoning). Confirm → agent rides from Stage 2 onward. Cancel / Switch to Manual also available. |
+| **Stage 4 — Perishable QC** | Basket contains a keyword from `PERISHABLE_KEYWORDS` (`wagyu`, `sashimi`, `burrata`, `foie`, `oyster`, `mb7`). | Click **Confirm Delivery** → Stage 4 Task Module opens. Admin uploads POD photo, sets QC outcome (pass / fail / conditional), names the receiving staff, then Mark Complete → order goes terminal. |
+| **Disputed orders** | `order.status === 'disputed'`. | Click **Resolve Issue** → routes to Activity & Governance with `#dispute=PO-XXXX`. Dispute panel governs the resolution. |
+
+The priority feed (left panel "Needs Your Action" card) is **derived from current state, not seeded group**. An order shows up there iff `derivedActionKind(order, effectiveStage)` returns a non-null value. Once the admin clears the gate, the order leaves the priority feed via `actionTakenIds` (Approve) or `completedIds` (Confirm Delivery / terminal).
+
+### Single order approval flow (cap rule active)
+
+1. PO at Stage 1 above the cap threshold → priority feed surfaces with **Approve** CTA.
+2. User clicks Approve → **Approval Confirmation modal** opens.
+3. Modal shows: order id + supplier + amount, the Stage 1 quote details (channel, lead time), the policy gate detail (which rule, how much over), and the agent's reasoning.
+4. Confirm Approval → `executeAction(id)` runs:
+   - `forceCompleteStage(id, currentStage)` advances Stage 1 → 2.
+   - Order moves into `actionTakenIds` (leaves priority feed, no false "Completed" badge).
+   - The auto-progress engine takes it from Stage 2 onwards.
+5. Switch to Manual button (in the modal footer) — flips the entity to Manual and opens the Stage 1 Task Module so the admin fills the form themselves.
 
 ### Batch approval flow
 
-1. User multi-selects multiple orders in Triage (cmd-click or checkbox)
-2. Center morphs to Batch Console
-3. **Execute Batch** → all selected orders advance their relevant stage
-4. Batch Complete splash
+1. User multi-selects multiple orders in Triage (cmd-click or checkbox).
+2. Center morphs to Batch Console.
+3. **Execute Batch** → all selected orders advance their relevant stage.
+4. Batch Complete splash. (Note: the Approval Confirmation modal is per-order; batch execute still uses the bulk path.)
 
 ### Manual Takeover flow
 
-1. User toggles the order to Manual mode (journey detail card)
-2. Right panel swaps to Manual Takeover Copilot
-3. Each stage opens in Task Module Sheet (Execute mode)
-4. User saves & marks complete per stage
-5. Optional: Resume Agent at any point
+1. User toggles the order to Manual mode (labor switch on the order card or in the modal).
+2. Right panel swaps to Manual Takeover Copilot.
+3. The priority-feed CTA changes from "Approve" to **"Continue manually"** → click opens the Stage 1 Task Module in Execute mode.
+4. Admin fills the inputs (channel, lead time, quote amount — pre-filled from RFQ runtime when available per Phase 6p), saves → stage advances.
+5. Repeats per stage. Stage 2: PDF + policy ref. Stage 3: carrier + tracking + ETA. Stage 4: POD + QC outcome + receiver.
+6. Optional: Resume Auto at any point. The agent picks up the next un-touched stage.
+
+### Confirm Delivery flow (Stage 4 QC)
+
+1. Order arrives at Stage 4 with perishable items (Auto) OR admin has been driving in Manual all along.
+2. Priority feed shows **Confirm Delivery** CTA.
+3. Click → Stage 4 Task Module opens with the inputs: POD file upload, QC outcome (pass / fail / conditional), receiving staff name.
+4. Mark Complete → `forceCompleteStage(id, 4)` + `completedIds` add → terminal.
+5. On QC fail, a `finns-qc-failure` window event fires so the Suppliers page trust panel can react.
 
 ### Active Handshake (delegation within manual mode)
 
@@ -552,64 +588,52 @@ On mount and on every `hashchange`, Orders inspects `window.location.hash`:
 
 ## 1.13 Mode-Awareness · Manual Baseline Audit
 
-The Orders page (the cockpit) must be fully usable in `Off` mode — a Procurement Manager with no agents running needs to be able to progress every PO from Request through Delivered & Checked. See `PLATFORM-MAP.md § 3a` for the global model.
+> ⚠ The 3-tier `Off · Assist · Auto` model is gone. Current model is **per-entity `manual` | `auto`** + a system-wide pause (Activity & Governance → Agents tab). Atlas chat, smart features, the Auto-progress engine — all are always on at the **platform** level; the per-PO labor switch decides what runs on each order.
+
+### Auto vs Manual at the order level (current behaviour)
+
+| | **Auto (default for new POs)** | **Manual** |
+|---|---|---|
+| Stage advance | Auto-progress engine rides 0 → 4 on an 8s demo cadence. Halts only at HITL gates. | Admin clicks the stage dot or the priority-feed CTA → Task Module opens → admin fills inputs → Mark Complete advances the stage. |
+| Stage artifacts (Stage 1: channel/lead/amt, Stage 2: PO PDF/policy ref, etc.) | Agent writes to `agentStageData` at advance time. Trace modal shows real values attributed to the agent. | Admin writes to `manualStageData` in the Task Module. Trace modal shows real values attributed to "Admin Verified". |
+| HITL gates that pause Auto | Cap rule (if active) + perishable QC at Stage 4 + disputed orders. Nothing else. | N/A — every stage is admin-driven by definition. |
+| Priority-feed CTA | "Approve" → Approval Confirmation modal (sign-off only). "Confirm Delivery" → Stage 4 Task Module. "Resolve Issue" → A&G. | "Continue manually" → opens the next stage's Task Module. "Confirm Delivery" → Stage 4 module (same as Auto). "Resolve Issue" → A&G. |
+| System-wide pause (`agentsPaused`) | Halts auto-progress for this PO. Resumes when the admin un-pauses. | Unaffected — Manual entities don't depend on the agent runtime. |
+
+### The spend-cap gate is a configurable policy rule, not hard-coded
+
+- `finnsPolicyRules[id=RUL-001]` — template `spend-cap`, scope `all`, threshold `Rp 12M`, **`active: false`** by default.
+- The Orders page reads it dynamically via `activeSpendCapRule()` in `NewOrdersPage.tsx`. When inactive, no PO is gated for above-cap approval; the Auto engine rides Stage 1 → 2 without admin input.
+- Admin enables the rule from Activity & Governance → Policy tab to add a Stage 1 sign-off requirement for material spend. When active, every Auto PO above the threshold lands in the priority feed with an **Approve** CTA. Clicking it opens the Approval Confirmation modal.
 
 ### Sensing surfaces + manual mechanics (always on)
 
-- **Left panel order groupings** (NEEDS YOUR ACTION / AUTONOMOUS FLOW) — derived from PO state, not agent decisions.
-- **5-stage DAG rendering** on every order — pure state display per stage.
-- **All Audit Mode filters** (status, date, supplier, stage band, agent, venue, workflow, search). Pure data filtering.
-- **⌘K command palette** — search across POs / suppliers / agents / venues.
-- **Source Bridge** (right-panel takeover for WhatsApp / Telegram supplier comms) — user types the message, hits send. Pure manual UI, no agent draft pre-fill by default.
-- **Stage Trace** modal (read-only history per stage).
-- **Export CSV** in Audit Mode.
-- **Track Shipment / Message Supplier / Repeat Order** ⋯ menu actions — all user-initiated.
-- **Atlas right panel** — header, page-context subtitle ("Agent model · PO-3041" / "Batch analysis · 3 orders"), data summaries (Venue Consumption Split, Batch Logic counts, Operations Insights KPIs in Audit Mode, Quick Journey card), chat input. Never gated.
+- Left panel order groupings (Needs Your Action / Autonomous Flow) — derived from current state via `derivedActionKind()`, not seeded.
+- 5-stage DAG rendering on every order.
+- All Audit Mode filters (status, date, supplier, stage band, agent, venue, workflow, search).
+- ⌘K command palette across POs / suppliers / agents / venues.
+- Source Bridge (full conversation thread per PO; WhatsApp / Email channels per the Bali rule — no Telegram).
+- Stage Trace modal (read-only when reviewing past stages; editable when admin switches to Manual).
+- Export CSV in Audit Mode.
+- Track Shipment / Message Supplier / Repeat Order ⋯ menu actions.
+- Atlas right panel (header subtitle, Quote source card, Agent Reasoning, Manual Notes, Embedded Finance, Batch Logic Summary, Batch ROI, Context Questions, chat input). Never gated.
 
-### Atlas-curated data layer (always on)
+### Resolved gaps (Phase 6)
 
-- **Venue Consumption Split** card for multi-venue POs — pure data calc from PO `venues` field.
-- **Batch Logic Summary** (Cold-Chain Verified / Pricing Confidence / Exceptions Flagged) when ≥2 POs selected — counts are sensing.
-- **Operations Insights** in Audit Mode (4 KPI cards + top suppliers + status mix + venue mix) — aggregate stats from PO data.
-- **Quick Journey card** for historical rows in Audit Mode.
+- ✅ **PO `laborMode` honours the per-PO autonomy picker** from the New Request wizard (Phase 6d). New POs land with `'auto'` or `'manual'` per the user's choice on Step 1.
+- ✅ **Approve button is no longer silent**. In Auto with the cap gate active, it opens the Approval Confirmation modal (Phase 6s). In Manual, it opens the Stage 1 Task Module.
+- ✅ **Confirm Delivery opens the Stage 4 Task Module** (Phase 6s) so the admin uploads the POD photo and sets QC outcome before the order goes terminal.
+- ✅ **Resolve Issue routes to Activity & Governance** (Phase 6p) — disputes are governed there, not silently resolved in Orders.
+- ✅ **Auto-progress engine writes real stage artifacts** to `agentStageData` (Phase 6r). Trace modal shows actual values with proper Agent attribution, not hash-synthesised data.
+- ✅ **Stage 1 Task Module pre-fills from RFQ runtime** when the PO has `fromRfqId` (Phase 6p).
+- ✅ **Source Bridge as full conversation thread** (Phase 6p) — inbound quote + admin messages + synthesized vendor replies, persisted per PO.
 
-Per-PO **Agent Reasoning** card surfaces in the right panel **only when an operating agent is actively driving the PO** (`laborMode: 'agent'` AND global mode is not Off). In Off mode this slot is empty by design — fix is to replace it with a user-fillable "Notes" surface, not to fake content.
+### Open backlog
 
-### Mode-aware CTAs (action layer)
-
-| Surface | Auto | Assist | Off |
-|---------|------|--------|-----|
-| Stage 2 "Quote Received" advance | A-04 auto-approves if under spend cap | "Approve PO-3041" with A-01's reasoning + Approve / Defer / Decline | Manual review modal: user enters quote details (amount, lead time, vendor) + approval reason |
-| Stage 3 PO Approved → Stage 4 In Transit | A-05 auto-dispatches confirmation, polls carrier API | "A-05 has carrier ready — send dispatch confirmation?" | Manual Task Module: user enters carrier name, tracking number, ETA |
-| Stage 4 In Transit → Stage 5 Delivered | A-05 auto-marks Delivered when ETA + carrier signal confirm | "Carrier signal says delivered — confirm receipt?" | Manual QC: photo upload, qc_outcome (pass/fail), receiving staff name typed by hand |
-| Stage 5 QC fail | A-05 auto-fires `finns-qc-failure` → Suppliers gets alert | Suggests opening dispute | Manual dispute creation via Activity & Governance |
-| **Approve & Execute** primary CTA | One-click, fires agent execution | One-click, fires confirmation flow | Opens Review modal capturing reason + notes before advancing |
-| **"Managed by · Agent A-NN →"** header chip | Routes to Activity & Governance | Same | **Hidden** or "Self-managed" — no agent assigned |
-| **Resume Agent** button (in Manual Takeover mode) | Returns control to A-NN | Returns to "suggest" mode for this PO | **Hidden** (no agent to return to globally) |
-| Per-PO **Labor Switch** | Agent / Manual toggle | Same | **Hidden / read-only** (global Off already locks to manual) |
-| Right-panel **Manual Takeover Copilot** ("I am standing by") | Appears only when laborMode=manual | Same | **Always shown** when a PO is selected (every PO is in manual mode) |
-| **Batch Console "Execute Batch"** | One-click fires agent execution across all selected | One-click confirms suggestions | Opens batch review modal — user steps through each PO's approval reason |
-
-### Real gaps (open backlog)
-
-1. **PO `laborMode` is hardcoded `'agent'`** for every new PO created from RequestPanel's `handleSubmit`. In Off / Assist mode the PO should land as `'manual'` so it doesn't auto-progress. Fix: read `useAutonomyMode()` + `defaultLaborMode()` from `lib/autonomy.ts`.
-2. **The "Managed by · Agent A-NN →" header chip** assumes an operating agent is assigned to every PO. In Off mode there's no agent — chip should either hide or render "Self-managed."
-3. **Task Module Sheet copy** uses agent-flavored hints (`"Atlas will mirror to ERP"` / `"Atlas is drafting the PO from the last accepted quote"`). In Off mode the Active Handshake delegation buttons should hide entirely; copilot hints should switch to plain reference info ("Vendor's preferred channel: WhatsApp · last contact 3 days ago").
-4. **`synthesizeStageHistory` attributes every stage to an agent** when generating completed stage records. POs progressed manually should record `actor: 'user'` + free-text note instead of fabricated agent activity.
-5. **Stage 2 "Quote received" has no multi-quote entry surface.** Today the Task Module captures only `channel + lead_time + quote_amt` (single quote). In Off mode the user needs a UX for "I received quotes from 3 vendors, here's the winner" — table of received quotes + winner radio.
-6. **No multi-vendor RFQ composer at Stage 2.** Source Bridge is 1-on-1 only. In Off mode a user at Stage 2 needs to gather quotes from 3 vendors — today they'd open Source Bridge 3 times. Should be a single RFQ composer reachable from the Stage 2 Task Module that broadcasts to selected vendors. **Same gap as § 4.7 New Request.**
-7. **Batch Console "Execute Batch"** fires agent execution. In Off mode "Execute Batch" should open a batch review modal where the user steps through each PO's approval reason in sequence.
-8. **Right-panel "Agent Reasoning" slot empties in Off mode** with no fallback. Should become a user-fillable "Notes" surface so the audit trail isn't lost.
-
-### Proposed fix shape
-
-- **Mode-aware Task Module hints**: hide Active Handshake delegation in Off mode; replace agent-flavored copilot hints with raw reference data.
-- **Stage 2 multi-quote entry**: split the Task Module into "Received Quotes" (table: vendor, amount, lead time, notes) + "Selected Winner" radio.
-- **RFQ Composer modal** reachable from Stage 2 Task Module ("Send RFQ to vendors") — pre-fills items, lets user multi-select vendors, composes one message broadcast to all. Routes through Source Bridge under the hood. Auto mode auto-fires this; Off requires user-click Send.
-- **Unified Action Log** (same fix as Overview / Inventory) — actor-tagged: `you | A-01 | A-02 | ...`. Right panel filters by mode.
-- **`synthesizeStageHistory` actor**: when manual mode, set `actor: 'user'` + capture the user's free-text note in the Task Module.
-- **`handleSubmit` in RequestPanel** reads `useAutonomyMode()` + sets new PO `laborMode = defaultLaborMode(mode)`.
-- **"Notes" surface in right panel** replaces the empty Agent Reasoning slot for manual-mode POs.
+1. **Batch Console** still fires agent execution per order. No per-order Approval Confirmation modal in batch mode — bulk Execute is one click for the whole batch. Could be an option for material-spend batches.
+2. **`synthesizeStageHistory` is still the fallback** for historical orders that never had agent writes. Realistic enough for the demo, but the audit narrative is generic — could be enriched with category + workflow context.
+3. **Manual stage forms** still ask the admin to type values that are derivable (carrier defaults per category, ETA defaults to seven days out, etc.). Pre-fill with editable defaults rather than blanks.
+4. **No "downgrade to Manual mid-journey" preserves agent data** — when the admin flips an Auto PO to Manual at Stage 3, the agent-written Stage 1/2 data is shown read-only in Review mode, but Stage 3 onwards starts blank. The admin has to re-derive carrier/tracking. Could carry forward the agent's defaults.
 
 ---
 

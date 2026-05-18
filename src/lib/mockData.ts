@@ -822,12 +822,16 @@ export const finnsActivityEvents: ActivityEvent[] = [
 
 export const finnsPolicyRules: PolicyRule[] = [
   {
+    // 6s — global spend cap. Default INACTIVE for the demo so Auto
+    // orders ride end-to-end without admin clicks. Admin can flip it
+    // on from A&G → Policy tab to add a Stage 1 approval gate for
+    // every Auto PO above the threshold (segregation-of-duties).
     id: 'RUL-001', template: 'spend-cap',
-    name: 'Spend cap · Wine vendors',
-    config: { threshold: 50_000_000, currency: 'IDR' },
-    scope: 'vendor', active: true,
+    name: 'Spend cap · All vendors',
+    config: { threshold: 12_000_000, currency: 'IDR' },
+    scope: 'all', active: false,
     createdBy: 'Procurement Manager', createdAt: '2026-04-12',
-    triggers: 4,
+    triggers: 0,
   },
   {
     id: 'RUL-002', template: 'vendor-trust-floor',

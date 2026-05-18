@@ -16,7 +16,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
-import { workflowTemplates } from '../lib/mockData';
+import { workflowTemplates, finnsPolicyRules } from '../lib/mockData';
 import { logUserAction, type ActionKind } from '../lib/actionLog';
 import { useAgentsPaused } from '../lib/autonomy';
 import { AgentCTA } from './AgentCTA';
@@ -93,25 +93,23 @@ function requiresHumanAuthorization(stageIdx: number) {
   return stageIdx === 1 || stageIdx === 4;
 }
 
-// ── Auto-mode HITL gates (6q) ─────────────────────────────────────────
+// ── Auto-mode HITL gates (6s) ─────────────────────────────────────────
 //
-// In Auto mode the agents are supposed to run the journey end-to-end.
-// The only legitimate places to stop and wait for the human are:
+// In Auto mode the agents run the journey end-to-end. The ONLY
+// hard-coded gates are:
 //
-//   Stage 1 (Quote → PO Approved)  if order amount > AUTO_APPROVE_CAP_IDR
-//     A-04 won't auto-issue the PO above the cap. Admin sign-off needed.
+//   Stage 4 with perishables — visual QC required for items the agent
+//     can't auto-clear from a photo (Wagyu, sashimi-grade tuna,
+//     burrata, oysters, foie). Physical reality.
 //
-//   Stage 4 (Delivered & Checked)  if the basket contains a perishable
-//     SKU that needs visual QC. Burrata, sashimi-grade tuna, MB7+ Wagyu
-//     can't be auto-cleared from a photo.
+//   Disputed orders — by definition the agent couldn't act and
+//     surfaced to the human.
 //
-//   any stage                       if the order is disputed.
-//
-// Below the cap on stable items, an Auto order should ride 0→1→2→3→4
-// and self-clear without a single click. The user sees Atlas toasts +
-// chat messages narrating the progression; the order moves into the
-// Autonomous feed and stays there until it's terminal.
-const AUTO_APPROVE_CAP_IDR = 12_000_000;
+// The OPTIONAL gate is the spend cap. It lives as a real policy rule
+// in finnsPolicyRules (RUL-001). Default INACTIVE for the demo so
+// the flow shows real automation. Admin can flip it on from A&G →
+// Policy tab to enforce a Stage 1 sign-off above the threshold —
+// segregation-of-duties for material spend.
 const PERISHABLE_KEYWORDS = [
   'wagyu', 'sashimi', 'burrata', 'foie', 'oyster', 'mb7',
 ];
@@ -121,12 +119,36 @@ function basketHasPerishable(order: Order): boolean {
   return PERISHABLE_KEYWORDS.some(k => blob.includes(k));
 }
 
+/** Returns the active spend-cap rule (if any). null when the gate is off. */
+function activeSpendCapRule(): { threshold: number; ruleId: string } | null {
+  const rule = finnsPolicyRules.find(r => r.active && r.template === 'spend-cap');
+  if (!rule) return null;
+  const threshold = (rule.config.threshold as number | undefined) ?? 0;
+  return { threshold, ruleId: rule.id };
+}
+
 /** True when the Auto agent must halt at this stage and surface to the human. */
 function autoHumanGateAt(order: Order, stage: number): boolean {
-  if (order.status === 'disputed')           return true;
-  if (stage === 1 && order.amount > AUTO_APPROVE_CAP_IDR) return true;
-  if (stage === 4 && basketHasPerishable(order))          return true;
+  if (order.status === 'disputed')                         return true;
+  if (stage === 4 && basketHasPerishable(order))           return true;
+  // Optional cap gate — only when admin has activated the rule.
+  if (stage === 1) {
+    const cap = activeSpendCapRule();
+    if (cap && order.amount > cap.threshold)               return true;
+  }
   return false;
+}
+
+/** What action does the human need to take at the current effective stage? */
+type DerivedActionKind = 'approve' | 'confirm-delivery' | 'resolve-issue' | null;
+function derivedActionKind(order: Order, stage: number): DerivedActionKind {
+  if (order.status === 'disputed') return 'resolve-issue';
+  if (stage === 4 && basketHasPerishable(order)) return 'confirm-delivery';
+  if (stage === 1) {
+    const cap = activeSpendCapRule();
+    if (cap && order.amount > cap.threshold) return 'approve';
+  }
+  return null;
 }
 
 /** Demo cadence — how long between auto-advances. Keep visible but not spammy. */
@@ -377,12 +399,12 @@ const SEEDED_ORDERS: Order[] = [
   {
     id: 'PO-3041', supplier: 'PT Bali Seafood Lestari',
     items: ['Yellowfin Tuna sashimi 8kg · ST', 'Yellowfin Tuna food-grade 22kg · BC', 'Prawns 14kg · BC + ST + RC'],
-    amount: 14_200_000, group: 'needs-action', actionKind: 'approve',
-    humanAction: 'Approve',
-    humanStatus: 'Quote in via WhatsApp · awaiting Spend Watchdog approval',
+    amount: 14_200_000, group: 'autonomous',
+    humanAction: '',
+    humanStatus: 'Quote in via WhatsApp · A-04 issuing PO',
     humanDescription: 'Sashimi-grade for Stake, food-grade for BC, prawns split across three venues. Wayan Sukma sent the quote on WhatsApp.',
     eta: 'May 17 · 11:00', dagStage: 1,
-    agentReasoning: "Wayan Sukma (PT Bali Seafood) WhatsApped the quote at 08:30 — 4% below the 30-day median. Cold-chain SLA 98%. Combined drop reuses one cold-chain run. Sits above the auto-approve cap (Rp 12M), so needs your approval.",
+    agentReasoning: "Wayan Sukma (PT Bali Seafood) WhatsApped the quote at 08:30 — 4% below the 30-day median. Cold-chain SLA 98%. Combined drop reuses one cold-chain run. No active spend-cap rule blocks — A-04 will issue the PO and A-05 picks up the delivery leg. You'll see this back in your queue at Stage 4 for the sashimi-grade QC.",
     agentAgent: 'A-01 (Sourcing)',
     assignedAgent: { id: 5, role: 'Sourcing' },
     financeInsight: "Rp 590k saving estimated vs the next-best quote. A-04 cleared the policy stack except the cap rule.",
@@ -394,12 +416,12 @@ const SEEDED_ORDERS: Order[] = [
   {
     id: 'PO-3043', supplier: 'AUS Premium Meats',
     items: ['Wagyu Ribeye MB7+ 6kg · ST'],
-    amount: 28_500_000, group: 'needs-action', actionKind: 'approve',
-    humanAction: 'Approve',
-    humanStatus: 'Rush — par floor breached',
+    amount: 28_500_000, group: 'autonomous',
+    humanAction: '',
+    humanStatus: 'Rush quote in · A-04 issuing PO',
     humanDescription: 'Stake Wagyu par floor breach — 2-day gap risk for the weekend tasting menu.',
     eta: 'May 18 · 09:00', dagStage: 1,
-    agentReasoning: "Restock Agent flagged par floor breach this morning. A-02 promoted to Rush playbook. AUS Premium Meats is your contracted Wagyu vendor — quote confirmed verbally with James Whitaker then backed by an emailed PDF within the 12% Rush premium tolerance. USD 1,840 locked at 15,490. Above the Rp 12M auto-approve cap, so needs your sign-off before A-04 issues the PO.",
+    agentReasoning: "Restock Agent flagged par floor breach this morning. A-02 promoted to Rush playbook. AUS Premium Meats is your contracted Wagyu vendor — quote confirmed verbally with James Whitaker then backed by an emailed PDF within the 12% Rush premium tolerance. USD 1,840 locked at 15,490. No active spend-cap rule blocks — A-04 will issue the PO. You'll see this back at Stage 4 for visual QC on the MB7+ Wagyu.",
     agentAgent: 'A-02 (Restock)',
     assignedAgent: { id: 8, role: 'Restock' },
     financeInsight: "USD-denominated import. FX locked at 15,490 — IDR exposure capped at Rp 28.5M.",
@@ -892,6 +914,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   // agent is now driving the next stage) but should NOT show the sage
   // "Completed" badge. completedIds remains reserved for terminal POs.
   const [actionTakenIds, setActionTakenIds] = useState<Set<string>>(new Set());
+  // 6s — id of the PO whose Approve button has been clicked. Pops the
+  // Approval Confirmation modal (Auto + cap gate active flow).
+  const [approvalForId, setApprovalForId]   = useState<string | null>(null);
   const [showCmd, setShowCmd]               = useState(false);
   const [cmdQuery, setCmdQuery]             = useState('');
   const [journeyCompleteId, setJourneyCompleteId] = useState<string | null>(null);
@@ -1354,8 +1379,19 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     });
     if (advance) {
       forceCompleteStage(orderId, stageIdx);
+      // 6s — Stage 4 (Delivered & Checked) completion = terminal. Add
+      // to completedIds so the sage Completed badge fires and the order
+      // moves cleanly out of the priority feed.
+      if (stageIdx === 4) {
+        setCompletedIds(prev => new Set([...prev, orderId]));
+        setActionTakenIds(prev => {
+          const next = new Set(prev);
+          next.delete(orderId);
+          return next;
+        });
+      }
       // QC failure → notify SuppliersPage trust panel
-      if (stageIdx === 5 && stageDraft['qc_outcome'] === 'fail') {
+      if (stageIdx === 4 && stageDraft['qc_outcome'] === 'fail') {
         const order = ORDERS.find(o => o.id === orderId);
         window.dispatchEvent(new CustomEvent('finns-qc-failure', {
           detail: { orderId, supplier: order?.supplier ?? '', stage: 'Quality Check' },
@@ -1460,8 +1496,17 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const selectedId    = isSingle ? [...selectedIds][0] : null;
   const selectedOrder = selectedId ? ORDERS.find((o) => o.id === selectedId) ?? null : null;
 
-  const actionOrders = ORDERS.filter((o) => o.group === 'needs-action' && !completedIds.has(o.id) && !actionTakenIds.has(o.id));
-  const autoOrders   = ORDERS.filter((o) => o.group === 'autonomous' || completedIds.has(o.id) || actionTakenIds.has(o.id));
+  // 6s — priority feed is derived from current state, not seeded group.
+  // Order is "needs-action" iff its effective stage sits at a real HITL
+  // gate (perishable QC, disputed, or active spend-cap rule). Seeded
+  // group is now informational only.
+  const actionOrders = ORDERS.filter((o) => {
+    if (completedIds.has(o.id))   return false;
+    if (actionTakenIds.has(o.id)) return false;
+    const eff = Math.max(o.dagStage, forceCompletedStages[o.id] ?? 0);
+    return derivedActionKind(o, eff) !== null;
+  });
+  const autoOrders   = ORDERS.filter((o) => !actionOrders.some(a => a.id === o.id));
   const batchOrders  = ORDERS.filter((o) => selectedIds.has(o.id));
 
   // ── Audit Mode — derived data ─────────────────────────────────────
@@ -1828,12 +1873,17 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   // ── Order Card ────────────────────────────────────────────────────
   const OrderCard = ({ order }: { order: Order }) => {
     const isSelected = selectedIds.has(order.id);
-    const isFailed   = order.actionKind === 'resolve-issue';
     const isImminent = !!order.etaMinutes && order.etaMinutes <= 15;
     const isDone     = completedIds.has(order.id);
-    const actionMeta = order.actionKind ? ACTION_META[order.actionKind] : null;
     const orderMode  = getMode(order.id);
     const isManual   = orderMode === 'manual';
+    // 6s — derive the action from current state, not seeded actionKind.
+    // The seeded value still informs orderCard visuals (icon/colour) but
+    // the CTA + click handler key off the live derivedActionKind.
+    const eff = Math.max(order.dagStage, forceCompletedStages[order.id] ?? 0);
+    const liveActionKind = derivedActionKind(order, eff);
+    const isFailed   = liveActionKind === 'resolve-issue';
+    const actionMeta = liveActionKind ? ACTION_META[liveActionKind] : null;
 
     // ── Header badge config ────────────────────────────────────────
     // Each card surfaces exactly one status label — the icon + text
@@ -1944,7 +1994,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               {order.eta}
             </span>
             <span className={`text-sm font-bold ${t.textPrimary}`}>
-              ${order.amount.toLocaleString()}
+              {fmtIdrShort(order.amount)}
             </span>
           </div>
         </div>
@@ -1970,14 +2020,32 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               Proposed by {agentBadge(order.assignedAgent)}
             </span>
           )}
-          {/* Action CTA — outline button in state color */}
+          {/* 6s — Action CTA. Routes per liveActionKind + entity mode:
+                · Auto + approve   → opens Approval Confirmation modal
+                · Manual + approve → opens Stage 1 task module (admin fills the form)
+                · confirm-delivery → opens Stage 4 task module (POD + QC outcome + receiver)
+                · resolve-issue    → existing route to A&G dispute panel (executeAction handles) */}
           {actionMeta && !isDone && (
             <button
-              onClick={(e) => { e.stopPropagation(); executeAction(order.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (liveActionKind === 'approve') {
+                  if (isManual) {
+                    openStageModule(order.id, 1);
+                  } else {
+                    setApprovalForId(order.id);
+                  }
+                } else if (liveActionKind === 'confirm-delivery') {
+                  openStageModule(order.id, 4);
+                } else {
+                  // resolve-issue or other → existing executeAction path
+                  executeAction(order.id);
+                }
+              }}
               className={`ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold border transition-colors shrink-0 ${ctaClass}`}
             >
               {(() => { const I = actionMeta.icon; return <I className="h-2.5 w-2.5" />; })()}
-              {actionMeta.label}
+              {isManual && liveActionKind === 'approve' ? 'Continue manually' : actionMeta.label}
             </button>
           )}
         </div>
@@ -4799,6 +4867,126 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
       {/* Manual-mode Task Module sheet (5-stage interactive task list) */}
       {taskModuleSheet}
+
+      {/* 6s — Approval Confirmation modal. Auto + Stage 1 gate fired
+          (cap rule active + above threshold). One-screen review of
+          quote + policy posture + sign-off. Confirm fires the standard
+          executeAction; cancel just closes. */}
+      {approvalForId && (() => {
+        const order = ORDERS.find(o => o.id === approvalForId);
+        if (!order) return null;
+        const cap = activeSpendCapRule();
+        const overBy = cap ? Math.max(0, order.amount - cap.threshold) : 0;
+        const eff = Math.max(order.dagStage, forceCompletedStages[order.id] ?? 0);
+        // Live quote info from the agent's Stage 1 write (or synthesizer fallback).
+        const channel = getFieldDisplayValue(order, 1, 'channel') || (order.agentReasoning.toLowerCase().includes('whatsapp') ? 'WhatsApp' : 'Email');
+        const leadTime = getFieldDisplayValue(order, 1, 'lead_time');
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+               style={{ background: 'rgba(0,0,0,0.55)' }}
+               onClick={() => setApprovalForId(null)}>
+            <div onClick={(e) => e.stopPropagation()}
+                 className={`w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${isDark ? 'bg-[#1a1a1a] border-[#87986a]/40' : 'bg-white border-[#87986a]/40'}`}>
+              {/* Header */}
+              <div className={`px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
+                <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-[#87986a] text-white">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                    Sign off · Stage 1 → 2 (PO Approved)
+                  </div>
+                  <h3 className={`text-sm font-bold mt-0.5 ${t.textPrimary}`}>{order.id} · {order.supplier}</h3>
+                  <p className={`text-[11px] mt-0.5 ${t.textMuted}`}>{fmtIdrShort(order.amount)} · {order.eta}</p>
+                </div>
+                <button onClick={() => setApprovalForId(null)}
+                  className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#f4f6f0] text-gray-500'}`}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Body — quote details + policy preview */}
+              <div className="p-5 space-y-4">
+                {/* Quote summary */}
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0]'}`}>
+                  <div className={`text-[9px] font-bold uppercase tracking-wide mb-2 ${t.textMuted}`}>
+                    Quote · received {channel ? `via ${channel}` : ''}
+                  </div>
+                  <div className="space-y-1.5 text-[11px]">
+                    {[
+                      ['Total', fmtIdrShort(order.amount)],
+                      leadTime ? ['Lead time', leadTime] : null,
+                      ['Items', `${order.items.length} line${order.items.length === 1 ? '' : 's'}`],
+                      ['Vendor', order.supplier],
+                    ].filter(Boolean).map((row) => (
+                      <div key={(row as string[])[0]} className="flex items-center justify-between">
+                        <span className={t.textMuted}>{(row as string[])[0]}</span>
+                        <span className={`font-semibold ${t.textPrimary}`}>{(row as string[])[1]}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Policy posture */}
+                <div className={`p-3 rounded-lg border ${
+                  isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+                }`}>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+                    <div className="min-w-0">
+                      <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
+                        Policy gate · {cap ? cap.ruleId : 'Spend cap'} active
+                      </div>
+                      <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>
+                        {cap
+                          ? <>Amount exceeds the <strong>{fmtIdrShort(cap.threshold)}</strong> cap by <strong>{fmtIdrShort(overBy)}</strong>. A-04 (Spend Watchdog) cleared every other rule (vendor trust floor, duplicate detection, currency lock) — your sign-off completes the gate. After Confirm, A-04 issues the PO and A-05 picks up the delivery leg.</>
+                          : <>A-04 cleared every active rule. Your sign-off completes the gate.</>}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Atlas reasoning snippet */}
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                  <div className="flex items-start gap-2">
+                    <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                    <div className="min-w-0">
+                      <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                        {order.agentAgent}
+                      </div>
+                      <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>{order.agentReasoning}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer — Confirm / Switch to Manual / Cancel */}
+              <div className={`px-5 py-3 border-t flex items-center gap-2 flex-wrap ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+                <button onClick={() => setApprovalForId(null)}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#f4f6f0]'}`}>
+                  Cancel
+                </button>
+                <button onClick={() => {
+                  setApprovalForId(null);
+                  setMode(order.id, 'manual');
+                  openStageModule(order.id, 1);
+                }}
+                  title="Switch to Manual Takeover — fill the Stage 1 form yourself (upload PO PDF, log policy ref)"
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold border ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'}`}>
+                  Switch to Manual
+                </button>
+                <button onClick={() => {
+                  setApprovalForId(null);
+                  executeAction(order.id);
+                }}
+                  className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors inline-flex items-center gap-1.5 shadow-sm">
+                  <Check className="h-3.5 w-3.5" /> Confirm Approval
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* New Order / Re-order / Schedule sheet */}
       {draftSheetEl}

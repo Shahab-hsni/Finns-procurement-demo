@@ -155,13 +155,15 @@ Placeholder adapts to current step (`Ask Atlas about {step label}…`). Currentl
 
 | Section | When it appears |
 |---------|-----------------|
-| **Manual Takeover Copilot** | Manual mode active. Standby header ("I am standing by") + *"Resume Agent · Sync Manual Inputs"* button + Copilot Stage-Aware Hint + *"Open Stage X task module"* link + Manual Audit Trail (clickable badges for touched stages) + sync note |
-| **Digital Twin Simulation** | New supplier orders only. Recommendation comparing new vs existing + Cost reduction (% or Rp) + Lead time delta (days) |
-| **Agent Reasoning** | Single order selected. Assigned agent's (`managedBy`) natural-language explanation for its decisions |
-| **Venue Consumption Split** | Single order, multi-venue PO. Bar showing the delivery's split across BC/RC/ST/SP + receiving-window reminders per venue |
-| **Embedded Finance** | `financeInsight` available (Spend Watchdog A-04). Insight text + *"Factor this invoice →"* link |
-| **Batch Logic Summary** | Batch mode (≥2 orders selected). 3 cards: **Cold-Chain Verified** · **Pricing Confidence** (aggregate savings) · **Exceptions flagged** (count of resolve-issue orders) |
+| **Manual Takeover Copilot** | Manual mode active. Standby header ("I am standing by") + *"Resume Auto"* button + Copilot Stage-Aware Hint + *"Open Stage X task module"* link + Manual Audit Trail (clickable badges for touched stages) + sync note |
+| **Quote Source · Bali Channel Context** | Single order, RFQ-sourced PO. Channel pill (WhatsApp / Email) + AM contact + RFQ id link. The actual inbound quote bubble lives inside the Source Bridge thread now (Phase 6p). |
+| **Agent Reasoning** | Single order selected. Assigned agent's natural-language explanation. Renders via `<AgentCTA>` with `forceMode={getMode(order.id)}` so the chip respects this PO's labor switch. |
+| **Manual Notes** | Per-PO `ManualNotes` surface — admin's typed notes outside the structured stage forms. |
+| **Embedded Finance** | `financeInsight` available (Spend Watchdog A-04). Insight text + *"Factor this invoice →"* link (currently decoration — no handler). |
+| **Batch Logic Summary** | Batch mode (≥2 orders selected). 3 cards: **Cold-Chain Verified** · **Pricing Confidence** (validated against 30-day market median; aggregate IDR savings) · **Exceptions flagged** (count of resolve-issue orders) |
 | **Batch ROI Estimate** | Batch mode. Labor hours saved · Manual steps eliminated · Projected Rp savings |
+
+**Approval Confirmation modal — NOT a right-panel state.** When the user clicks Approve on a cap-gated Auto PO (Phase 6s), a dedicated centre-anchored modal pops, not a right-panel takeover. The right panel keeps whatever it was showing (typically the Agent Reasoning + Quote Source for the selected order). The modal handles the sign-off; once confirmed, executeAction runs and the user can switch focus back to the right panel.
 
 ### Context Question adaptive copy
 
@@ -177,13 +179,15 @@ Placeholder adapts to current step (`Ask Atlas about {step label}…`). Currentl
 
 **Trigger:** Click "Message Supplier" from the center panel's tertiary action row (or the ⋯ card menu).
 
+A **full conversation thread per PO** (Phase 6p), backed by `lib/sourceBridgeStore.ts`. The panel structure:
+
 | Element | Behavior |
 |---------|----------|
-| Header | *"Message {supplier}"* + ArrowLeft back button |
-| Channel selector | Segmented WhatsApp (`#25D366`) / Telegram (`#0088cc`); active half fills with channel color |
-| Message textarea | Fills all available vertical space; auto-grows |
-| Send button | Channel-colored; label becomes *"Send via WhatsApp"* / *"Send via Telegram"* |
-| Auto-dismiss | Closes automatically when a different order is selected |
+| Header | Lock icon + *"Source Bridge"* + ArrowLeft back button. Subtitle: `{supplier} · {AM name} · {PO id}`. |
+| Channel selector | Segmented WhatsApp (`#25D366`) / **Email** (blue). **Telegram removed** — Bali vendor channel rule says WhatsApp (primary) / email (formal). |
+| Thread | Scrolling history seeded on first open from the RFQ runtime + the order's effective stage. Includes: inbound quote bubble, PO-sent system notice, vendor's dispatch confirmation when stage ≥ 3, any prior admin replies. |
+| Compose | Pinned bottom — textarea + Send button. Sending **appends to the thread** and the panel stays open (no auto-close). Encryption footer reads "Routed via Finn's Gateway". |
+| Auto-dismiss | Closes when a different order is selected. The thread state persists in localStorage. |
 
 Owned by **Vendor Comms Agent (A-03)** in narrative. Normal AI content is hidden until the bridge is dismissed.
 

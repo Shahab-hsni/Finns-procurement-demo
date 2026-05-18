@@ -310,6 +310,34 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   }, [itemCategories]);
   /** True iff items span ≥2 categories AND no single vendor covers them all. */
   const isCrossCategoryUnservable = itemCategories.length >= 2 && !someVendorCoversAll;
+
+  // 6m — Manual multi-vendor assignment. When the user picks 2+ vendors
+  // on Path A, walk the selection in order and let each vendor claim
+  // items in categories they cover that haven't been claimed yet. The
+  // unassigned bucket holds items no selected vendor can supply — these
+  // block Submit on Step 4.
+  interface VendorAssignment {
+    vendor: typeof finnsSuppliers[number];
+    items: LineItem[];
+  }
+  const manualAssignments = useMemo(() => {
+    const byItem = new Map<string, string>();              // itemId → vendorId
+    const groups: VendorAssignment[] = selectedVendors
+      .map(vid => finnsSuppliers.find(s => s.id === vid))
+      .filter((v): v is typeof finnsSuppliers[number] => !!v)
+      .map(v => ({ vendor: v, items: [] }));
+    items.forEach(it => {
+      const claim = groups.find(g => g.vendor.categories.includes(it.category));
+      if (claim) {
+        claim.items.push(it);
+        byItem.set(it.id, claim.vendor.id);
+      }
+    });
+    const unassigned = items.filter(it => !byItem.has(it.id));
+    return { byItem, groups: groups.filter(g => g.items.length > 0), unassigned };
+  }, [selectedVendors, items]);
+  /** True when manual multi-vendor mode is active (2+ vendors picked, no award, no auto-split). */
+  const isManualMultiVendor = selectedVendors.length > 1 && !splitMode && awardedQuotes.length === 0;
   // Dismiss flag — set when the user explicitly clicks "Pick one vendor
   // anyway" so the banner stops nagging within this wizard session.
   const [crossCategoryDismissed, setCrossCategoryDismissed] = useState(false);
@@ -549,12 +577,17 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     } : it));
   }
 
-  // 5f — single-vendor select on the "I know my vendor" path. Picking
-  // a row replaces any prior selection. Clicking the already-selected
-  // vendor clears the selection (so the user can change their mind).
-  // Multi-vendor split orders aren't a thing here — one PO, one vendor.
+  // 6m — multi-vendor select on the "I know my vendor" path. Cross-category
+  // baskets in real life are routed manually: tomatoes → CV Indo Sayur,
+  // beef → Krakatoa Coldstore. Single-select forced an impossible choice.
+  // Now: each click toggles a vendor in/out of selectedVendors. When
+  // 2+ are picked, items are greedily assigned to the first picked
+  // vendor that covers each item's category (see manualAssignments).
+  // Picking a vendor while splitMode is on cancels splitMode — the
+  // user's manual pick wins.
   function toggleVendor(id: string) {
-    setSelectedVendors(prev => prev[0] === id ? [] : [id]);
+    setSelectedVendors(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    if (splitMode) setSplitMode(false);
   }
 
   function toggleTargetVenue(v: VenueTag) {
@@ -640,6 +673,69 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       });
       toast.success(`${createdIds.length} POs authorized · routed to Orders`, {
         description: `Split across ${createdIds.length} vendors. Each PO is at Stage 2 awaiting your approval.`,
+      });
+      setStep(5);
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.location.hash = `order=${createdIds[0]}`;
+        }
+        onNavigate?.('orders');
+      }, 1400);
+      return;
+    }
+
+    // ── Path 4: Manual multi-vendor split ──
+    //    User picked 2+ vendors on Path A. Each gets a PO with the
+    //    items they were greedily assigned. Same delivery info applies
+    //    to all. Routes to the first PO. Identical lifecycle to
+    //    auto-split — the only difference is user chose the vendors.
+    if (isManualMultiVendor && manualAssignments.unassigned.length === 0) {
+      const createdIds: string[] = [];
+      const venueChip: VenueTag | 'Multi' =
+        venueLabel === 'BC' || venueLabel === 'RC' || venueLabel === 'ST' || venueLabel === 'SP'
+          ? venueLabel : 'Multi';
+      manualAssignments.groups.forEach((group, idx) => {
+        const id = `PO-${3050 + Math.floor(Math.random() * 200) + idx}`;
+        const supplierName = group.vendor.name;
+        const amContact = `${group.vendor.accountManager.name} · ${group.vendor.accountManager.whatsapp}`;
+        const splitItemSummary = group.items.map(it =>
+          `${it.name} ${it.qty}${it.unit}${it.venues?.length ? ` · ${it.venues.join(' + ')}` : ''}`,
+        );
+        const splitTotal = group.items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
+        const po: RuntimePO = {
+          id,
+          supplier: supplierName,
+          items: splitItemSummary,
+          amount: splitTotal,
+          group: 'needs-action',
+          actionKind: 'approve',
+          humanAction: 'Approve',
+          humanStatus: `Awaiting your approval · manual split ${idx + 1}/${manualAssignments.groups.length}`,
+          humanDescription: `${meta.agent} (Sourcing) · ${playbookLabel} playbook. Delivery to ${targetVenues.join(' + ') || 'BC'} on ${neededBy}. Manual multi-vendor pick — ${group.items.length} item${group.items.length === 1 ? '' : 's'} routed to ${supplierName} (you picked the vendors).`,
+          eta: `${neededBy}`,
+          dagStage: 1,
+          agentReasoning: `Manual multi-vendor split: you picked ${manualAssignments.groups.length} vendors on Step 2; this PO carries ${group.items.length} item${group.items.length === 1 ? '' : 's'} in categories ${supplierName} covers (${Array.from(new Set(group.items.map(it => it.category))).join(', ')}). Composite ${group.vendor.metrics.composite}, on-time ${group.vendor.metrics.onTime}%, lead ${group.vendor.metrics.leadTimeDays}d. Confirmation will arrive via ${group.vendor.accountManager.whatsapp ? 'WhatsApp' : 'email'}.`,
+          agentAgent: `${meta.agent} (Sourcing)`,
+          assignedAgent: { id: 5, role: 'Sourcing' },
+          workflowTemplate: playbook,
+          status: 'live',
+          createdAt: new Date().toISOString(),
+          quoteChannel: 'none',
+          quoteFrom: amContact,
+        };
+        createPO(po);
+        createdIds.push(id);
+        logUserAction({
+          kind: 'po-create',
+          entity: { type: 'po', id },
+          summary: `Authorized ${id} (manual split ${idx + 1}/${manualAssignments.groups.length}) · ${supplierName} · Rp ${(splitTotal / 1_000_000).toFixed(2)}M`,
+          venue: venueChip,
+          details: `${group.items.length} item${group.items.length === 1 ? '' : 's'}. Delivery to ${targetVenues.join(', ')} on ${neededBy}.`,
+          meta: { poId: id, vendorId: group.vendor.id, totalIdr: splitTotal, path: 'manual-split', playbook, splitIndex: idx + 1, splitTotal: manualAssignments.groups.length },
+        });
+      });
+      toast.success(`${createdIds.length} POs authorized · routed to Orders`, {
+        description: `Manual split across ${createdIds.length} vendors you picked. Each PO is at Stage 2 awaiting your approval.`,
       });
       setStep(5);
       setTimeout(() => {
@@ -1781,10 +1877,11 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       </button>
                       <button
                         onClick={() => setCrossCategoryDismissed(true)}
+                        title="Dismiss the banner and pick multiple vendors below — each will receive the items in their categories."
                         className={`text-[11px] font-semibold transition-colors ${
                           isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-800'
                         }`}>
-                        Pick one vendor anyway →
+                        Pick vendors manually →
                       </button>
                     </div>
                   </div>
@@ -1867,13 +1964,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       variant="inline"
                       className="mb-2"
                       agentLabel="A-01 · Sourcing Agent"
-                      reasoning={`A-01 ranks the directory by overlap with your items + composite + SLA. ${suggested.length > 0 ? `Top ${suggested.length} match your categories.` : ''} One PO = one vendor — click a row to pick. After approval the PO is forwarded via the vendor's preferred channel (WhatsApp first, email if formal).`}
-                      offModeMessage="Pick one vendor from your approved directory. Sort by composite, on-time, or cold-chain SLA using the metrics on each row. After approval the PO is sent via WhatsApp or email. One PO = one vendor."
+                      reasoning={`A-01 ranks the directory by overlap with your items + composite + SLA. ${suggested.length > 0 ? `Top ${suggested.length} match your categories.` : ''} Pick one vendor for a single-PO order, or pick multiple to split a cross-category basket across them. After approval each PO is forwarded via the vendor's preferred channel (WhatsApp first, email if formal).`}
+                      offModeMessage="Pick vendors from your approved directory. One vendor for a single PO; multiple vendors split a cross-category basket — each receives the items in their categories. Sort by composite, on-time, or cold-chain SLA using the row metrics."
                     />
                     <div className="mt-4 space-y-2">
                       {ordered.map((v, idx) => {
                         const selected = selectedVendors.includes(v.id);
-                        const isPrimary = selected && selectedVendors[0] === v.id;
+                        const selectionIndex = selected ? selectedVendors.indexOf(v.id) : -1;
                         const isSuggested = suggestedSet.has(v.id) && idx < suggested.length;
                         const isFirstNonSuggested = idx === suggested.length && suggested.length > 0;
                         return (
@@ -1890,8 +1987,12 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                               <div className="flex items-center justify-between gap-2 flex-wrap">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className={`text-xs font-semibold ${labelClass}`}>{v.name}</span>
-                                  {isPrimary && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${SAGE.badge(isDark)}`}>Selected</span>}
-                                  {isSuggested && !isPrimary && (
+                                  {selected && (
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${SAGE.badge(isDark)}`}>
+                                      {selectedVendors.length > 1 ? `Selected #${selectionIndex + 1}` : 'Selected'}
+                                    </span>
+                                  )}
+                                  {isSuggested && !selected && (
                                     <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
                                       isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
                                     }`}>
@@ -1912,7 +2013,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                       );
                                     }
                                     return (
-                                      <span title={`This vendor only supplies ${cov.covered} of ${cov.total} item categories. Picking them ships the other items to a vendor who doesn't carry them.`}
+                                      <span title={`This vendor supplies ${cov.covered} of ${cov.total} item categories. Combine with another vendor for the missing categories, or pick a vendor that covers all.`}
                                             className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
                                               isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
                                             }`}>
@@ -1953,6 +2054,94 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   </div>
                   );
                 })()}
+
+                {/* 6m — Manual multi-vendor assignment card. Visible when
+                    user has picked 2+ vendors on Path A. Shows which
+                    items go to which vendor (greedy by category overlap)
+                    + flags items no selected vendor can supply. Same
+                    visual pattern as the auto-split card so users
+                    recognise it. Each vendor here mints its own PO. */}
+                {!wizardRfqId && sourcingPath === 'pick' && selectedVendors.length > 1 && (
+                  <div className={`p-4 rounded-xl border ${
+                    manualAssignments.unassigned.length > 0
+                      ? isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+                      : isDark ? 'bg-[#87986a]/10 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                  }`}>
+                    <div className="flex items-start gap-2 mb-3">
+                      <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${
+                        manualAssignments.unassigned.length > 0
+                          ? isDark ? 'text-amber-300' : 'text-amber-700'
+                          : isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                      }`} />
+                      <div className="min-w-0">
+                        <p className={`text-[11px] font-bold ${labelClass}`}>
+                          {manualAssignments.unassigned.length > 0
+                            ? `Item assignment · ${manualAssignments.unassigned.length} item${manualAssignments.unassigned.length === 1 ? '' : 's'} need another vendor`
+                            : `Item assignment · ${selectedVendors.length} POs will be created`}
+                        </p>
+                        <p className={`text-[10px] mt-1 leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          Each picked vendor receives the items in their categories. Same delivery date ({neededBy}) and venues apply to all. Authorize on Step 4 mints one PO per vendor.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 mb-2">
+                      {manualAssignments.groups.map((g, idx) => (
+                        <div key={g.vendor.id} className={`p-2.5 rounded-lg border ${
+                          isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+                        }`}>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${SAGE.badge(isDark)}`}>
+                                PO {idx + 1}
+                              </span>
+                              <span className={`text-xs font-semibold ${labelClass}`}>{g.vendor.name}</span>
+                            </div>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                              {g.items.length} item{g.items.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <p className={`text-[10px] mt-1 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                            {g.items.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}
+                          </p>
+                        </div>
+                      ))}
+                      {/* Selected-but-claimed-nothing vendors */}
+                      {selectedVendors
+                        .filter(vid => !manualAssignments.groups.some(g => g.vendor.id === vid))
+                        .map(vid => {
+                          const v = finnsSuppliers.find(s => s.id === vid);
+                          if (!v) return null;
+                          return (
+                            <div key={vid} className={`p-2.5 rounded-lg border ${
+                              isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+                            }`}>
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span className={`text-xs font-semibold ${labelClass}`}>{v.name}</span>
+                                <span className={`text-[10px] italic ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                                  No items claimed — already covered by an earlier vendor in your selection.
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                    {manualAssignments.unassigned.length > 0 && (
+                      <div className={`mt-2 p-2 rounded-lg border ${
+                        isDark ? 'bg-amber-500/10 border-amber-500/40' : 'bg-amber-100/50 border-amber-300'
+                      }`}>
+                        <div className="flex items-start gap-1.5 mb-1">
+                          <AlertTriangle className={`h-3 w-3 mt-0.5 shrink-0 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+                          <p className={`text-[10px] font-bold ${labelClass}`}>
+                            {manualAssignments.unassigned.length} item{manualAssignments.unassigned.length === 1 ? '' : 's'} not covered by any picked vendor
+                          </p>
+                        </div>
+                        <p className={`text-[10px] leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'} ml-4`}>
+                          {manualAssignments.unassigned.map(it => `${it.qty}${it.unit} ${it.name} (${it.category})`).join(', ')}. Pick a vendor that covers {Array.from(new Set(manualAssignments.unassigned.map(it => it.category))).join(' / ')}, or remove these items from the basket.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Atlas · Picked-vendor history — inline insight under
                     the directory when the user has selected a single
@@ -2297,54 +2486,128 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   </div>
                 </div>
 
-                {/* Atlas · Logistics Intel — A-05 readout of the chosen
-                    date + venue + (if known) vendor. Surfaces flex
-                    assessment + scheduling conflicts. */}
+                {/* Atlas · Logistics Intel — A-05 readout. For single-
+                    vendor flows it inspects that vendor's metrics + the
+                    chosen date. For multi-vendor flows (manual split,
+                    auto-split, or multi-award RFQ) it produces a per-
+                    vendor mini-summary so the user can spot which leg
+                    of the basket is logistically risky. */}
                 {(() => {
-                  const logVendorId = awardedQuote?.vendorId ?? selectedVendors[0] ?? null;
-                  const intel = summarizeLogistics(
-                    logVendorId,
-                    neededBy,
-                    parseInt(windowDays) || 0,
-                    targetVenues,
-                  );
-                  if (!intel) return null;
+                  const involvedVendorIds: string[] =
+                    awardedQuotes.length > 0
+                      ? awardedQuotes.map(a => a.vendorId)
+                    : splitMode
+                      ? proposedSplits.map(g => g.vendorId)
+                    : isManualMultiVendor
+                      ? manualAssignments.groups.map(g => g.vendor.id)
+                    : selectedVendors.length > 0
+                      ? [selectedVendors[0]]
+                      : [];
+                  const multi = involvedVendorIds.length > 1;
+                  if (!multi) {
+                    const intel = summarizeLogistics(
+                      involvedVendorIds[0] ?? null,
+                      neededBy,
+                      parseInt(windowDays) || 0,
+                      targetVenues,
+                    );
+                    if (!intel) return null;
+                    return (
+                      <div className={`p-3 rounded-lg border ${
+                        isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                      }`}>
+                        <div className="flex items-start gap-2">
+                          <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className={`text-[9px] font-bold uppercase tracking-wide ${SAGE.icon(isDark)}`}>
+                                A-05 · Logistics Intel
+                              </span>
+                              <span className={`text-[9px] px-1 py-0.5 rounded ${
+                                intel.flexAssessment === 'tight'
+                                  ? isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                  : intel.flexAssessment === 'comfortable'
+                                    ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                                    : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {intel.flexAssessment} window
+                              </span>
+                            </div>
+                            <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                              {intel.message}
+                            </p>
+                            {intel.conflicts.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {intel.conflicts.slice(0, 4).map(c => (
+                                  <span key={c.poId} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                    isDark ? 'bg-amber-500/10 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                  }`}>
+                                    {c.poId}{c.supplier ? ` · ${c.supplier}` : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  // Multi-vendor case — per-vendor mini summaries.
+                  const perVendor = involvedVendorIds
+                    .map(vid => ({
+                      vid,
+                      vendor: finnsSuppliers.find(s => s.id === vid),
+                      intel: summarizeLogistics(vid, neededBy, parseInt(windowDays) || 0, targetVenues),
+                    }))
+                    .filter(x => x.vendor && x.intel);
+                  if (perVendor.length === 0) return null;
+                  const anyTight = perVendor.some(x => x.intel!.flexAssessment === 'tight');
                   return (
                     <div className={`p-3 rounded-lg border ${
                       isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
                     }`}>
-                      <div className="flex items-start gap-2">
+                      <div className="flex items-start gap-2 mb-2">
                         <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 mb-0.5">
                             <span className={`text-[9px] font-bold uppercase tracking-wide ${SAGE.icon(isDark)}`}>
-                              A-05 · Logistics Intel
+                              A-05 · Logistics Intel · {perVendor.length} vendors
                             </span>
-                            <span className={`text-[9px] px-1 py-0.5 rounded ${
-                              intel.flexAssessment === 'tight'
-                                ? isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
-                                : intel.flexAssessment === 'comfortable'
-                                  ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
-                                  : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
-                            }`}>
-                              {intel.flexAssessment} window
-                            </span>
+                            {anyTight && (
+                              <span className={`text-[9px] px-1 py-0.5 rounded ${
+                                isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                              }`}>
+                                ⚠ tight on {perVendor.filter(x => x.intel!.flexAssessment === 'tight').length} leg{perVendor.filter(x => x.intel!.flexAssessment === 'tight').length === 1 ? '' : 's'}
+                              </span>
+                            )}
                           </div>
                           <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                            {intel.message}
+                            Same target date applies to {perVendor.length} POs. Per-leg readout below — if any leg is tight, consider widening the flex window or splitting the target date.
                           </p>
-                          {intel.conflicts.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {intel.conflicts.slice(0, 4).map(c => (
-                                <span key={c.poId} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                                  isDark ? 'bg-amber-500/10 text-amber-300' : 'bg-amber-50 text-amber-700'
-                                }`}>
-                                  {c.poId}{c.supplier ? ` · ${c.supplier}` : ''}
-                                </span>
-                              ))}
-                            </div>
-                          )}
                         </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        {perVendor.map(x => (
+                          <div key={x.vid} className={`p-2 rounded text-[10px] ${
+                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#dbe3ce]'
+                          }`}>
+                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                              <span className={`font-semibold ${labelClass}`}>{x.vendor!.name}</span>
+                              <span className={`text-[9px] px-1 py-0.5 rounded ${
+                                x.intel!.flexAssessment === 'tight'
+                                  ? isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                  : x.intel!.flexAssessment === 'comfortable'
+                                    ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                                    : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {x.intel!.flexAssessment}
+                              </span>
+                            </div>
+                            <p className={`leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                              {x.intel!.message}
+                            </p>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
@@ -2553,21 +2816,31 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   <div className="space-y-3">
                     {(() => {
                       const isMultiAward = awardedQuotes.length > 1;
+                      const isAutoSplit = splitMode && proposedSplits.length > 1;
                       const multiAwardTotal = awardedQuotes.reduce((s, a) => s + a.totalIdr, 0);
+                      const isMultiVendorAny = isMultiAward || isAutoSplit || isManualMultiVendor;
+                      const poCount = isMultiAward ? awardedQuotes.length
+                        : isAutoSplit ? proposedSplits.length
+                        : isManualMultiVendor ? manualAssignments.groups.length
+                        : 1;
+                      const vendorLabel = isMultiAward
+                        ? `${awardedQuotes.length} vendors · ${awardedQuotes.length} PO drafts`
+                        : isAutoSplit
+                          ? `${proposedSplits.length} vendors (auto-split) · ${proposedSplits.length} PO drafts`
+                          : isManualMultiVendor
+                            ? `${manualAssignments.groups.length} vendors (manual) · ${manualAssignments.groups.length} PO drafts`
+                            : primaryVendor?.name ?? '(none)';
                       const rows: { k: string; v: string }[] = [
                         { k: 'Request', v: requestName },
                         { k: 'Items', v: `${items.length} line${items.length === 1 ? '' : 's'} · ${fmtIdrShort(isMultiAward ? multiAwardTotal : itemsTotalIdr)}` },
                         { k: 'Playbook', v: `${playbook} · ${finnsPlaybooks.find(p => p.id === playbook)?.name}` },
-                        {
-                          k: isMultiAward ? 'Vendors' : 'Primary Vendor',
-                          v: isMultiAward
-                            ? `${awardedQuotes.length} vendors · ${awardedQuotes.length} PO drafts`
-                            : primaryVendor?.name ?? '(none)',
-                        },
+                        { k: isMultiVendorAny ? 'Vendors' : 'Primary Vendor', v: vendorLabel },
                         { k: 'Target Venues', v: targetVenues.join(', ') || '(none)' },
                         { k: 'Target Date', v: `${neededBy} (±${windowDays}d window)` },
                         { k: 'Recurring', v: recurring ? `Yes · ${recurringFrequency}` : 'No' },
                       ];
+                      // Suppress unused-warning for poCount (used inside fragment text only).
+                      void poCount;
                       return rows.map(row => (
                         <div key={row.k} className="flex items-center justify-between gap-3">
                           <span className={`text-[11px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{row.k}</span>
@@ -2576,10 +2849,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       ));
                     })()}
                   </div>
+                  {/* Per-vendor breakdown — shown for all 3 multi-PO cases
+                      (multi-award RFQ, auto-split, manual multi-vendor)
+                      so the user always sees what's about to be minted. */}
                   {awardedQuotes.length > 1 && (
                     <div className={`mt-3 pt-3 border-t ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
                       <p className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                        Per-vendor breakdown
+                        Per-vendor breakdown · multi-award RFQ
                       </p>
                       <div className="space-y-1.5">
                         {awardedQuotes.map(aq => {
@@ -2602,6 +2878,79 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                             </div>
                           );
                         })}
+                      </div>
+                    </div>
+                  )}
+                  {splitMode && proposedSplits.length > 1 && awardedQuotes.length === 0 && (
+                    <div className={`mt-3 pt-3 border-t ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Per-vendor breakdown · auto-split
+                      </p>
+                      <div className="space-y-1.5">
+                        {proposedSplits.map((g, idx) => {
+                          const splitTotal = g.items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
+                          return (
+                            <div key={g.vendorId} className={`flex items-start gap-2 p-2 rounded text-[10px] ${
+                              isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50 border border-gray-200'
+                            }`}>
+                              <span className={`shrink-0 font-bold px-1.5 py-0.5 rounded ${SAGE.badge(isDark)}`}>
+                                PO {idx + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className={`font-semibold ${labelClass}`}>
+                                  {g.vendorName} · {fmtIdrShort(splitTotal)} · {g.items.length} item{g.items.length === 1 ? '' : 's'}
+                                </p>
+                                <p className={`mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                  {g.items.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {isManualMultiVendor && (
+                    <div className={`mt-3 pt-3 border-t ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Per-vendor breakdown · manual split
+                      </p>
+                      <div className="space-y-1.5">
+                        {manualAssignments.groups.map((g, idx) => {
+                          const splitTotal = g.items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
+                          return (
+                            <div key={g.vendor.id} className={`flex items-start gap-2 p-2 rounded text-[10px] ${
+                              isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50 border border-gray-200'
+                            }`}>
+                              <span className={`shrink-0 font-bold px-1.5 py-0.5 rounded ${SAGE.badge(isDark)}`}>
+                                PO {idx + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className={`font-semibold ${labelClass}`}>
+                                  {g.vendor.name} · {fmtIdrShort(splitTotal)} · {g.items.length} item{g.items.length === 1 ? '' : 's'}
+                                </p>
+                                <p className={`mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                  {g.items.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {manualAssignments.unassigned.length > 0 && (
+                          <div className={`flex items-start gap-2 p-2 rounded text-[10px] ${
+                            isDark ? 'bg-amber-500/10 border border-amber-500/40' : 'bg-amber-50 border border-amber-300'
+                          }`}>
+                            <AlertTriangle className={`h-3 w-3 mt-0.5 shrink-0 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+                            <div className="min-w-0 flex-1">
+                              <p className={`font-bold ${labelClass}`}>
+                                {manualAssignments.unassigned.length} item{manualAssignments.unassigned.length === 1 ? '' : 's'} not assigned
+                              </p>
+                              <p className={`mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                {manualAssignments.unassigned.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}. Authorize is blocked — go back to Step 2 and pick a vendor for these categories.
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2629,22 +2978,58 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   </ul>
                 </div>
 
-                <div className="flex justify-between gap-2 mt-6">
-                  <Button variant="outline" onClick={() => setStep(3)}
-                    className={isDark ? 'bg-transparent border-gray-700 text-gray-300 hover:bg-gray-800' : ''}>
-                    ← Back
-                  </Button>
-                  <Button onClick={handleSubmit} className={SAGE.primary(isDark)}>
-                    {awardedQuotes.length > 1
-                      ? `Authorize · Finalize ${awardedQuotes.length} POs`
-                      : splitMode && proposedSplits.length > 1
-                        ? `Authorize · Create ${proposedSplits.length} POs`
+                {/* Authorize gate — block on:
+                    (a) manual multi-vendor with unassigned items, or
+                    (b) single-vendor on a cross-category basket where the
+                        picked vendor doesn't cover every item category. */}
+                {(() => {
+                  const blockedByUnassigned = isManualMultiVendor && manualAssignments.unassigned.length > 0;
+                  const singleVendorIncomplete = !awardedQuote && !splitMode && selectedVendors.length === 1
+                    && itemCategories.length >= 2 && vendorCoverage(selectedVendors[0]).covered < vendorCoverage(selectedVendors[0]).total;
+                  const blocked = blockedByUnassigned || singleVendorIncomplete;
+                  const buttonCopy = awardedQuotes.length > 1
+                    ? `Authorize · Finalize ${awardedQuotes.length} POs`
+                    : splitMode && proposedSplits.length > 1
+                      ? `Authorize · Create ${proposedSplits.length} POs`
+                      : isManualMultiVendor
+                        ? `Authorize · Create ${manualAssignments.groups.length} POs`
                         : poAutonomy === 'manual'
                           ? 'Authorize · Route to Orders'
-                          : 'Authorize · Hand off to A-04'}
-                    <ChevronRight className="h-3 w-3 ml-1" />
-                  </Button>
-                </div>
+                          : 'Authorize · Hand off to A-04';
+                  const blockReason = blockedByUnassigned
+                    ? `${manualAssignments.unassigned.length} item${manualAssignments.unassigned.length === 1 ? '' : 's'} have no assigned vendor — go back to Step 2 to fix.`
+                    : singleVendorIncomplete
+                      ? `Selected vendor doesn't cover every category in this basket. Pick another vendor for the missing categories or switch to auto-split.`
+                      : '';
+                  return (
+                    <>
+                      {blocked && (
+                        <div className={`p-3 rounded-lg border mb-3 ${
+                          isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+                        }`}>
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+                            <div className="min-w-0">
+                              <p className={`text-[11px] font-bold ${labelClass}`}>Authorize blocked</p>
+                              <p className={`text-[10px] mt-0.5 leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{blockReason}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex justify-between gap-2 mt-6">
+                        <Button variant="outline" onClick={() => setStep(3)}
+                          className={isDark ? 'bg-transparent border-gray-700 text-gray-300 hover:bg-gray-800' : ''}>
+                          ← Back
+                        </Button>
+                        <Button onClick={handleSubmit} disabled={blocked}
+                          className={blocked ? '' : SAGE.primary(isDark)}>
+                          {buttonCopy}
+                          <ChevronRight className="h-3 w-3 ml-1" />
+                        </Button>
+                      </div>
+                    </>
+                  );
+                })()}
               </>
             )}
 

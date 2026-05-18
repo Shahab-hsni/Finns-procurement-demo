@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
@@ -271,6 +271,39 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   useEffect(() => {
     if (proposedSplits.length <= 1 && splitMode) setSplitMode(false);
   }, [proposedSplits.length, splitMode]);
+
+  // 6i — Coverage analysis for the current basket.
+  // Each item has a detected category; check whether the directory
+  // contains a vendor that covers EVERY category in the basket. When
+  // none exists, the wizard surfaces a cross-category banner on Step 2
+  // and a warning on Step 4 if the user tries to send everything to
+  // one vendor anyway.
+  const itemCategories = useMemo(
+    () => Array.from(new Set(items.map(it => it.category).filter(Boolean))),
+    [items],
+  );
+  const someVendorCoversAll = useMemo(() => {
+    if (itemCategories.length === 0) return true;
+    return finnsSuppliers.some(v =>
+      itemCategories.every(c => v.categories.includes(c)),
+    );
+  }, [itemCategories]);
+  /** Returns { covered, total } for a vendor against the basket. */
+  const vendorCoverage = useCallback((vendorId: string): { covered: number; total: number } => {
+    const v = finnsSuppliers.find(s => s.id === vendorId);
+    if (!v || itemCategories.length === 0) return { covered: itemCategories.length, total: itemCategories.length };
+    const covered = itemCategories.filter(c => v.categories.includes(c)).length;
+    return { covered, total: itemCategories.length };
+  }, [itemCategories]);
+  /** True iff items span ≥2 categories AND no single vendor covers them all. */
+  const isCrossCategoryUnservable = itemCategories.length >= 2 && !someVendorCoversAll;
+  // Dismiss flag — set when the user explicitly clicks "Pick one vendor
+  // anyway" so the banner stops nagging within this wizard session.
+  const [crossCategoryDismissed, setCrossCategoryDismissed] = useState(false);
+  // Reset dismiss when items change so the banner re-asserts on a new basket.
+  useEffect(() => {
+    setCrossCategoryDismissed(false);
+  }, [itemCategories.join('|')]);
 
   // 6d — Auto-mode pre-pick keys off the PER-PO autonomy setting
   // (picked on Step 1), not the system default. When the user has
@@ -1489,6 +1522,67 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 only way out is Award (advance) or Cancel RFQ (reset). */}
             {step === 2 && (
               <>
+                {/* 6i — Cross-category banner. Fires when items span ≥2
+                    categories AND no single vendor in the directory
+                    covers them all. Three CTAs: auto-split (skip vendor
+                    pick), send a multi-vendor RFQ (open the composer),
+                    or proceed anyway (Path A with a Step-4 warning). */}
+                {!wizardRfqId && isCrossCategoryUnservable && !crossCategoryDismissed && (
+                  <div className={`p-4 rounded-xl border ${
+                    isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+                  }`}>
+                    <div className="flex items-start gap-2 mb-3">
+                      <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+                      <div className="min-w-0">
+                        <p className={`text-[11px] font-bold ${labelClass}`}>
+                          Cross-category basket · no single vendor covers everything
+                        </p>
+                        <p className={`text-[10px] mt-1 leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          Your basket spans <strong>{itemCategories.length} categories</strong> ({itemCategories.join(', ')}). A-01 grouped items by best-fit vendor:
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 mb-3">
+                      {proposedSplits.map(g => (
+                        <div key={g.vendorId} className={`p-2 rounded-lg border ${
+                          isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+                        }`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`text-xs font-semibold ${labelClass}`}>{g.vendorName}</span>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                              {g.items.length} item{g.items.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <p className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                            {g.items.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => { setSplitMode(true); setStep(3); }}
+                        className="text-[11px] px-3 py-1.5 rounded-lg font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                        Auto-split into {proposedSplits.length} POs →
+                      </button>
+                      <button
+                        onClick={() => { setSourcingPath('rfq'); setRfqOpen(true); }}
+                        className={`text-[11px] px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                          isDark ? 'border border-gray-700 text-gray-300 hover:bg-gray-800' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}>
+                        Send a multi-vendor RFQ
+                      </button>
+                      <button
+                        onClick={() => setCrossCategoryDismissed(true)}
+                        className={`text-[11px] font-semibold transition-colors ${
+                          isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-800'
+                        }`}>
+                        Pick one vendor anyway →
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Path picker — only visible when no RFQ is in flight */}
                 {!wizardRfqId && (
                   <div className={cardClass}>
@@ -1597,6 +1691,28 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                       <Sparkles className="h-2.5 w-2.5" /> Match
                                     </span>
                                   )}
+                                  {/* 6i — coverage chip. Only shows when items span ≥2 categories. */}
+                                  {itemCategories.length >= 2 && (() => {
+                                    const cov = vendorCoverage(v.id);
+                                    if (cov.covered === cov.total) {
+                                      return (
+                                        <span title="This vendor supplies every category in your basket"
+                                              className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                                isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                                              }`}>
+                                          ✓ Covers all
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span title={`This vendor only supplies ${cov.covered} of ${cov.total} item categories. Picking them ships the other items to a vendor who doesn't carry them.`}
+                                            className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                              isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                            }`}>
+                                        Covers {cov.covered}/{cov.total}
+                                      </span>
+                                    );
+                                  })()}
                                   {/* 5d — team note exists indicator */}
                                   {(() => {
                                     const n = readEntityNote('supplier', v.id);
@@ -1861,6 +1977,47 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             {/* ── STEP 4: Review ───────────────────────────────────── */}
             {step === 4 && (
               <>
+                {/* 6i — Single-vendor coverage warning. Fires when the
+                    user is on Path A (no RFQ award), splitMode is off,
+                    they picked one vendor, and that vendor doesn't
+                    cover every category in the basket. Doesn't block —
+                    user can still proceed — but makes the gap visible. */}
+                {!awardedQuote && !splitMode && selectedVendors[0] && itemCategories.length >= 2 && (() => {
+                  const cov = vendorCoverage(selectedVendors[0]);
+                  if (cov.covered === cov.total) return null;
+                  const v = finnsSuppliers.find(s => s.id === selectedVendors[0]);
+                  const missing = itemCategories.filter(c => !v?.categories.includes(c));
+                  return (
+                    <div className={`p-4 rounded-xl border ${
+                      isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+                    }`}>
+                      <div className="flex items-start gap-2 mb-2">
+                        <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+                        <div className="min-w-0">
+                          <p className={`text-[11px] font-bold ${labelClass}`}>
+                            {v?.name ?? 'Selected vendor'} only covers {cov.covered} of {cov.total} categories
+                          </p>
+                          <p className={`text-[10px] mt-1 leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                            Items in <strong>{missing.join(', ')}</strong> would still go to {v?.name ?? 'this vendor'} on submit — they don't typically supply that. You probably want to split into separate POs by vendor.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={() => setSplitMode(true)}
+                          className="text-[11px] px-3 py-1.5 rounded-lg font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                          Switch to auto-split ({proposedSplits.length} POs)
+                        </button>
+                        <button onClick={() => setStep(2)}
+                          className={`text-[11px] px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                            isDark ? 'border border-gray-700 text-gray-300 hover:bg-gray-800' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          }`}>
+                          Back to vendor pick
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* 5g — Smart split detected.
                     When items map to multiple top-suggested vendors AND
                     the user isn't on the RFQ path, show a "split" card

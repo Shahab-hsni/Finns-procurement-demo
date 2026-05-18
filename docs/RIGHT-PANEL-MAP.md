@@ -197,11 +197,11 @@ Owned by **Vendor Comms Agent (A-03)** in narrative. Normal AI content is hidden
 
 | Section | Contents |
 |---------|----------|
-| **4 KPI cards** | Processed (count + Rp spend) · On-time % · Avg cycle time (hours, PO → Delivered) · Recovered savings (Rp) |
+| **4 KPI cards · headline** | Processed (count + Rp spend) · On-time % · Avg cycle time (hours, PO → Delivered) · Recovered savings (Rp). All amounts use `fmtIdrShort` — no `$` prefix. |
+| **2 KPI cards · labor (Phase 6t)** | **Labor mix** — split bar showing Auto vs Manual counts within the filtered set. **Auto-cleared** — count of completed orders the auto-progress engine closed end-to-end without admin clicks. Phase 6 punchline. |
 | **Status mix bars** | Horizontal bar per status (live / completed / disputed / cancelled / on-hold) with pct fill + count |
 | **Top suppliers · spend** | Top 5 suppliers ranked by total spend. **Clicking a card sets the supplier filter** on the audit list |
 | **Disputes · top sources** | Suppliers with ≥1 disputed order, ranked descending (red-tinted cards) |
-| **Venue mix** | Per-venue spend bars (BC / RC / ST / SP / Multi) |
 
 All insights scope to the current filter window — change any filter and the right panel re-aggregates.
 
@@ -212,9 +212,10 @@ All insights scope to the current filter window — change any filter and the ri
 | Element | Behavior |
 |---------|----------|
 | Header | *"Quick Journey"* + PO id · supplier |
-| Order detail card | Amount (large) · Stage `N/5` · `humanDescription` · Venue chips |
+| Order detail card | Amount (large, IDR via `fmtIdrShort`) · Stage `N/5` · `humanDescription` · Venue chips |
 | Compact 5-stage dot rail | Done (sage) · Current (amber pulsing) · Upcoming (gray) |
 | **Open Full Workspace** button | Snaps out of Audit Mode and loads the Single Order Journey |
+| **View reasoning in A&G** button (Phase 6t) | Sets `#po=PO-XXXX` and navigates to Activity & Governance, where the reasoning chain for that PO is the canonical drill-down. Replaced the dead "Decision Trail" button — Decision Attribution Trail is a removed pattern per CLAUDE.md. |
 | **Message Supplier** button | Opens the Source Bridge for that supplier |
 
 ---

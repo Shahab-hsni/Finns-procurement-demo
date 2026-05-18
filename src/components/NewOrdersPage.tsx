@@ -995,7 +995,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   type AuditStatus = 'all' | OrderStatus;
   type AuditView   = 'table' | 'grid';
   type AuditRange  = '7d' | '30d' | '90d' | 'all';
-  type AuditStage  = 'all' | 'procurement' | 'processing' | 'logistics';
+  type AuditStage  = 'all' | 'procurement' | 'fulfillment' | 'receiving';
   const [auditMode,           setAuditMode]           = useState(false);
   const [auditView,           setAuditView]           = useState<AuditView>('table');
   const [auditSearch,         setAuditSearch]         = useState('');
@@ -1548,12 +1548,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       if (auditSupplierFilter && o.supplier !== auditSupplierFilter) return false;
       if (auditAgentFilter !== null && o.assignedAgent.id !== auditAgentFilter) return false;
       if (auditWorkflowFilter && o.workflowTemplate !== auditWorkflowFilter) return false;
+      // 6t — bands keyed to the 5-stage DAG (data range 0..4).
+      //   procurement: Request + Quote/Vendor Confirmed  (0..1)
+      //   fulfillment: PO Approved + In Transit          (2..3)
+      //   receiving:   Delivered & Checked               (4)
       if (auditStageFilter !== 'all') {
         const s = o.dagStage;
         const inBand =
-          auditStageFilter === 'procurement' ? s <= 3 :
-          auditStageFilter === 'processing'  ? s >= 4 && s <= 7 :
-          auditStageFilter === 'logistics'   ? s >= 8 : true;
+          auditStageFilter === 'procurement' ? s <= 1 :
+          auditStageFilter === 'fulfillment' ? s >= 2 && s <= 3 :
+          auditStageFilter === 'receiving'   ? s === 4 : true;
         if (!inBand) return false;
       }
       if (cutoff > 0) {
@@ -1605,6 +1609,19 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       .sort((a, b) => b.disputes - a.disputes)
       .slice(0, 5);
 
+    // 6t — Labor mode mix across the filtered set. Reads each PO's
+    // per-entity labor switch from `laborMode`; defaults to 'auto' for
+    // any PO that doesn't carry an explicit setting.
+    const autoCount   = auditFiltered.filter(o => (laborMode[o.id] ?? 'auto') === 'auto').length;
+    const manualCount = auditFiltered.length - autoCount;
+    // 6t — Auto-cleared = completed AND last touched by the auto-progress
+    // engine (no admin entries in manualStageData). The demo's punchline.
+    const autoCleared = completed.filter(o => {
+      const md = manualStageData[o.id];
+      if (!md) return (laborMode[o.id] ?? 'auto') === 'auto';
+      return (laborMode[o.id] ?? 'auto') === 'auto' && Object.keys(md).length === 0;
+    }).length;
+
     return {
       totalCount: auditFiltered.length,
       totalSpend,
@@ -1616,8 +1633,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       cancelledCount: auditFiltered.filter(o => o.status === 'cancelled').length,
       topSuppliers,
       topDisputes,
+      autoCount,
+      manualCount,
+      autoCleared,
     };
-  }, [auditFiltered]);
+  }, [auditFiltered, laborMode, manualStageData]);
 
   // Helper: status pill colors
   const statusPill = (status: OrderStatus): { label: string; lightBg: string; lightText: string; darkBg: string; darkText: string } => {
@@ -2073,10 +2093,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     { id: 'all', label: 'All time' },
   ];
   const STAGE_BANDS: { id: AuditStage; label: string }[] = [
-    { id: 'all',         label: 'Any stage'           },
-    { id: 'procurement', label: 'Procurement (0-3)'   },
-    { id: 'processing',  label: 'Processing (4-7)'    },
-    { id: 'logistics',   label: 'Logistics (8-11)'    },
+    { id: 'all',         label: 'Any stage'                  },
+    { id: 'procurement', label: 'Procurement · Stages 1–2'   },
+    { id: 'fulfillment', label: 'Fulfillment · Stages 3–4'   },
+    { id: 'receiving',   label: 'Receiving · Stage 5'        },
   ];
   const allAuditSelected = auditSelected.size > 0 && auditSelected.size === auditFiltered.length;
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -2272,7 +2292,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                       <span className={`text-[10px] ${t.textMuted} truncate block`}>{o.items.join(', ')}</span>
                     </td>
                     <td className="py-2 px-2 text-right">
-                      <span className={`text-xs font-semibold ${t.textPrimary}`}>${o.amount.toLocaleString()}</span>
+                      <span className={`text-xs font-semibold ${t.textPrimary}`}>{fmtIdrShort(o.amount)}</span>
                     </td>
                     <td className="py-2 px-2 text-center">
                       <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
@@ -2333,7 +2353,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
                       isDark ? `${pill.darkBg} ${pill.darkText}` : `${pill.lightBg} ${pill.lightText}`
                     }`}>{pill.label}</span>
-                    <span className={`text-xs font-bold ${t.textPrimary}`}>${o.amount.toLocaleString()}</span>
+                    <span className={`text-xs font-bold ${t.textPrimary}`}>{fmtIdrShort(o.amount)}</span>
                   </div>
                   {/* Mini 5-stage bar */}
                   <div className="flex items-center gap-0.5 mb-1">
@@ -2378,7 +2398,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
               <div className="flex items-baseline justify-between mb-1">
-                <span className={`text-lg font-bold ${t.textPrimary}`}>${selectedOrder.amount.toLocaleString()}</span>
+                <span className={`text-lg font-bold ${t.textPrimary}`}>{fmtIdrShort(selectedOrder.amount)}</span>
                 <span className={`text-[10px] ${t.textMuted}`}>Stage {selectedOrder.dagStage + 1}/5</span>
               </div>
               <p className={`text-[10px] ${t.textMuted}`}>{selectedOrder.humanDescription}</p>
@@ -2402,9 +2422,19 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               className="w-full h-8 text-[11px] bg-[#87986a] hover:bg-[#6b7a54] text-white">
               <Maximize2 className="h-3 w-3 mr-1.5" /> Open Full Workspace
             </Button>
-            <Button size="sm" variant="outline" onClick={() => { setAttributionTrailFor(selectedOrder.id); setExpandedAttrStage(null); }}
+            <Button size="sm" variant="outline"
+              onClick={() => {
+                // 6t — Decision Attribution Trail was removed in the Buyamia
+                // reshape (CLAUDE.md). The Activity & Governance reasoning
+                // chain is the canonical drill-down for "why did this
+                // happen?" — link there with the PO context preserved.
+                if (typeof window !== 'undefined') {
+                  window.location.hash = `po=${selectedOrder.id}`;
+                }
+                onNavigate?.('governance');
+              }}
               className={`w-full h-8 text-[11px] ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}>
-              <History className="h-3 w-3 mr-1.5" /> Decision Trail
+              <History className="h-3 w-3 mr-1.5" /> View reasoning in A&G
             </Button>
             <Button size="sm" variant="outline" onClick={() => setBridgeTarget({ orderId: selectedOrder.id, supplier: selectedOrder.supplier, channel: 'whatsapp', message: '' })}
               className={`w-full h-8 text-[11px] ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}>
@@ -2431,7 +2461,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Processed</p>
               <p className={`text-lg font-bold ${t.textPrimary}`}>{auditInsights.totalCount}</p>
-              <p className={`text-[10px] ${t.textMuted}`}>${(auditInsights.totalSpend / 1000).toFixed(1)}K spend</p>
+              <p className={`text-[10px] ${t.textMuted}`}>{fmtIdrShort(auditInsights.totalSpend)} spend</p>
             </div>
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>On-time</p>
@@ -2445,8 +2475,33 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             </div>
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Savings</p>
-              <p className={`text-lg font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>${(auditInsights.totalSaved / 1000).toFixed(1)}K</p>
+              <p className={`text-lg font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(auditInsights.totalSaved)}</p>
               <p className={`text-[10px] ${t.textMuted}`}>recovered</p>
+            </div>
+          </div>
+
+          {/* 6t — Labor mix + Auto-cleared (Phase 6 punchline). Shows how
+              much of the filtered set ran through the auto-progress engine
+              without admin clicks. */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+              <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Labor mix</p>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <span className={`text-lg font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{auditInsights.autoCount}</span>
+                <span className={`text-[10px] ${t.textMuted}`}>Auto</span>
+                <span className={`text-[10px] ${t.textMuted}`}>·</span>
+                <span className={`text-lg font-bold ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>{auditInsights.manualCount}</span>
+                <span className={`text-[10px] ${t.textMuted}`}>Manual</span>
+              </div>
+              <div className={`mt-1.5 flex h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                <div className="bg-[#87986a]" style={{ width: `${auditInsights.totalCount ? (auditInsights.autoCount / auditInsights.totalCount) * 100 : 0}%` }} />
+                <div className="bg-amber-500" style={{ width: `${auditInsights.totalCount ? (auditInsights.manualCount / auditInsights.totalCount) * 100 : 0}%` }} />
+              </div>
+            </div>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+              <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Auto-cleared</p>
+              <p className={`text-lg font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{auditInsights.autoCleared}</p>
+              <p className={`text-[10px] ${t.textMuted}`}>zero admin clicks</p>
             </div>
           </div>
 
@@ -2485,7 +2540,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     }`}>
                     <div className="flex items-center justify-between">
                       <span className={`text-[11px] font-semibold ${t.textPrimary} truncate`}>{s.name}</span>
-                      <span className={`text-[10px] font-bold ${t.textPrimary}`}>${s.spend.toLocaleString()}</span>
+                      <span className={`text-[10px] font-bold ${t.textPrimary}`}>{fmtIdrShort(s.spend)}</span>
                     </div>
                     <p className={`text-[9px] ${t.textMuted}`}>{s.count} order{s.count !== 1 ? 's' : ''}{s.disputes > 0 ? ` · ${s.disputes} disputed` : ''}</p>
                   </div>
@@ -3031,7 +3086,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <div className={`${t.cardPanel} space-y-4`}>
               <div className="flex items-start justify-between">
                 <div>
-                  <span className={`text-2xl font-bold tracking-tight ${t.textPrimary}`}>${selectedOrder.amount.toLocaleString()}</span>
+                  <span className={`text-2xl font-bold tracking-tight ${t.textPrimary}`}>{fmtIdrShort(selectedOrder.amount)}</span>
                   <p className={`text-sm mt-1 ${t.textMuted}`}>{selectedOrder.humanDescription}</p>
                 </div>
                 {selectedOrder.saving && selectedOrder.saving.cost > 0 && (
@@ -3264,7 +3319,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                         </div>
                         <p className={`text-[10px] ${t.textMuted}`}>{order.humanDescription}</p>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className={`text-xs font-bold ${t.textPrimary}`}>${order.amount.toLocaleString()}</span>
+                          <span className={`text-xs font-bold ${t.textPrimary}`}>{fmtIdrShort(order.amount)}</span>
                           {meta && (
                             <span className={`text-[10px] font-medium ${isDark ? meta.darkColor : meta.color}`}>{meta.label}</span>
                           )}

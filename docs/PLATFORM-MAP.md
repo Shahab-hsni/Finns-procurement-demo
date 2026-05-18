@@ -512,7 +512,7 @@ Audit Mode:
 | Status filter chip | All · Live · Completed · Disputed · Cancelled · On Hold — each shows a live count. |
 | Date range preset | 7 days · 30 days · 90 days · All time. |
 | Supplier filter | Dropdown of every supplier in the ledger. |
-| Stage band filter | Any stage · Pre-PO (1–2) · Fulfillment (3–4) · Closeout (5). |
+| Stage band filter | Any stage · **Procurement** (Stages 1–2: Request + Quote/Vendor Confirmed) · **Fulfillment** (Stages 3–4: PO Approved + In Transit) · **Receiving** (Stage 5: Delivered & Checked). |
 | Agent filter | Dropdown of every assigned agent (A-01 … A-05). |
 | Venue filter | Dropdown — BC · RC · ST · SP · Multi. |
 | Workflow filter | Dropdown of playbook ids (`WF-STD` / `WF-RSH` / `WF-REC`). |

@@ -546,7 +546,10 @@ Full-width ledger combining live + historical orders. Columns: PO id · Supplier
 - Status chips (All / Live / Completed / Disputed / Cancelled / On-Hold) with live counts
 - Date range presets (7d / 30d / 90d / All)
 - Supplier dropdown
-- Stage band dropdown (Any / Pre-PO / Fulfillment / Closeout)
+- **Stage band dropdown** (5-stage DAG, keyed to data range 0–4):
+  - `Procurement · Stages 1–2` → dagStage 0–1 (Request + Quote/Vendor Confirmed)
+  - `Fulfillment · Stages 3–4` → dagStage 2–3 (PO Approved + In Transit)
+  - `Receiving · Stage 5` → dagStage 4 (Delivered & Checked)
 - Agent dropdown (A-01 … A-05)
 - Venue dropdown (BC / RC / ST / SP / Multi)
 - Workflow dropdown (WF-STD / WF-RSH / WF-REC)

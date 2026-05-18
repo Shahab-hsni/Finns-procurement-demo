@@ -557,7 +557,21 @@ Full-width ledger combining live + historical orders. Columns: PO id · Supplier
 
 ### Table view (default)
 
-Uses **Archetype A — Selection Data Grid** (see DESIGN.md). Row click on a live order → exits Audit Mode and loads journey. Row click on a historical order → Quick Journey appears in right panel, Audit Mode persists.
+Uses **Archetype A — Selection Data Grid** (see DESIGN.md).
+
+**Row click behaviour (Phase 6u)**: Any row click — live OR historical — keeps Audit Mode expanded and surfaces the Quick Journey card in the right panel. The Quick Journey carries a **status-aware primary action button** so the admin can act without leaving the audit context:
+
+| Row status | Primary action | What it does |
+|------------|----------------|--------------|
+| `completed` | Re-order this PO | Carbon-copies into New Request with `#intent=express&mode=reorder&from=...` |
+| `disputed` | Resolve in A&G | `#dispute=PO-XXXX` → Activity & Governance dispute panel |
+| `on-hold` | Review hold in A&G | Same route as disputed for the demo |
+| `cancelled` | Re-order from scratch | Same carbon-copy route as completed |
+| `live` | Open Full Workspace | Collapses Audit Mode and loads the Single Order Journey |
+
+Secondary actions always available: **View reasoning in A&G** (`#po=PO-XXXX`) and **Message Supplier** (opens the Source Bridge thread for that vendor).
+
+The previous behaviour — live rows silently collapsed Audit Mode, historical rows had a broken Quick Journey (selectedOrder resolved against live `ORDERS` only, so it always rendered Operations Insights instead) — is fixed.
 
 ### Grid view
 

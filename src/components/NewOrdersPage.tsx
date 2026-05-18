@@ -1494,7 +1494,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const isBatch       = selectedIds.size > 1;
   const isSingle      = selectedIds.size === 1;
   const selectedId    = isSingle ? [...selectedIds][0] : null;
-  const selectedOrder = selectedId ? ORDERS.find((o) => o.id === selectedId) ?? null : null;
+  // 6u — in Audit Mode we resolve against the FULL ledger (live + historical)
+  // so a clicked historical row's data renders in the Quick Journey panel.
+  // Outside Audit Mode we stick to live ORDERS — only live POs can be the
+  // center-panel journey.
+  const selectedOrder = selectedId
+    ? (auditMode ? ALL_ORDERS : ORDERS).find((o) => o.id === selectedId) ?? null
+    : null;
 
   // 6s — priority feed is derived from current state, not seeded group.
   // Order is "needs-action" iff its effective stage sits at a real HITL
@@ -1665,21 +1671,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     });
   }, [auditFiltered]);
 
-  // Open an audit row.
-  //   • Live order  → collapse Audit Mode and load the Single Order Journey.
-  //   • Historical  → surface a Quick Journey card in the right panel; the
-  //                   ledger view stays expanded so the user can keep
-  //                   browsing. (No full Decision Attribution Trail
-  //                   modal — that pattern is dropped for Finn's.)
+  // 6u — Open an audit row. Stays in Audit Mode for both live + historical
+  // rows. The right-panel Quick Journey shows the compact view; user clicks
+  // "Open Full Workspace" inside that card to explicitly exit audit and
+  // load the full Single Order Journey. Previously live-row click silently
+  // collapsed Audit Mode — confusing UX, since the admin is mid-investigation.
   const openFromAudit = useCallback((id: string) => {
-    if (ORDERS.some(o => o.id === id)) {
-      setSelectedIds(new Set([id]));
-      setAuditMode(false);
-    } else {
-      // Historical: keep audit mode open, surface a single-row selection
-      // so the right-panel Quick Journey can render.
-      setAuditSelected(new Set([id]));
-    }
+    setSelectedIds(new Set([id]));
   }, []);
 
   // Bulk export selected audit rows as CSV.
@@ -2383,26 +2381,91 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
   // ── AUDIT MODE — Right Panel (macro insights or Quick Journey) ────
   const auditRightPanel = (() => {
-    // If a single live order is selected in audit mode, show a compact
-    // Quick Journey card mirroring Inventory's pattern.
+    // 6u — Quick Journey for any clicked row (live OR historical). selectedOrder
+    // is resolved against ALL_ORDERS in audit mode, so this fires consistently.
     if (selectedOrder) {
+      const pill = statusPill(selectedOrder.status);
+      const isCompleted = selectedOrder.status === 'completed';
+      const isDisputed  = selectedOrder.status === 'disputed';
+      const isOnHold    = selectedOrder.status === 'on-hold';
+      const isCancelled = selectedOrder.status === 'cancelled';
+      const isLiveOrder = ORDERS.some(o => o.id === selectedOrder.id);
+      // Status-aware primary action label.
+      const primaryActionForStatus =
+        isCompleted ? 'Re-order this PO'
+      : isDisputed  ? 'Resolve in A&G'
+      : isOnHold    ? 'Review hold in A&G'
+      : isCancelled ? 'Re-order from scratch'
+      : 'Open Full Workspace';
+      // Re-order routes to New Request via the carbon-copy hash.
+      const doReorder = () => {
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams({
+            intent: 'express', mode: 'reorder',
+            from: selectedOrder.id,
+            vendor: selectedOrder.supplier,
+            items: selectedOrder.items.join(', '),
+          });
+          window.location.hash = params.toString();
+        }
+        onNavigate?.('request');
+      };
+      const doDispute = () => {
+        if (typeof window !== 'undefined') {
+          window.location.hash = `dispute=${selectedOrder.id}`;
+        }
+        onNavigate?.('governance');
+      };
+      const doOpenFullWorkspace = () => {
+        // Only meaningful for live orders — historical POs aren't loaded
+        // into the Single Order Journey center panel.
+        if (!isLiveOrder) {
+          toast.info(`${selectedOrder.id} is a closed historical order`, {
+            description: `Use Re-order or View reasoning to act on it.`,
+          });
+          return;
+        }
+        setAuditMode(false);
+      };
       return (
         <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
           <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
             <div className="flex items-center gap-2 mb-0.5">
               <Sparkles className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
               <span className={`text-sm font-semibold ${t.textPrimary}`}>Quick Journey</span>
+              <span className={`ml-auto inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                isDark ? `${pill.darkBg} ${pill.darkText}` : `${pill.lightBg} ${pill.lightText}`
+              }`}>{pill.label}</span>
             </div>
             <p className={`text-[10px] ${t.textMuted}`}>{selectedOrder.id} · {selectedOrder.supplier}</p>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Header card — amount + stage + description */}
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
               <div className="flex items-baseline justify-between mb-1">
                 <span className={`text-lg font-bold ${t.textPrimary}`}>{fmtIdrShort(selectedOrder.amount)}</span>
                 <span className={`text-[10px] ${t.textMuted}`}>Stage {selectedOrder.dagStage + 1}/5</span>
               </div>
               <p className={`text-[10px] ${t.textMuted}`}>{selectedOrder.humanDescription}</p>
+              {/* Items list — first 3, then "+ N more" */}
+              <div className={`mt-2 pt-2 border-t ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+                <p className={`text-[9px] font-bold uppercase tracking-wide mb-1 ${t.textMuted}`}>Items</p>
+                <ul className={`text-[10px] space-y-0.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  {selectedOrder.items.slice(0, 3).map((it, i) => <li key={i}>· {it}</li>)}
+                  {selectedOrder.items.length > 3 && (
+                    <li className={t.textMuted}>+{selectedOrder.items.length - 3} more</li>
+                  )}
+                </ul>
+              </div>
+              {/* Resolution / failure reason (historical) */}
+              {selectedOrder.resolution && (
+                <div className={`mt-2 pt-2 border-t ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+                  <p className={`text-[9px] font-bold uppercase tracking-wide ${t.textMuted}`}>Resolution</p>
+                  <p className={`text-[10px] mt-0.5 italic ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{selectedOrder.resolution}</p>
+                </div>
+              )}
             </div>
+
             {/* Compact 5-stage dot rail */}
             <div className="space-y-1">
               {DAG_STAGES.map((s, i) => (
@@ -2418,16 +2481,36 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 </div>
               ))}
             </div>
-            <Button size="sm" onClick={() => { setAuditMode(false); }}
+
+            {/* 6u — Status-aware primary action.
+                  Completed / Cancelled → Re-order
+                  Disputed              → Resolve in A&G
+                  On-hold               → Review in A&G
+                  Live / Other          → Open Full Workspace */}
+            <Button size="sm"
+              onClick={isCompleted || isCancelled ? doReorder
+                    : isDisputed                ? doDispute
+                    : isOnHold                  ? doDispute
+                    : doOpenFullWorkspace}
               className="w-full h-8 text-[11px] bg-[#87986a] hover:bg-[#6b7a54] text-white">
-              <Maximize2 className="h-3 w-3 mr-1.5" /> Open Full Workspace
+              {isCompleted || isCancelled
+                ? <RefreshCw className="h-3 w-3 mr-1.5" />
+                : <Maximize2 className="h-3 w-3 mr-1.5" />}
+              {primaryActionForStatus}
             </Button>
+
+            {/* Always-on: Open Full Workspace for live orders (secondary).
+                Hidden for historical because it would silently no-op. */}
+            {isLiveOrder && !isCompleted && !isCancelled && !isDisputed && !isOnHold && (
+              <Button size="sm" variant="outline"
+                onClick={() => setAuditMode(false)}
+                className={`w-full h-8 text-[11px] ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}>
+                <Maximize2 className="h-3 w-3 mr-1.5" /> Open in journey
+              </Button>
+            )}
+
             <Button size="sm" variant="outline"
               onClick={() => {
-                // 6t — Decision Attribution Trail was removed in the Buyamia
-                // reshape (CLAUDE.md). The Activity & Governance reasoning
-                // chain is the canonical drill-down for "why did this
-                // happen?" — link there with the PO context preserved.
                 if (typeof window !== 'undefined') {
                   window.location.hash = `po=${selectedOrder.id}`;
                 }

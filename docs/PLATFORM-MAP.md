@@ -520,10 +520,12 @@ Audit Mode:
 | Audit Select All | Checkbox — selects/clears all currently filtered rows. |
 | Audit view toggle | Switches between Table and Grid layouts. |
 | Export CSV | Downloads `orders-audit-YYYY-MM-DD.csv`. Acts on current selection if any, otherwise full filtered set. |
-| Open audit row · live | Collapses Audit Mode and loads the Single Order Journey. |
-| Open audit row · historical | Keeps Audit Mode; surfaces a compact Quick Journey card in the right panel. |
+| Open audit row (live OR historical) | Keeps Audit Mode expanded; surfaces the Quick Journey card in the right panel with a **status-aware primary action** (Re-order for completed/cancelled, Resolve in A&G for disputed/on-hold, Open Full Workspace for live). |
 | Top-supplier card · filter | Clicking a supplier in Operations Insights sets the supplier filter. |
-| Open Full Workspace (Quick Journey) | Snaps out of Audit Mode and loads the selected order's full journey. |
+| Quick Journey — Open Full Workspace (live only) | Snaps out of Audit Mode and loads the selected order's full journey. |
+| Quick Journey — Re-order (completed / cancelled) | Carbon-copies into New Request with `#intent=express&mode=reorder&from=...&vendor=...&items=...`. |
+| Quick Journey — Resolve in A&G (disputed / on-hold) | Routes with `#dispute=PO-XXXX` to the disputes panel. |
+| Quick Journey — View reasoning in A&G | Routes with `#po=PO-XXXX` to the reasoning chain. |
 
 **Modals**
 

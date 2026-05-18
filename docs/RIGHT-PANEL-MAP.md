@@ -207,16 +207,17 @@ All insights scope to the current filter window — change any filter and the ri
 
 #### Audit Mode — Quick Journey
 
-**Trigger:** Audit Mode is active and a row is selected.
+**Trigger:** Audit Mode is active and a row is clicked. Works for **both live and historical** rows (Phase 6u — was previously live-only because `selectedOrder` resolved against `ORDERS` not `ALL_ORDERS`, and live-row clicks silently collapsed Audit Mode). Click on a row now keeps Audit Mode expanded — the user explicitly exits via the primary action button.
 
 | Element | Behavior |
 |---------|----------|
-| Header | *"Quick Journey"* + PO id · supplier |
-| Order detail card | Amount (large, IDR via `fmtIdrShort`) · Stage `N/5` · `humanDescription` · Venue chips |
+| Header | *"Quick Journey"* + PO id · supplier + status pill (live / completed / disputed / cancelled / on-hold) |
+| Order detail card | Amount (large, `fmtIdrShort`) · Stage `N/5` · `humanDescription` · Items list (first 3, then `+N more`) · Resolution / failure reason line for historical disputes/cancellations |
 | Compact 5-stage dot rail | Done (sage) · Current (amber pulsing) · Upcoming (gray) |
-| **Open Full Workspace** button | Snaps out of Audit Mode and loads the Single Order Journey |
-| **View reasoning in A&G** button (Phase 6t) | Sets `#po=PO-XXXX` and navigates to Activity & Governance, where the reasoning chain for that PO is the canonical drill-down. Replaced the dead "Decision Trail" button — Decision Attribution Trail is a removed pattern per CLAUDE.md. |
-| **Message Supplier** button | Opens the Source Bridge for that supplier |
+| **Status-aware primary action** (Phase 6u) | Adapts per `order.status`: completed/cancelled → **Re-order** (carbon-copy to New Request with `#intent=express&mode=reorder&from=...`); disputed → **Resolve in A&G** (`#dispute=PO-XXXX`); on-hold → **Review hold in A&G** (`#dispute=...`); live → **Open Full Workspace** (collapses Audit Mode). |
+| **Open in journey** secondary (live only) | Visible for live orders that aren't completed/disputed. Collapses Audit Mode. Hidden for historical (would silently no-op). |
+| **View reasoning in A&G** button | Sets `#po=PO-XXXX` and navigates to Activity & Governance. Available for every row regardless of status. Replaced the dead "Decision Trail" button (Phase 6t) — Decision Attribution Trail is a removed pattern per CLAUDE.md. |
+| **Message Supplier** button | Opens the Source Bridge thread for that supplier |
 
 ---
 

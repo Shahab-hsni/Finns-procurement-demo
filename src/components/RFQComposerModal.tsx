@@ -19,7 +19,7 @@
  * Trigger: "Compose RFQ" button in the New Request page header.
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { X, Plus, Trash2, Send, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
@@ -114,6 +114,61 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
     if (categoryFilter === 'all') return finnsSuppliers;
     return finnsSuppliers.filter(v => v.categories.includes(categoryFilter));
   }, [categoryFilter]);
+
+  // ── 6j · Category-aware vendor grouping ────────────────────
+  // When called from the wizard with a multi-category basket, organise
+  // vendors into tiers so the user doesn't have to figure out which
+  // vendor supplies which item on their own.
+  const basketCategories = useMemo(() => {
+    if (!prefillItems) return [] as string[];
+    return Array.from(new Set(prefillItems.map(i => i.category).filter(Boolean) as string[]));
+  }, [prefillItems]);
+  const isCrossCategory = basketCategories.length >= 2;
+  const vendorGroups = useMemo(() => {
+    if (!isCrossCategory) return null;
+    const groups: { id: string; label: string; note: string; vendorIds: string[] }[] = [];
+    // Tier 1: vendors covering all categories in the basket.
+    const fullCoverage = finnsSuppliers.filter(v =>
+      basketCategories.every(c => v.categories.includes(c as FinnsCategory)),
+    );
+    if (fullCoverage.length > 0) {
+      groups.push({
+        id: 'all',
+        label: `Covers all ${basketCategories.length} categories`,
+        note: 'One invitation, one quote covers your whole basket.',
+        vendorIds: fullCoverage.map(v => v.id),
+      });
+    }
+    // Tier 2: per-category — vendors who only cover this category in
+    // your basket. A vendor with full coverage is shown in Tier 1 only.
+    const seen = new Set(fullCoverage.map(v => v.id));
+    basketCategories.forEach(cat => {
+      const partial = finnsSuppliers.filter(v =>
+        v.categories.includes(cat as FinnsCategory) && !seen.has(v.id),
+      );
+      if (partial.length === 0) return;
+      partial.forEach(v => seen.add(v.id));
+      const items = (prefillItems ?? []).filter(i => i.category === cat);
+      groups.push({
+        id: cat,
+        label: `${cat} only`,
+        note: items.length > 0
+          ? `Will quote on: ${items.map(i => `${i.qty}${i.unit} ${i.name}`).join(', ')}`
+          : '',
+        vendorIds: partial.map(v => v.id),
+      });
+    });
+    return groups;
+  }, [isCrossCategory, basketCategories, prefillItems]);
+  /** Items in the basket a vendor can quote on. */
+  const itemsCoveredByVendor = useCallback((vendorId: string) => {
+    if (!prefillItems) return [];
+    const v = finnsSuppliers.find(s => s.id === vendorId);
+    if (!v) return [];
+    return prefillItems.filter(it =>
+      it.category && v.categories.includes(it.category as FinnsCategory),
+    );
+  }, [prefillItems]);
 
   // ── Handlers ────────────────────────────────────────────────
   const addItem    = () => setItems(prev => [...prev, newLineItem()]);
@@ -343,53 +398,142 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
               <Label className={`text-[10px] uppercase tracking-wide font-bold ${textMuted}`}>
                 Send to ({selectedVendorIds.length} selected)
               </Label>
-              <div className="flex items-center gap-1 flex-wrap">
-                <button onClick={() => setCategoryFilter('all')}
-                        className={`text-[9px] px-1.5 py-0.5 rounded-full border ${categoryFilter === 'all' ? chipActive : chipIdle}`}>
-                  All
-                </button>
-                {FINNS_CATEGORIES.map(c => (
-                  <button key={c} onClick={() => setCategoryFilter(c)}
-                          className={`text-[9px] px-1.5 py-0.5 rounded-full border ${categoryFilter === c ? chipActive : chipIdle}`}>
-                    {c}
+              {/* Category filter chips — hidden in cross-category mode
+                  because the grouped view already organises by category. */}
+              {!vendorGroups && (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button onClick={() => setCategoryFilter('all')}
+                          className={`text-[9px] px-1.5 py-0.5 rounded-full border ${categoryFilter === 'all' ? chipActive : chipIdle}`}>
+                    All
                   </button>
-                ))}
-              </div>
-            </div>
-            <div className={`max-h-48 overflow-y-auto rounded-lg border divide-y ${isDark ? 'border-gray-800 divide-gray-800' : 'border-gray-200 divide-gray-100'}`}>
-              {filteredVendors.length === 0 ? (
-                <div className={`px-3 py-4 text-center text-[11px] ${textMuted}`}>
-                  No vendors match the {categoryFilter} filter.
+                  {FINNS_CATEGORIES.map(c => (
+                    <button key={c} onClick={() => setCategoryFilter(c)}
+                            className={`text-[9px] px-1.5 py-0.5 rounded-full border ${categoryFilter === c ? chipActive : chipIdle}`}>
+                      {c}
+                    </button>
+                  ))}
                 </div>
-              ) : filteredVendors.map(v => {
-                const active = selectedVendorIds.includes(v.id);
-                return (
-                  <button key={v.id} onClick={() => toggleVendor(v.id)}
-                          className={`w-full text-left flex items-center gap-3 px-3 py-2 transition-colors ${
-                            active
-                              ? isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]'
-                              : isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
+              )}
+            </div>
+
+            {vendorGroups ? (
+              // ── 6j · Grouped vendor view (cross-category basket) ──
+              <div className="space-y-3">
+                <div className={`p-2 rounded-md text-[10px] ${
+                  isDark ? 'bg-[#87986a]/8 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                }`}>
+                  A-01 grouped vendors by which items in your basket they can quote on. Pick one from each section — a vendor only sees the items they actually supply.
+                </div>
+                {vendorGroups.map(group => {
+                  const allInGroupSelected = group.vendorIds.every(id => selectedVendorIds.includes(id));
+                  return (
+                    <div key={group.id}>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <div className="min-w-0">
+                          <p className={`text-[10px] font-bold uppercase tracking-wide ${textPrimary}`}>{group.label}</p>
+                          {group.note && (
+                            <p className={`text-[9px] ${textMuted}`}>{group.note}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (allInGroupSelected) {
+                              setSelectedVendorIds(prev => prev.filter(id => !group.vendorIds.includes(id)));
+                            } else {
+                              setSelectedVendorIds(prev => Array.from(new Set([...prev, ...group.vendorIds])));
+                            }
+                          }}
+                          className={`shrink-0 text-[9px] font-semibold transition-colors ${
+                            isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'
                           }`}>
-                    <span className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 ${
-                      active
-                        ? 'bg-[#87986a] border-[#87986a] text-white'
-                        : isDark ? 'border-gray-600' : 'border-gray-300'
-                    }`}>
-                      {active && '✓'}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs font-semibold ${textPrimary}`}>{v.name}</span>
-                        <span className={`text-[9px] ${textMuted}`}>{v.region} · {v.type}</span>
+                          {allInGroupSelected ? 'Clear group' : 'Select all in group'}
+                        </button>
                       </div>
-                      <div className={`text-[10px] mt-0.5 ${textMuted}`}>
-                        Composite {v.metrics.composite} · On-time {v.metrics.onTime}% · Lead {v.metrics.leadTimeDays}d · {v.categories.join(', ')}
+                      <div className={`rounded-lg border divide-y ${isDark ? 'border-gray-800 divide-gray-800' : 'border-gray-200 divide-gray-100'}`}>
+                        {group.vendorIds.map(id => {
+                          const v = finnsSuppliers.find(s => s.id === id)!;
+                          const active = selectedVendorIds.includes(v.id);
+                          const covers = itemsCoveredByVendor(v.id);
+                          return (
+                            <button key={v.id} onClick={() => toggleVendor(v.id)}
+                                    className={`w-full text-left flex items-center gap-3 px-3 py-2 transition-colors ${
+                                      active
+                                        ? isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]'
+                                        : isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
+                                    }`}>
+                              <span className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 ${
+                                active
+                                  ? 'bg-[#87986a] border-[#87986a] text-white'
+                                  : isDark ? 'border-gray-600' : 'border-gray-300'
+                              }`}>
+                                {active && '✓'}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`text-xs font-semibold ${textPrimary}`}>{v.name}</span>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                    covers.length === (prefillItems?.length ?? 0)
+                                      ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                                      : isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                  }`}>
+                                    Quotes on {covers.length}/{prefillItems?.length ?? 0}
+                                  </span>
+                                  <span className={`text-[9px] ${textMuted}`}>{v.region}</span>
+                                </div>
+                                <div className={`text-[10px] mt-0.5 ${textMuted}`}>
+                                  Composite {v.metrics.composite} · On-time {v.metrics.onTime}% · Lead {v.metrics.leadTimeDays}d
+                                  {covers.length > 0 && (
+                                    <span className={`block text-[10px] mt-0.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                                      <span className="font-semibold">Will quote on:</span> {covers.map(i => `${i.qty}${i.unit} ${i.name}`).join(', ')}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // ── Flat vendor list (single-category basket or no prefill) ──
+              <div className={`max-h-48 overflow-y-auto rounded-lg border divide-y ${isDark ? 'border-gray-800 divide-gray-800' : 'border-gray-200 divide-gray-100'}`}>
+                {filteredVendors.length === 0 ? (
+                  <div className={`px-3 py-4 text-center text-[11px] ${textMuted}`}>
+                    No vendors match the {categoryFilter} filter.
+                  </div>
+                ) : filteredVendors.map(v => {
+                  const active = selectedVendorIds.includes(v.id);
+                  return (
+                    <button key={v.id} onClick={() => toggleVendor(v.id)}
+                            className={`w-full text-left flex items-center gap-3 px-3 py-2 transition-colors ${
+                              active
+                                ? isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]'
+                                : isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
+                            }`}>
+                      <span className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 ${
+                        active
+                          ? 'bg-[#87986a] border-[#87986a] text-white'
+                          : isDark ? 'border-gray-600' : 'border-gray-300'
+                      }`}>
+                        {active && '✓'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-xs font-semibold ${textPrimary}`}>{v.name}</span>
+                          <span className={`text-[9px] ${textMuted}`}>{v.region} · {v.type}</span>
+                        </div>
+                        <div className={`text-[10px] mt-0.5 ${textMuted}`}>
+                          Composite {v.metrics.composite} · On-time {v.metrics.onTime}% · Lead {v.metrics.leadTimeDays}d · {v.categories.join(', ')}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           {/* Deadline + channel */}

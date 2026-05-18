@@ -38,12 +38,13 @@ interface RFQTrackerModalProps {
 }
 
 const STATUS_META: Record<RFQStatus, { label: string; icon: typeof Clock; tone: 'amber' | 'blue' | 'green' | 'gray' | 'red' }> = {
-  awaiting:  { label: 'Awaiting',  icon: Clock,         tone: 'amber' },
-  partial:   { label: 'Partial',   icon: Clock,         tone: 'blue'  },
-  received:  { label: 'Received',  icon: CircleCheck,   tone: 'green' },
-  awarded:   { label: 'Awarded',   icon: Award,         tone: 'green' },
-  cancelled: { label: 'Cancelled', icon: XCircle,       tone: 'gray'  },
-  expired:   { label: 'Expired',   icon: AlertTriangle, tone: 'red'   },
+  awaiting:            { label: 'Awaiting',         icon: Clock,         tone: 'amber' },
+  partial:             { label: 'Partial',          icon: Clock,         tone: 'blue'  },
+  received:            { label: 'Received',         icon: CircleCheck,   tone: 'green' },
+  'partially-awarded': { label: 'Partially Awarded', icon: Award,        tone: 'blue'  },
+  awarded:             { label: 'Awarded',          icon: Award,         tone: 'green' },
+  cancelled:           { label: 'Cancelled',        icon: XCircle,       tone: 'gray'  },
+  expired:             { label: 'Expired',          icon: AlertTriangle, tone: 'red'   },
 };
 
 const TONE_STYLE = (tone: 'amber' | 'blue' | 'green' | 'gray' | 'red', isDark: boolean): string => {
@@ -98,13 +99,23 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
   }, [isOpen]);
 
   const grouped = useMemo(() => {
-    const active   = rfqs.filter(r => r.status === 'awaiting' || r.status === 'partial' || r.status === 'received');
+    // `partially-awarded` still has unawarded items and may take more
+    // awards, so it stays in the Active bucket until coverage hits 100%.
+    const active   = rfqs.filter(r => r.status === 'awaiting' || r.status === 'partial' || r.status === 'received' || r.status === 'partially-awarded');
     const finished = rfqs.filter(r => r.status === 'awarded' || r.status === 'cancelled' || r.status === 'expired');
     return { active, finished };
   }, [rfqs]);
 
   const handleAward = (rfq: RFQRecord, quote: RFQQuote) => {
-    const poId = `PO-${3050 + Math.floor(Math.random() * 200)}`;
+    // Items this award will actually lock — quote.itemIds minus any
+    // items already awarded to another vendor. Mirrors the store rule
+    // so the PO summary + savings math reflect only the locked items.
+    const alreadyAwarded = new Set<string>(rfq.awards.flatMap(a => a.itemIds));
+    const newItemIds = quote.itemIds.filter(id => !alreadyAwarded.has(id));
+    if (newItemIds.length === 0) return;
+    const awardedItems = rfq.items.filter(it => newItemIds.includes(it.id));
+
+    const poId = `PO-${3050 + Math.floor(Math.random() * 200) + rfq.awards.length}`;
     awardRFQ(rfq.id, quote.vendorId, poId);
 
     const channelLabel = rfq.channel === 'whatsapp' ? 'WhatsApp' : 'email';
@@ -117,18 +128,25 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
       ? `${vendorRecord.accountManager.name} · ${vendorRecord.accountManager.whatsapp}`
       : quote.vendorName;
 
-    // Build the human-readable item summary used in the PO list.
-    const itemSummary = rfq.items.map(it => `${it.qty}${it.unit} ${it.name}`);
+    // Build the human-readable item summary used in the PO list —
+    // scoped to the items THIS award locks, not the full RFQ.
+    const itemSummary = awardedItems.map(it => `${it.qty}${it.unit} ${it.name}`);
 
     // Compute an ETA label from the quoted lead time. Today + leadTime days.
     const etaDate = new Date();
     etaDate.setDate(etaDate.getDate() + quote.leadTimeDays);
     const etaLabel = etaDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-    // Compute saving vs the next-best quote (if any) for the agent reasoning.
-    const others = rfq.quotes.filter(q => q.vendorId !== quote.vendorId);
-    const nextBest = others.length > 0
-      ? others.reduce((min, q) => q.totalIdr < min ? q.totalIdr : min, Number.POSITIVE_INFINITY)
+    // Compute saving vs the next-best COMPETING quote that ALSO covers
+    // any of the newly-awarded items. For multi-award flows a quote
+    // from a different category isn't a real competitor — only count
+    // quotes that overlap on the items we're locking now.
+    const competing = rfq.quotes.filter(q =>
+      q.vendorId !== quote.vendorId
+      && q.itemIds.some(id => newItemIds.includes(id)),
+    );
+    const nextBest = competing.length > 0
+      ? competing.reduce((min, q) => q.totalIdr < min ? q.totalIdr : min, Number.POSITIVE_INFINITY)
       : null;
     const savingIdr = nextBest != null && nextBest !== Number.POSITIVE_INFINITY
       ? nextBest - quote.totalIdr
@@ -136,11 +154,11 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
 
     const reasoning = [
       `Awarded via ${rfq.id}. Winning quote came in via ${channelLabel} from ${amContact}.`,
-      others.length > 0
+      competing.length > 0
         ? savingIdr > 0
-          ? `Beat ${others.length} other quote${others.length === 1 ? '' : 's'} — Rp ${(savingIdr / 1_000_000).toFixed(2)}M cheaper than next-best.`
-          : `${others.length} other quote${others.length === 1 ? ' was' : 's were'} more competitive on lead time / terms; price is locked here.`
-        : 'No other vendors bid — sole responder.',
+          ? `Beat ${competing.length} competing quote${competing.length === 1 ? '' : 's'} on these items — Rp ${(savingIdr / 1_000_000).toFixed(2)}M cheaper than next-best.`
+          : `${competing.length} competing quote${competing.length === 1 ? ' was' : 's were'} more competitive on lead time / terms; price is locked here.`
+        : `Sole vendor able to supply ${awardedItems.length} item${awardedItems.length === 1 ? '' : 's'} in this RFQ.`,
       `${quote.leadTimeDays}d lead.${quote.note ? ` Vendor note: "${quote.note}"` : ''}`,
     ].join(' ');
 
@@ -154,7 +172,7 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
       actionKind: 'approve',
       humanAction: 'Approve',
       humanStatus: 'Awarded quote · awaiting your approval',
-      humanDescription: `Awarded from ${rfq.id} · ${rfq.items.length} line item${rfq.items.length === 1 ? '' : 's'}.`,
+      humanDescription: `Awarded from ${rfq.id} · ${awardedItems.length} line item${awardedItems.length === 1 ? '' : 's'} routed to ${quote.vendorName}.`,
       eta: `${etaLabel} · ${quote.leadTimeDays}d after approval`,
       etaMinutes: quote.leadTimeDays * 24 * 60,
       dagStage: 1,
@@ -179,9 +197,9 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
     logUserAction({
       kind: 'rfq-award',
       entity: { type: 'supplier', id: quote.vendorId },
-      summary: `Awarded ${rfq.id} → ${quote.vendorName} · ${fmtIdrShort(quote.totalIdr)} · ${quote.leadTimeDays}d lead`,
+      summary: `Awarded ${rfq.id} → ${quote.vendorName} · ${fmtIdrShort(quote.totalIdr)} · ${quote.leadTimeDays}d · ${awardedItems.length} item${awardedItems.length === 1 ? '' : 's'}`,
       venue: rfq.venue,
-      details: rfq.items.map(it => `${it.qty}${it.unit} ${it.name}`).join(', '),
+      details: itemSummary.join(', '),
       meta: {
         rfqId: rfq.id,
         winningVendorId: quote.vendorId,
@@ -190,6 +208,7 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
         leadTimeDays: quote.leadTimeDays,
         synthesisedPoId: poId,
         channel: rfq.channel,
+        itemIds: newItemIds,
       },
     });
     logUserAction({
@@ -200,20 +219,28 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
       meta: { fromRfqId: rfq.id, vendorId: quote.vendorId, totalIdr: quote.totalIdr, channel: rfq.channel },
     });
 
-    // Success toast with a route-on-click button.
-    toast.success(`${quote.vendorName} awarded · ${poId} created`, {
-      description: `Open in Orders to authorize and execute. Quote arrived via ${channelLabel}.`,
-      action: onNavigate
-        ? {
-            label: 'View in Orders',
-            onClick: () => {
-              if (typeof window !== 'undefined') window.location.hash = `order=${poId}`;
-              onClose();
-              onNavigate('orders');
-            },
-          }
-        : undefined,
-    });
+    // How much is still unawarded after this — drives the toast copy.
+    const remainingItems = rfq.items.length - (alreadyAwarded.size + newItemIds.length);
+    toast.success(
+      remainingItems > 0
+        ? `${quote.vendorName} awarded · ${poId} created · ${remainingItems} item${remainingItems === 1 ? '' : 's'} still open`
+        : `${quote.vendorName} awarded · ${poId} created`,
+      {
+        description: remainingItems > 0
+          ? `Award another vendor below to cover the remaining item${remainingItems === 1 ? '' : 's'}. Quote arrived via ${channelLabel}.`
+          : `Open in Orders to authorize and execute. Quote arrived via ${channelLabel}.`,
+        action: onNavigate
+          ? {
+              label: 'View in Orders',
+              onClick: () => {
+                if (typeof window !== 'undefined') window.location.hash = `order=${poId}`;
+                onClose();
+                onNavigate('orders');
+              },
+            }
+          : undefined,
+      },
+    );
   };
 
   const handleCancel = (rfq: RFQRecord) => {
@@ -242,6 +269,10 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
     const expanded = expandedId === rfq.id;
     const minQuote = rfq.quotes.length > 0 ? Math.min(...rfq.quotes.map(q => q.totalIdr)) : null;
     const isTerminal = rfq.status === 'awarded' || rfq.status === 'cancelled' || rfq.status === 'expired';
+    // Multi-award support: track which items the rfq has locked in.
+    const totalItems    = rfq.items.length;
+    const awardedItemSet = new Set<string>(rfq.awards.flatMap(a => a.itemIds));
+    const awardedCount   = awardedItemSet.size;
 
     return (
       <div key={rfq.id} className={`rounded-lg border ${cardBg}`}>
@@ -260,6 +291,11 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
               <span className={`text-[10px] ${textMuted}`}>
                 {rfq.quotes.length}/{rfq.vendorIds.length} quoted
               </span>
+              {totalItems > 0 && rfq.awards.length > 0 && (
+                <span className={`text-[10px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                  · {awardedCount}/{totalItems} items awarded
+                </span>
+              )}
               {rfq.venue && (
                 <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
                   {rfq.venue}
@@ -301,14 +337,27 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                 {rfq.vendorIds.map((vid, idx) => {
                   const vendorName = rfq.vendorNames[idx] ?? vid;
                   const quote = rfq.quotes.find(q => q.vendorId === vid);
-                  const isWinner = rfq.awardedVendorId === vid;
+                  const award = rfq.awards.find(a => a.vendorId === vid);
+                  const isWinner = !!award;
                   const lowestId = minQuote != null
                     ? rfq.quotes.find(q => q.totalIdr === minQuote)?.vendorId
                     : null;
-                  const isLowest = quote && quote.vendorId === lowestId;
+                  const isLowest = quote && quote.vendorId === lowestId && !isWinner;
+                  // Items in this vendor's quote that are still claimable
+                  // (not already locked to another award).
+                  const claimable = quote
+                    ? quote.itemIds.filter(id => !awardedItemSet.has(id))
+                    : [];
+                  const isNoBidForBasket = quote && quote.itemIds.length === 0;
+                  const quoteItemNames = quote
+                    ? quote.itemIds
+                        .map(id => rfq.items.find(it => it.id === id))
+                        .filter(Boolean)
+                        .map(it => `${it!.qty}${it!.unit} ${it!.name}`)
+                    : [];
 
                   return (
-                    <div key={vid} className={`flex items-center gap-2 p-2 rounded border ${
+                    <div key={vid} className={`flex items-start gap-2 p-2 rounded border ${
                       isWinner
                         ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/50' : 'bg-[#f4f6f0] border-[#87986a]/40'
                         : isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
@@ -316,37 +365,60 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`text-[11px] font-semibold ${textPrimary}`}>{vendorName}</span>
-                          {isWinner && (
+                          {isWinner && award && (
                             <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
-                              <Award className="h-2.5 w-2.5" /> Awarded
+                              <Award className="h-2.5 w-2.5" /> Awarded · {award.poId}
                             </span>
                           )}
-                          {!isWinner && isLowest && rfq.status !== 'awarded' && (
+                          {!isWinner && isLowest && (
                             <span className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-green-400' : 'text-green-700'}`}>
                               Lowest
                             </span>
                           )}
+                          {!isWinner && quote && (
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                              claimable.length === 0
+                                ? isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-500'
+                                : isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                            }`}>
+                              {isNoBidForBasket
+                                ? 'No bid'
+                                : `Quotes on ${quote.itemIds.length}/${totalItems}`}
+                            </span>
+                          )}
                         </div>
                         {quote ? (
-                          <div className={`text-[10px] mt-0.5 flex items-center gap-2 flex-wrap ${textMuted}`}>
-                            <span className={`font-bold ${isDark ? 'text-green-400' : 'text-green-700'}`}>
-                              {fmtIdrShort(quote.totalIdr)}
-                            </span>
-                            <span className="inline-flex items-center gap-0.5">
-                              <Truck className="h-2.5 w-2.5" />
-                              {quote.leadTimeDays}d lead
-                            </span>
-                            <span>·</span>
-                            <span className={`inline-flex items-center gap-0.5 ${
-                              rfq.channel === 'whatsapp'
-                                ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
-                                : isDark ? 'text-blue-300' : 'text-blue-700'
-                            }`}>
-                              via {rfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}
-                            </span>
-                            <span>·</span>
-                            <span>{relativeTime(quote.receivedAt)}</span>
-                          </div>
+                          <>
+                            <div className={`text-[10px] mt-0.5 flex items-center gap-2 flex-wrap ${textMuted}`}>
+                              <span className={`font-bold ${isDark ? 'text-green-400' : 'text-green-700'}`}>
+                                {fmtIdrShort(quote.totalIdr)}
+                              </span>
+                              <span className="inline-flex items-center gap-0.5">
+                                <Truck className="h-2.5 w-2.5" />
+                                {quote.leadTimeDays}d lead
+                              </span>
+                              <span>·</span>
+                              <span className={`inline-flex items-center gap-0.5 ${
+                                rfq.channel === 'whatsapp'
+                                  ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
+                                  : isDark ? 'text-blue-300' : 'text-blue-700'
+                              }`}>
+                                via {rfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}
+                              </span>
+                              <span>·</span>
+                              <span>{relativeTime(quote.receivedAt)}</span>
+                            </div>
+                            {quoteItemNames.length > 0 && (
+                              <p className={`text-[10px] mt-1 leading-snug ${textMuted}`}>
+                                <span className="font-semibold">Quote covers:</span> {quoteItemNames.join(', ')}
+                              </p>
+                            )}
+                            {!isWinner && quote.itemIds.length > 0 && claimable.length === 0 && (
+                              <p className={`text-[10px] mt-1 italic ${textMuted}`}>
+                                All items in this quote are already awarded to another vendor.
+                              </p>
+                            )}
+                          </>
                         ) : (
                           <div className={`text-[10px] mt-0.5 inline-flex items-center gap-1 ${textMuted}`}>
                             <Clock className="h-2.5 w-2.5" />
@@ -357,7 +429,7 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                           <p className={`text-[10px] mt-1 italic ${textMuted}`}>"{quote.note}"</p>
                         )}
                       </div>
-                      {quote && !isTerminal && !isWinner && (
+                      {quote && !isTerminal && !isWinner && claimable.length > 0 && (
                         <button
                           onClick={() => handleAward(rfq, quote)}
                           className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border transition-colors ${
@@ -369,6 +441,13 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                           }`}>
                           <Award className="h-2.5 w-2.5" /> Award
                         </button>
+                      )}
+                      {quote && !isTerminal && !isWinner && quote.itemIds.length > 0 && claimable.length === 0 && (
+                        <span className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded ${
+                          isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          Items covered
+                        </span>
                       )}
                     </div>
                   );
@@ -383,13 +462,23 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
             )}
 
             {/* Footer actions */}
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
               <div className={`text-[10px] ${textMuted}`}>
-                {rfq.awardedPoId
-                  ? <>Awarded → <span className="font-semibold">{rfq.awardedPoId}</span></>
-                  : isTerminal
-                    ? null
-                    : `Quotes auto-arrive as vendors reply.`}
+                {rfq.awards.length > 1
+                  ? (
+                    <>Awarded → {rfq.awards.map((a, i) => (
+                      <span key={a.poId}>
+                        {i > 0 && <span>, </span>}
+                        <span className="font-semibold">{a.poId}</span>
+                        <span> ({a.vendorName})</span>
+                      </span>
+                    ))}</>
+                  )
+                  : rfq.awardedPoId
+                    ? <>Awarded → <span className="font-semibold">{rfq.awardedPoId}</span></>
+                    : isTerminal
+                      ? null
+                      : `Quotes auto-arrive as vendors reply.`}
               </div>
               {!isTerminal && (
                 <button

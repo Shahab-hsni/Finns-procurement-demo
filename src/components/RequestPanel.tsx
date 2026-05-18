@@ -225,6 +225,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   interface AwardedQuote {
     vendorId: string;
     vendorName: string;
+    itemIds: string[];     // RFQ items locked to this vendor by this award
     totalIdr: number;
     leadTimeDays: number;
     channel: 'whatsapp' | 'email';
@@ -234,7 +235,10 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     amContact: string;     // account manager display label
     note?: string;
   }
-  const [awardedQuote, setAwardedQuote] = useState<AwardedQuote | null>(null);
+  // 6k — supports multiple awards on a multi-vendor RFQ.
+  const [awardedQuotes, setAwardedQuotes] = useState<AwardedQuote[]>([]);
+  // Convenience: the first award (back-compat with Step 3 banner copy).
+  const awardedQuote = awardedQuotes[0] ?? null;
   const wizardRfq = wizardRfqId
     ? rfqRecords.find(r => r.id === wizardRfqId) ?? null
     : null;
@@ -341,8 +345,11 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   // the wizard's amount + vendor + category. Stubbed simulation of
   // what A-04 (Spend Watchdog) would do at Stage 3.
   const policyPreview = useMemo(() => {
-    const amount = awardedQuote?.totalIdr
-      ?? items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
+    // For multi-award RFQs, sum every awarded PO so the spend-cap check
+    // reflects the whole basket. Falls back to single award or item total.
+    const amount = awardedQuotes.length > 0
+      ? awardedQuotes.reduce((s, a) => s + a.totalIdr, 0)
+      : items.reduce((s, it) => s + it.qty * (it.unitPriceIdr || 0), 0);
     const checks: { rule: string; status: 'pass' | 'review' | 'warn'; detail: string }[] = [];
     finnsPolicyRules.forEach(rule => {
       if (!rule.active) return;
@@ -383,7 +390,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       }
     });
     return { amount, checks };
-  }, [items, awardedQuote, selectedVendors]);
+  }, [items, awardedQuotes, selectedVendors]);
 
   // Step 3 — Delivery
   const [targetVenues, setTargetVenues] = useState<VenueTag[]>(['BC', 'RC']);
@@ -621,32 +628,45 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       return;
     }
 
-    // ── Path 1 & 2 (unchanged) ──
-    if (awardedQuote) {
-      // ── RFQ path: PO exists, fill in delivery details ──
-      poId = awardedQuote.poId;
-      updatePO(poId, {
-        items: itemSummary,
-        humanStatus: 'Quote awarded · awaiting your approval',
-        humanDescription: `Awarded from ${awardedQuote.rfqId} · delivery to ${targetVenues.join(' + ') || 'BC'} on ${neededBy}.`,
-        eta: `${neededBy} · ${awardedQuote.leadTimeDays}d lead`,
-        workflowTemplate: playbook,
+    // ── Path 1 & 2 (RFQ multi-award + direct vendor) ──
+    if (awardedQuotes.length > 0) {
+      // ── RFQ path: each awarded quote has a PO already; fill in
+      //    delivery on every one. Multi-vendor RFQs produce N POs. ──
+      const venueChip: VenueTag | 'Multi' =
+        venueLabel === 'BC' || venueLabel === 'RC' || venueLabel === 'ST' || venueLabel === 'SP'
+          ? venueLabel as VenueTag : 'Multi';
+      awardedQuotes.forEach(aq => {
+        // Per-PO item list — only the items that award covered.
+        const awardItemSummary = items
+          .filter(it => aq.itemIds.includes(it.id))
+          .map(it => `${it.name} ${it.qty}${it.unit}${it.venues?.length ? ` · ${it.venues.join(' + ')}` : ''}`);
+        const itemsLine = awardItemSummary.length > 0 ? awardItemSummary : itemSummary;
+        updatePO(aq.poId, {
+          items: itemsLine,
+          humanStatus: 'Quote awarded · awaiting your approval',
+          humanDescription: `Awarded from ${aq.rfqId} · ${itemsLine.length} item${itemsLine.length === 1 ? '' : 's'} · delivery to ${targetVenues.join(' + ') || 'BC'} on ${neededBy}.`,
+          eta: `${neededBy} · ${aq.leadTimeDays}d lead`,
+          workflowTemplate: playbook,
+        });
+        logUserAction({
+          kind: 'po-stage-advance',
+          entity: { type: 'po', id: aq.poId },
+          summary: `Authorized ${aq.poId} · ${aq.vendorName} · Rp ${(aq.totalIdr / 1_000_000).toFixed(2)}M (from RFQ ${aq.rfqId})`,
+          venue: venueChip,
+          details: `Delivery to ${targetVenues.join(', ')} on ${neededBy}. Quote received via ${aq.channel === 'whatsapp' ? 'WhatsApp' : 'email'} from ${aq.amContact}.`,
+          meta: {
+            poId: aq.poId,
+            rfqId: aq.rfqId,
+            vendorId: aq.vendorId,
+            totalIdr: aq.totalIdr,
+            path: 'rfq',
+            playbook,
+          },
+        });
       });
-      logUserAction({
-        kind: 'po-stage-advance',
-        entity: { type: 'po', id: poId },
-        summary: `Authorized ${poId} · ${awardedQuote.vendorName} · Rp ${(awardedQuote.totalIdr / 1_000_000).toFixed(2)}M (from RFQ ${awardedQuote.rfqId})`,
-        venue: venueLabel === 'BC' || venueLabel === 'RC' || venueLabel === 'ST' || venueLabel === 'SP' ? venueLabel : 'Multi',
-        details: `Delivery to ${targetVenues.join(', ')} on ${neededBy}. Quote received via ${awardedQuote.channel === 'whatsapp' ? 'WhatsApp' : 'email'} from ${awardedQuote.amContact}.`,
-        meta: {
-          poId,
-          rfqId: awardedQuote.rfqId,
-          vendorId: awardedQuote.vendorId,
-          totalIdr: awardedQuote.totalIdr,
-          path: 'rfq',
-          playbook,
-        },
-      });
+      // Deep-link target is the FIRST awarded PO; user can navigate to
+      // the others from Orders.
+      poId = awardedQuotes[0].poId;
     } else {
       // ── Direct path: mint a fresh PO ──
       poId = `PO-${3050 + Math.floor(Math.random() * 200)}`;
@@ -688,9 +708,17 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       });
     }
 
-    toast.success(`${poId} authorized · routed to Orders`, {
-      description: `Running on ${playbook} (${playbookLabel}). Hit Approve & Execute in Orders to advance to Stage 3.`,
-    });
+    const poCount = awardedQuotes.length > 1 ? awardedQuotes.length : 1;
+    toast.success(
+      poCount > 1
+        ? `${poCount} POs authorized · routed to Orders`
+        : `${poId} authorized · routed to Orders`,
+      {
+        description: poCount > 1
+          ? `${poCount} POs from ${awardedQuotes[0].rfqId}. Each at Stage 2 awaiting your Approve & Execute.`
+          : `Running on ${playbook} (${playbookLabel}). Hit Approve & Execute in Orders to advance to Stage 3.`,
+      },
+    );
     setStep(5);
     setTimeout(() => {
       if (typeof window !== 'undefined') {
@@ -700,10 +728,18 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     }, 1400);
   }
 
-  // ── In-wizard RFQ handlers (5a) ───────────────────────────────
+  // ── In-wizard RFQ handlers (5a / 6k multi-award) ──────────────
   function handleAwardInWizard(quote: RFQQuote) {
     if (!wizardRfq) return;
-    const poId = `PO-${3050 + Math.floor(Math.random() * 200)}`;
+    // Items in this quote that aren't already awarded elsewhere on
+    // this RFQ. The store enforces non-overlap too but we mirror here
+    // so the UI math (savings, etc.) reflects only the newly-locked items.
+    const alreadyAwarded = new Set<string>(wizardRfq.awards.flatMap(a => a.itemIds));
+    const newItemIds = quote.itemIds.filter(id => !alreadyAwarded.has(id));
+    if (newItemIds.length === 0) return;
+    const awardedItems = wizardRfq.items.filter(it => newItemIds.includes(it.id));
+
+    const poId = `PO-${3050 + Math.floor(Math.random() * 200) + wizardRfq.awards.length}`;
     awardRFQ(wizardRfq.id, quote.vendorId, poId);
 
     const channelLabel = wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email';
@@ -712,22 +748,26 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     const amContact = vendorRecord
       ? `${vendorRecord.accountManager.name} · ${vendorRecord.accountManager.whatsapp}`
       : quote.vendorName;
-    const itemSummary = wizardRfq.items.map(it => `${it.qty}${it.unit} ${it.name}`);
+    const itemSummary = awardedItems.map(it => `${it.qty}${it.unit} ${it.name}`);
 
-    const others = wizardRfq.quotes.filter(q => q.vendorId !== quote.vendorId);
-    const nextBest = others.length > 0
-      ? others.reduce((min, q) => q.totalIdr < min ? q.totalIdr : min, Number.POSITIVE_INFINITY)
+    // Competing quotes that ALSO cover any of the newly-awarded items.
+    const competing = wizardRfq.quotes.filter(q =>
+      q.vendorId !== quote.vendorId
+      && q.itemIds.some(id => newItemIds.includes(id)),
+    );
+    const nextBest = competing.length > 0
+      ? competing.reduce((min, q) => q.totalIdr < min ? q.totalIdr : min, Number.POSITIVE_INFINITY)
       : null;
     const savingIdr = nextBest != null && nextBest !== Number.POSITIVE_INFINITY
       ? nextBest - quote.totalIdr
       : 0;
     const reasoning = [
       `Awarded via ${wizardRfq.id}. Winning quote came in via ${channelLabel} from ${amContact}.`,
-      others.length > 0
+      competing.length > 0
         ? savingIdr > 0
-          ? `Beat ${others.length} other quote${others.length === 1 ? '' : 's'} — Rp ${(savingIdr / 1_000_000).toFixed(2)}M cheaper than next-best.`
-          : `${others.length} other quote${others.length === 1 ? ' was' : 's were'} more competitive on lead time / terms; price is locked here.`
-        : 'No other vendors bid — sole responder.',
+          ? `Beat ${competing.length} competing quote${competing.length === 1 ? '' : 's'} on these items — Rp ${(savingIdr / 1_000_000).toFixed(2)}M cheaper than next-best.`
+          : `${competing.length} competing quote${competing.length === 1 ? ' was' : 's were'} more competitive on lead time / terms; price is locked here.`
+        : `Sole vendor able to supply ${awardedItems.length} item${awardedItems.length === 1 ? '' : 's'} in this RFQ.`,
       `${quote.leadTimeDays}d lead.${quote.note ? ` Vendor note: "${quote.note}"` : ''}`,
     ].join(' ');
 
@@ -740,7 +780,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       actionKind: 'approve',
       humanAction: 'Approve',
       humanStatus: 'Awarded quote · awaiting delivery details + your approval',
-      humanDescription: `Drafted from ${wizardRfq.id}. Delivery details pending Step 3 of the wizard.`,
+      humanDescription: `Drafted from ${wizardRfq.id} · ${awardedItems.length} item${awardedItems.length === 1 ? '' : 's'} routed to ${quote.vendorName}. Delivery details pending Step 3 of the wizard.`,
       eta: `${quote.leadTimeDays}d after approval`,
       etaMinutes: quote.leadTimeDays * 24 * 60,
       dagStage: 1,
@@ -764,7 +804,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
     logUserAction({
       kind: 'rfq-award',
       entity: { type: 'supplier', id: quote.vendorId },
-      summary: `Awarded ${wizardRfq.id} → ${quote.vendorName} · Rp ${(quote.totalIdr / 1_000_000).toFixed(2)}M · ${quote.leadTimeDays}d lead`,
+      summary: `Awarded ${wizardRfq.id} → ${quote.vendorName} · Rp ${(quote.totalIdr / 1_000_000).toFixed(2)}M · ${quote.leadTimeDays}d · ${awardedItems.length} item${awardedItems.length === 1 ? '' : 's'}`,
       venue: wizardRfq.venue,
       meta: {
         rfqId: wizardRfq.id,
@@ -774,6 +814,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
         leadTimeDays: quote.leadTimeDays,
         synthesisedPoId: poId,
         channel: wizardRfq.channel,
+        itemIds: newItemIds,
         fromWizard: true,
       },
     });
@@ -785,9 +826,11 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       meta: { fromRfqId: wizardRfq.id, vendorId: quote.vendorId, totalIdr: quote.totalIdr, channel: wizardRfq.channel },
     });
 
-    setAwardedQuote({
+    // Track this award in the wizard's local set.
+    const newAward: AwardedQuote = {
       vendorId:    quote.vendorId,
       vendorName:  quote.vendorName,
+      itemIds:     newItemIds,
       totalIdr:    quote.totalIdr,
       leadTimeDays: quote.leadTimeDays,
       channel,
@@ -796,12 +839,28 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
       poId,
       amContact,
       note:        quote.note,
-    });
-    setSelectedVendors([quote.vendorId]);
-    toast.success(`${quote.vendorName} awarded · ${poId} drafted`, {
-      description: `Vendor + amount locked. Next: delivery details.`,
-    });
-    setStep(3);
+    };
+    setAwardedQuotes(prev => [...prev, newAward]);
+
+    // Check if every item in the basket is now awarded. If yes →
+    // advance to Step 3. If no → stay on Step 2 with the progress meter.
+    const awardedAfter = new Set<string>([
+      ...wizardRfq.awards.flatMap(a => a.itemIds),
+      ...newItemIds,
+    ]);
+    const allItemsAwarded = wizardRfq.items.every(it => awardedAfter.has(it.id));
+
+    if (allItemsAwarded) {
+      toast.success(`All items awarded · ${wizardRfq.awards.length + 1} PO${wizardRfq.awards.length === 0 ? '' : 's'} drafted`, {
+        description: 'Vendor + amount locked for every item. Next: delivery details.',
+      });
+      setStep(3);
+    } else {
+      const remaining = wizardRfq.items.length - awardedAfter.size;
+      toast.success(`${quote.vendorName} awarded · ${poId} drafted`, {
+        description: `${remaining} item${remaining === 1 ? '' : 's'} still pending an award. Pick a vendor for the rest below.`,
+      });
+    }
   }
 
   function handleCancelWizardRfq() {
@@ -1760,63 +1819,153 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   </div>
                 )}
 
-                {/* ── Path B: Waiting for quotes ──────────────────────── */}
-                {wizardRfqId && wizardRfq && !awardedQuote && (
+                {/* ── Path B: Waiting for quotes / Awarding ─────────────
+                    Stays visible until every item in the RFQ has been
+                    awarded. In multi-award flows the user may award
+                    several vendors here before advancing to Step 3. */}
+                {wizardRfqId && wizardRfq && (() => {
+                  const totalItems    = wizardRfq.items.length;
+                  const awardedItemIds = new Set<string>(
+                    [
+                      ...wizardRfq.awards.flatMap(a => a.itemIds),
+                      ...awardedQuotes.flatMap(a => a.itemIds),  // fresh awards not yet in store snapshot
+                    ],
+                  );
+                  const awardedCount     = awardedItemIds.size;
+                  const allItemsAwarded  = totalItems > 0 && awardedCount >= totalItems;
+                  if (allItemsAwarded) return null;
+                  const isPartiallyAwarded = awardedCount > 0;
+                  const lowestTotal = wizardRfq.quotes.length > 0
+                    ? Math.min(...wizardRfq.quotes.map(q => q.totalIdr))
+                    : null;
+                  return (
                   <div className={cardClass}>
                     <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                       <h2 className={`text-sm font-semibold ${labelClass}`}>
-                        Quotes coming in · {wizardRfq.id}
+                        {isPartiallyAwarded ? 'Award the remaining items' : 'Quotes coming in'} · {wizardRfq.id}
                       </h2>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        wizardRfq.quotes.length === wizardRfq.vendorIds.length
-                          ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
-                          : isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
-                      }`}>
-                        {wizardRfq.quotes.length}/{wizardRfq.vendorIds.length} quoted
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          wizardRfq.quotes.length === wizardRfq.vendorIds.length
+                            ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                            : isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                        }`}>
+                          {wizardRfq.quotes.length}/{wizardRfq.vendorIds.length} quoted
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          isPartiallyAwarded
+                            ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                            : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {awardedCount}/{totalItems} items awarded
+                        </span>
+                      </div>
                     </div>
                     <p className={`text-[11px] mb-3 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Sent via <strong>{wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}</strong> · deadline {wizardRfq.deadline}. First replies usually land within 10–30 seconds (demo).
+                      {isPartiallyAwarded
+                        ? `${awardedQuotes.length} PO${awardedQuotes.length === 1 ? '' : 's'} drafted. Award a vendor for each remaining item — you'll continue to delivery details once everything is locked.`
+                        : <>Sent via <strong>{wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}</strong> · deadline {wizardRfq.deadline}. First replies usually land within 10–30 seconds (demo).</>}
                     </p>
+                    {/* Coverage progress bar */}
+                    {totalItems > 0 && (
+                      <div className={`h-1.5 rounded-full overflow-hidden mb-3 ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                        <div className="h-full bg-[#87986a] transition-all duration-300"
+                             style={{ width: `${Math.round((awardedCount / totalItems) * 100)}%` }} />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       {wizardRfq.vendorIds.map((vid, idx) => {
                         const vendorName = wizardRfq.vendorNames[idx] ?? vid;
                         const quote = wizardRfq.quotes.find(q => q.vendorId === vid);
-                        const lowestTotal = wizardRfq.quotes.length > 0
-                          ? Math.min(...wizardRfq.quotes.map(q => q.totalIdr))
-                          : null;
-                        const isLowest = quote && quote.totalIdr === lowestTotal;
+                        const award = awardedQuotes.find(a => a.vendorId === vid)
+                          ?? wizardRfq.awards.find(a => a.vendorId === vid);
+                        const isAwarded = !!award;
+                        const isLowest  = quote && lowestTotal != null && quote.totalIdr === lowestTotal && !isAwarded;
+                        // How many items in this vendor's quote are still claimable?
+                        const claimable = quote
+                          ? quote.itemIds.filter(id => !awardedItemIds.has(id))
+                          : [];
+                        // No-bid: vendor replied but with zero overlap to remaining items.
+                        const isNoBidForBasket = quote && quote.itemIds.length === 0;
+                        // Items this quote was scoped to (names, for display).
+                        const quoteItemNames = quote
+                          ? quote.itemIds
+                              .map(id => wizardRfq.items.find(it => it.id === id))
+                              .filter(Boolean)
+                              .map(it => `${it!.qty}${it!.unit} ${it!.name}`)
+                          : [];
+                        const claimableNames = quote
+                          ? claimable
+                              .map(id => wizardRfq.items.find(it => it.id === id))
+                              .filter(Boolean)
+                              .map(it => `${it!.qty}${it!.unit} ${it!.name}`)
+                          : [];
                         return (
-                          <div key={vid} className={`flex items-center gap-2 p-3 rounded-lg border ${
-                            isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
+                          <div key={vid} className={`flex items-start gap-2 p-3 rounded-lg border ${
+                            isAwarded
+                              ? isDark ? 'bg-[#87986a]/10 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                              : isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
                           }`}>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className={`text-xs font-semibold ${labelClass}`}>{vendorName}</span>
-                                {isLowest && (
+                                {isAwarded && (
+                                  <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                                    <Award className="h-2.5 w-2.5" /> Awarded · {award!.poId}
+                                  </span>
+                                )}
+                                {!isAwarded && isLowest && (
                                   <span className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-green-400' : 'text-green-700'}`}>
                                     Lowest
                                   </span>
                                 )}
+                                {quote && !isAwarded && (
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                    claimable.length === 0
+                                      ? isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-500'
+                                      : isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                                  }`}>
+                                    {isNoBidForBasket
+                                      ? 'No bid'
+                                      : `Quotes on ${quote.itemIds.length}/${totalItems}`}
+                                  </span>
+                                )}
                               </div>
                               {quote ? (
-                                <div className={`text-[10px] mt-0.5 flex items-center gap-2 flex-wrap ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                                  <span className={`font-bold ${isDark ? 'text-green-400' : 'text-green-700'}`}>
-                                    Rp {(quote.totalIdr / 1_000_000).toFixed(2)}M
-                                  </span>
-                                  <span className="inline-flex items-center gap-0.5">
-                                    <Truck className="h-2.5 w-2.5" />
-                                    {quote.leadTimeDays}d lead
-                                  </span>
-                                  <span>·</span>
-                                  <span className={`inline-flex items-center gap-0.5 ${
-                                    wizardRfq.channel === 'whatsapp'
-                                      ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
-                                      : isDark ? 'text-blue-300' : 'text-blue-700'
-                                  }`}>
-                                    via {wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}
-                                  </span>
-                                </div>
+                                <>
+                                  <div className={`text-[10px] mt-0.5 flex items-center gap-2 flex-wrap ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                    <span className={`font-bold ${isDark ? 'text-green-400' : 'text-green-700'}`}>
+                                      Rp {(quote.totalIdr / 1_000_000).toFixed(2)}M
+                                    </span>
+                                    <span className="inline-flex items-center gap-0.5">
+                                      <Truck className="h-2.5 w-2.5" />
+                                      {quote.leadTimeDays}d lead
+                                    </span>
+                                    <span>·</span>
+                                    <span className={`inline-flex items-center gap-0.5 ${
+                                      wizardRfq.channel === 'whatsapp'
+                                        ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
+                                        : isDark ? 'text-blue-300' : 'text-blue-700'
+                                    }`}>
+                                      via {wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}
+                                    </span>
+                                  </div>
+                                  {quoteItemNames.length > 0 && (
+                                    <p className={`text-[10px] mt-1 leading-snug ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                                      <span className="font-semibold">Quote covers:</span> {quoteItemNames.join(', ')}
+                                    </p>
+                                  )}
+                                  {!isAwarded && quote.itemIds.length > 0 && claimable.length === 0 && (
+                                    <p className={`text-[10px] mt-1 italic ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                                      All items in this quote are already awarded to another vendor.
+                                    </p>
+                                  )}
+                                  {!isAwarded && claimable.length > 0 && claimable.length < quote.itemIds.length && (
+                                    <p className={`text-[10px] mt-1 italic ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                                      Awarding now will lock: {claimableNames.join(', ')}
+                                    </p>
+                                  )}
+                                </>
                               ) : (
                                 <div className={`text-[10px] mt-0.5 inline-flex items-center gap-1 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
                                   <Clock className="h-2.5 w-2.5" />
@@ -1827,7 +1976,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                 <p className={`text-[10px] mt-1 italic ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>"{quote.note}"</p>
                               )}
                             </div>
-                            {quote && (
+                            {quote && !isAwarded && claimable.length > 0 && (
                               <button
                                 onClick={() => handleAwardInWizard(quote)}
                                 className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded font-bold transition-colors ${
@@ -1837,8 +1986,15 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                       ? 'border border-gray-700 text-gray-300 hover:bg-gray-800'
                                       : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
                                 }`}>
-                                <Award className="h-3 w-3" /> Award &amp; continue
+                                <Award className="h-3 w-3" /> Award
                               </button>
+                            )}
+                            {quote && !isAwarded && quote.itemIds.length > 0 && claimable.length === 0 && (
+                              <span className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded ${
+                                isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-500'
+                              }`}>
+                                Items covered
+                              </span>
                             )}
                           </div>
                         );
@@ -1850,7 +2006,8 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       </p>
                     )}
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Wizard nav */}
                 <div className="flex justify-between gap-2 mt-6">
@@ -1859,7 +2016,10 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     ← Back
                   </Button>
                   <div className="flex items-center gap-2">
-                    {wizardRfqId && (
+                    {/* Cancel only if no awards have been minted yet. Once
+                        a PO draft exists for any item the user shouldn't
+                        be able to vaporize the RFQ from this button. */}
+                    {wizardRfqId && awardedQuotes.length === 0 && (
                       <Button variant="outline" onClick={handleCancelWizardRfq}
                         className={`${isDark ? 'bg-transparent border-red-500/40 text-red-400 hover:bg-red-500/10' : 'bg-transparent border-red-300/70 text-red-600 hover:bg-red-50'}`}>
                         <X className="h-3 w-3 mr-1" /> Cancel RFQ
@@ -1879,8 +2039,12 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             {/* ── STEP 3: Delivery ─────────────────────────────────── */}
             {step === 3 && (
               <>
-                {/* Award context banner — visible when arrived here via RFQ */}
-                {awardedQuote && (
+                {/* Award context banner — visible when arrived here via RFQ.
+                    Single-award: classic one-vendor copy. Multi-award:
+                    summary header + per-PO rows so the user can see what
+                    each draft is going to lock. Delivery details below
+                    apply to ALL drafted POs uniformly. */}
+                {awardedQuotes.length === 1 && awardedQuote && (
                   <div className={`p-3 rounded-lg border ${
                     isDark ? 'bg-[#87986a]/10 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
                   }`}>
@@ -1894,6 +2058,45 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                           Rp {(awardedQuote.totalIdr / 1_000_000).toFixed(2)}M · {awardedQuote.leadTimeDays}d lead · quote received via {awardedQuote.channel === 'whatsapp' ? 'WhatsApp' : 'email'} from {awardedQuote.amContact}. Fill in delivery details below.
                         </p>
                       </div>
+                    </div>
+                  </div>
+                )}
+                {awardedQuotes.length > 1 && (
+                  <div className={`p-3 rounded-lg border ${
+                    isDark ? 'bg-[#87986a]/10 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                  }`}>
+                    <div className="flex items-start gap-2 mb-2">
+                      <Award className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-[11px] font-semibold ${labelClass}`}>
+                          Awarded from {awardedQuotes[0].rfqId} · {awardedQuotes.length} vendors · {awardedQuotes.length} PO drafts
+                        </p>
+                        <p className={`text-[10px] mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          Total Rp {(awardedQuotes.reduce((s, a) => s + a.totalIdr, 0) / 1_000_000).toFixed(2)}M across {awardedQuotes.length} POs. Delivery details below apply to <strong>all drafts</strong>. Each PO ships from its own vendor.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 mt-2">
+                      {awardedQuotes.map(aq => {
+                        const aqItems = wizardRfq?.items.filter(it => aq.itemIds.includes(it.id)) ?? [];
+                        return (
+                          <div key={aq.poId} className={`flex items-start gap-2 p-2 rounded text-[10px] ${
+                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#dbe3ce]'
+                          }`}>
+                            <span className={`shrink-0 font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
+                              {aq.poId}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className={`font-semibold ${labelClass}`}>
+                                {aq.vendorName} · Rp {(aq.totalIdr / 1_000_000).toFixed(2)}M · {aq.leadTimeDays}d lead
+                              </p>
+                              <p className={`mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                {aqItems.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2086,21 +2289,60 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 <div className={cardClass}>
                   <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Authorize Procurement</h2>
                   <div className="space-y-3">
-                    {[
-                      { k: 'Request', v: requestName },
-                      { k: 'Items', v: `${items.length} line${items.length === 1 ? '' : 's'} · ${fmtIdrShort(itemsTotalIdr)}` },
-                      { k: 'Playbook', v: `${playbook} · ${finnsPlaybooks.find(p => p.id === playbook)?.name}` },
-                      { k: 'Primary Vendor', v: primaryVendor?.name ?? '(none)' },
-                      { k: 'Target Venues', v: targetVenues.join(', ') || '(none)' },
-                      { k: 'Target Date', v: `${neededBy} (±${windowDays}d window)` },
-                      { k: 'Recurring', v: recurring ? `Yes · ${recurringFrequency}` : 'No' },
-                    ].map(row => (
-                      <div key={row.k} className="flex items-center justify-between gap-3">
-                        <span className={`text-[11px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{row.k}</span>
-                        <span className={`text-[11px] font-semibold ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{row.v}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const isMultiAward = awardedQuotes.length > 1;
+                      const multiAwardTotal = awardedQuotes.reduce((s, a) => s + a.totalIdr, 0);
+                      const rows: { k: string; v: string }[] = [
+                        { k: 'Request', v: requestName },
+                        { k: 'Items', v: `${items.length} line${items.length === 1 ? '' : 's'} · ${fmtIdrShort(isMultiAward ? multiAwardTotal : itemsTotalIdr)}` },
+                        { k: 'Playbook', v: `${playbook} · ${finnsPlaybooks.find(p => p.id === playbook)?.name}` },
+                        {
+                          k: isMultiAward ? 'Vendors' : 'Primary Vendor',
+                          v: isMultiAward
+                            ? `${awardedQuotes.length} vendors · ${awardedQuotes.length} PO drafts`
+                            : primaryVendor?.name ?? '(none)',
+                        },
+                        { k: 'Target Venues', v: targetVenues.join(', ') || '(none)' },
+                        { k: 'Target Date', v: `${neededBy} (±${windowDays}d window)` },
+                        { k: 'Recurring', v: recurring ? `Yes · ${recurringFrequency}` : 'No' },
+                      ];
+                      return rows.map(row => (
+                        <div key={row.k} className="flex items-center justify-between gap-3">
+                          <span className={`text-[11px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{row.k}</span>
+                          <span className={`text-[11px] font-semibold ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{row.v}</span>
+                        </div>
+                      ));
+                    })()}
                   </div>
+                  {awardedQuotes.length > 1 && (
+                    <div className={`mt-3 pt-3 border-t ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Per-vendor breakdown
+                      </p>
+                      <div className="space-y-1.5">
+                        {awardedQuotes.map(aq => {
+                          const aqItems = wizardRfq?.items.filter(it => aq.itemIds.includes(it.id)) ?? [];
+                          return (
+                            <div key={aq.poId} className={`flex items-start gap-2 p-2 rounded text-[10px] ${
+                              isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50 border border-gray-200'
+                            }`}>
+                              <span className={`shrink-0 font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-white text-gray-700 border border-gray-300'}`}>
+                                {aq.poId}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className={`font-semibold ${labelClass}`}>
+                                  {aq.vendorName} · {fmtIdrShort(aq.totalIdr)} · {aq.leadTimeDays}d lead
+                                </p>
+                                <p className={`mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                  {aqItems.map(it => `${it.qty}${it.unit} ${it.name}`).join(', ')}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className={`p-3 rounded-lg border mb-4 ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
@@ -2131,11 +2373,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     ← Back
                   </Button>
                   <Button onClick={handleSubmit} className={SAGE.primary(isDark)}>
-                    {splitMode && proposedSplits.length > 1
-                      ? `Authorize · Create ${proposedSplits.length} POs`
-                      : poAutonomy === 'manual'
-                        ? 'Authorize · Route to Orders'
-                        : 'Authorize · Hand off to A-04'}
+                    {awardedQuotes.length > 1
+                      ? `Authorize · Finalize ${awardedQuotes.length} POs`
+                      : splitMode && proposedSplits.length > 1
+                        ? `Authorize · Create ${proposedSplits.length} POs`
+                        : poAutonomy === 'manual'
+                          ? 'Authorize · Route to Orders'
+                          : 'Authorize · Hand off to A-04'}
                     <ChevronRight className="h-3 w-3 ml-1" />
                   </Button>
                 </div>
@@ -2148,11 +2392,15 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 <div className={`mx-auto mb-4 w-12 h-12 rounded-full flex items-center justify-center ${isDark ? 'bg-[#87986a]/20' : 'bg-[#f4f6f0]'}`}>
                   <CheckCircle className={`h-7 w-7 ${SAGE.icon(isDark)}`} />
                 </div>
-                <h2 className={`text-base font-semibold ${labelClass}`}>PO Authorized</h2>
+                <h2 className={`text-base font-semibold ${labelClass}`}>
+                  {awardedQuotes.length > 1 ? `${awardedQuotes.length} POs Authorized` : 'PO Authorized'}
+                </h2>
                 <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {poAutonomy === 'manual'
-                    ? `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). You drive every downstream stage — agents observe + surface insights. Routing you to Orders…`
-                    : `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). ${PLAYBOOK_META[playbook].agent} picks it up at Stage 2 within policy. Routing you to Orders…`}
+                  {awardedQuotes.length > 1
+                    ? `${awardedQuotes.length} POs drafted from ${awardedQuotes[0].rfqId}, one per awarded vendor. All at Stage 2 awaiting your Approve & Execute. Routing you to Orders…`
+                    : poAutonomy === 'manual'
+                      ? `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). You drive every downstream stage — agents observe + surface insights. Routing you to Orders…`
+                      : `Running on ${playbook} (${finnsPlaybooks.find(p => p.id === playbook)?.name}). ${PLAYBOOK_META[playbook].agent} picks it up at Stage 2 within policy. Routing you to Orders…`}
                 </p>
                 <div className={`mt-4 inline-flex items-center gap-1.5 text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
                   <Truck className="h-3 w-3" />

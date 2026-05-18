@@ -28,12 +28,15 @@
 
 import { useEffect, useState } from 'react';
 import { logSystemAction } from './actionLog';
-import type { VenueTag } from './types';
+import type { VenueTag, FinnsCategory } from './types';
+import { finnsSuppliers } from './mockData';
 
-export type RFQStatus = 'awaiting' | 'partial' | 'received' | 'awarded' | 'cancelled' | 'expired';
+export type RFQStatus = 'awaiting' | 'partial' | 'received' | 'partially-awarded' | 'awarded' | 'cancelled' | 'expired';
 export type RFQChannel = 'whatsapp' | 'email';
 
 export interface RFQLineItem {
+  /** Stable id within the RFQ. Used to wire quotes / awards to items. */
+  id: string;
   name: string;
   category?: string;
   qty: number;
@@ -47,7 +50,9 @@ export interface RFQQuote {
   vendorId: string;
   /** Display name for the tracker card. */
   vendorName: string;
-  /** Quoted total in IDR for the full line-item set. */
+  /** Items in the basket this vendor can supply (subset of rfq.items). */
+  itemIds: string[];
+  /** Quoted total in IDR for the items they can supply. */
   totalIdr: number;
   /** Vendor-claimed lead time in days. */
   leadTimeDays: number;
@@ -55,6 +60,20 @@ export interface RFQQuote {
   note?: string;
   /** ISO timestamp when the quote arrived. */
   receivedAt: string;
+}
+
+/** A single award against the RFQ. A multi-vendor RFQ produces N awards. */
+export interface RFQAward {
+  vendorId: string;
+  vendorName: string;
+  /** Items locked to this vendor by this award. */
+  itemIds: string[];
+  /** Synthesised PO id for this award. */
+  poId: string;
+  /** Total IDR for this award (from the awarded quote). */
+  totalIdr: number;
+  leadTimeDays: number;
+  awardedAt: string;
 }
 
 export interface RFQRecord {
@@ -69,13 +88,15 @@ export interface RFQRecord {
   /** Display labels for invited vendors. */
   vendorNames: string[];
   quotes: RFQQuote[];
-  /** Set once the RFQ is awarded to a vendor. */
-  awardedVendorId?: string;
-  /** Synthesised PO id when awarded. */
-  awardedPoId?: string;
+  /** All awards on this RFQ. Empty until first award. */
+  awards: RFQAward[];
   /** Optional venue tag (carried from creator context). */
   venue?: VenueTag | 'Multi';
   status: RFQStatus;
+  // Legacy fields — populated with the FIRST award for back-compat
+  // with code that still reads awardedVendorId / awardedPoId.
+  awardedVendorId?: string;
+  awardedPoId?: string;
 }
 
 type Store = Record<string, RFQRecord>;
@@ -120,9 +141,13 @@ function init(): void {
 }
 
 function deriveStatus(r: RFQRecord): RFQStatus {
-  if (r.status === 'awarded' || r.status === 'cancelled' || r.status === 'expired') return r.status;
-  if (r.quotes.length === 0)                        return 'awaiting';
-  if (r.quotes.length < r.vendorIds.length)         return 'partial';
+  if (r.status === 'cancelled' || r.status === 'expired') return r.status;
+  const totalItems    = r.items.length;
+  const awardedSet    = new Set<string>(r.awards.flatMap(a => a.itemIds));
+  if (totalItems > 0 && awardedSet.size >= totalItems) return 'awarded';
+  if (r.awards.length > 0)                              return 'partially-awarded';
+  if (r.quotes.length === 0)                            return 'awaiting';
+  if (r.quotes.length < r.vendorIds.length)             return 'partial';
   return 'received';
 }
 
@@ -151,6 +176,7 @@ export function createRFQ(input: CreateRFQInput): RFQRecord {
     ...input,
     createdAt: new Date().toISOString(),
     quotes: [],
+    awards: [],
     status: 'awaiting',
   };
   store[record.id] = record;
@@ -164,7 +190,7 @@ export function addQuote(rfqId: string, quote: RFQQuote): RFQRecord | null {
   init();
   const r = store[rfqId];
   if (!r) return null;
-  if (r.status === 'awarded' || r.status === 'cancelled') return r;
+  if (r.status === 'cancelled') return r;
   // Don't double-add for the same vendor.
   if (r.quotes.some(q => q.vendorId === quote.vendorId)) return r;
   const next: RFQRecord = { ...r, quotes: [...r.quotes, quote] };
@@ -174,24 +200,47 @@ export function addQuote(rfqId: string, quote: RFQQuote): RFQRecord | null {
   return next;
 }
 
-/** Mark an RFQ as awarded to a vendor. Synthesises a PO id. */
+/**
+ * Award a vendor's quote. Locks the items in that quote (minus any
+ * already-awarded items) to the vendor. Multiple awards per RFQ
+ * are supported — one per quote / vendor.
+ */
 export function awardRFQ(rfqId: string, vendorId: string, poId: string): RFQRecord | null {
   init();
   const r = store[rfqId];
   if (!r) return null;
-  if (!r.quotes.some(q => q.vendorId === vendorId)) return r;
+  if (r.status === 'cancelled') return r;
+  const quote = r.quotes.find(q => q.vendorId === vendorId);
+  if (!quote) return r;
+  // Items in this quote that haven't been awarded yet.
+  const alreadyAwarded = new Set<string>(r.awards.flatMap(a => a.itemIds));
+  const newItemIds = quote.itemIds.filter(id => !alreadyAwarded.has(id));
+  if (newItemIds.length === 0) return r;          // nothing left to award
+
+  const award: RFQAward = {
+    vendorId: quote.vendorId,
+    vendorName: quote.vendorName,
+    itemIds: newItemIds,
+    poId,
+    totalIdr: quote.totalIdr,
+    leadTimeDays: quote.leadTimeDays,
+    awardedAt: new Date().toISOString(),
+  };
   const next: RFQRecord = {
     ...r,
-    status: 'awarded',
-    awardedVendorId: vendorId,
-    awardedPoId: poId,
+    awards: [...r.awards, award],
+    // Keep legacy fields populated with the FIRST award so older
+    // readers don't break — replace once they're all migrated.
+    awardedVendorId: r.awardedVendorId ?? quote.vendorId,
+    awardedPoId:     r.awardedPoId     ?? poId,
   };
+  next.status = deriveStatus(next);
   store[rfqId] = next;
   persist();
   return next;
 }
 
-/** Cancel an RFQ. Existing quotes stay visible for the record. */
+/** Cancel an RFQ. Existing quotes / awards stay visible for the record. */
 export function cancelRFQ(rfqId: string): RFQRecord | null {
   init();
   const r = store[rfqId];
@@ -201,6 +250,12 @@ export function cancelRFQ(rfqId: string): RFQRecord | null {
   store[rfqId] = next;
   persist();
   return next;
+}
+
+/** Item ids in this RFQ that no award has covered yet. */
+export function unawardedItemIds(rfq: RFQRecord): string[] {
+  const awarded = new Set<string>(rfq.awards.flatMap(a => a.itemIds));
+  return rfq.items.filter(it => !awarded.has(it.id)).map(it => it.id);
 }
 
 /** Synchronous read. Newest first. */
@@ -263,14 +318,39 @@ function scheduleMockQuotes(rfqId: string): void {
 
   r.vendorIds.forEach((vendorId, idx) => {
     const vendorName = r.vendorNames[idx] ?? vendorId;
+    const vendor = finnsSuppliers.find(s => s.id === vendorId);
+    // Items in the basket this vendor can actually supply. Scoping the
+    // quote here prevents "AUS Premium Meats agreed to deliver tomatoes"
+    // type incidents downstream.
+    const coveredItems = vendor
+      ? r.items.filter(it =>
+          it.category && vendor.categories.includes(it.category as FinnsCategory),
+        )
+      : r.items;
     const delayMs = 5000 + idx * 3500 + Math.floor(Math.random() * 4000);
     setTimeout(() => {
-      // Re-read in case the RFQ was cancelled/awarded in the meantime.
+      // Re-read in case the RFQ was cancelled in the meantime.
       const current = store[rfqId];
       if (!current) return;
-      if (current.status === 'awarded' || current.status === 'cancelled') return;
+      if (current.status === 'cancelled') return;
       const channelLabel = r.channel === 'whatsapp' ? 'WhatsApp' : 'email';
-      // 15% no-bid.
+
+      // If the vendor doesn't cover anything in this basket, log a
+      // no-bid. (Shouldn't fire when the user picks vendors via the
+      // category-aware grouped view, but guards against manual invites.)
+      if (coveredItems.length === 0) {
+        logSystemAction({
+          kind: 'rfq-quote-received',
+          entity: { type: 'supplier', id: vendorId },
+          summary: `${vendorName} replied via ${channelLabel} — no bid on ${rfqId} (no overlap with their categories)`,
+          venue: r.venue,
+          outcome: 'overridden',
+          meta: { rfqId, vendorId, vendorName, channel: r.channel, passed: true, reason: 'no-overlap' },
+        });
+        return;
+      }
+
+      // 15% random no-bid even for covered vendors (price, capacity, etc.).
       if (Math.random() < 0.15) {
         logSystemAction({
           kind: 'rfq-quote-received',
@@ -282,8 +362,12 @@ function scheduleMockQuotes(rfqId: string): void {
         });
         return;
       }
-      // Compute total from item targets (fallback Rp 50_000/unit if missing).
-      const baseTotal = r.items.reduce((s, it) => s + it.qty * (it.targetPriceIdr ?? 50_000), 0);
+
+      // Total from the items they actually supply.
+      const baseTotal = coveredItems.reduce(
+        (s, it) => s + it.qty * (it.targetPriceIdr ?? 50_000),
+        0,
+      );
       const noise = rand(0.85, 1.18); // -15% to +18%
       const totalIdr = Math.round(baseTotal * noise / 10_000) * 10_000;
       const leadTimeDays = Math.round(rand(2, 7));
@@ -293,6 +377,7 @@ function scheduleMockQuotes(rfqId: string): void {
       const quote: RFQQuote = {
         vendorId,
         vendorName,
+        itemIds: coveredItems.map(it => it.id),
         totalIdr,
         leadTimeDays,
         note,
@@ -302,10 +387,10 @@ function scheduleMockQuotes(rfqId: string): void {
       logSystemAction({
         kind: 'rfq-quote-received',
         entity: { type: 'supplier', id: vendorId },
-        summary: `${vendorName} replied via ${channelLabel} · Rp ${(totalIdr / 1_000_000).toFixed(2)}M · ${leadTimeDays}d`,
+        summary: `${vendorName} replied via ${channelLabel} · Rp ${(totalIdr / 1_000_000).toFixed(2)}M · ${leadTimeDays}d · ${coveredItems.length} item${coveredItems.length === 1 ? '' : 's'}`,
         venue: r.venue,
         details: note,
-        meta: { rfqId, vendorId, vendorName, totalIdr, leadTimeDays, channel: r.channel },
+        meta: { rfqId, vendorId, vendorName, totalIdr, leadTimeDays, channel: r.channel, itemCount: coveredItems.length },
       });
     }, delayMs);
   });

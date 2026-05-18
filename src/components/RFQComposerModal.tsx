@@ -208,11 +208,14 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
     const rfqId = `RFQ-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
 
     // Persist to the RFQ store (scheduled mock quote ingestion).
+    // Each line item carries its local id forward as the RFQ item id
+    // so quotes / awards can reference items unambiguously.
     createRFQ({
       id: rfqId,
       deadline,
       channel,
       items: items.map(i => ({
+        id: i.id,
         name: i.name.trim(),
         category: i.category || undefined,
         qty: i.qty,

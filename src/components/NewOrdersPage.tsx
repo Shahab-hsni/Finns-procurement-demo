@@ -3259,78 +3259,157 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 </div>
               </div>
 
-              {/* Action — Failure / Approve / Confirm */}
-              {selectedOrder.actionKind === 'resolve-issue' ? (
-                <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-red-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5">
-                      <AlertTriangle className="h-3.5 w-3.5 text-white" />
+              {/* 6x — Action block reads LIVE state, not seeded actionKind.
+                  The wizard sets actionKind: 'approve' at PO creation, but
+                  for sub-cap Auto orders the engine drives the journey —
+                  there's nothing for the admin to approve. derivedActionKind
+                  + actionTakenIds + completedIds together decide whether to
+                  surface a CTA at all.
+
+                    Auto + no real gate     → "A-XX driving · Auto" status pill, no CTA
+                    Auto + cap-active gate  → Approve & Execute + Decline
+                    Auto + perishable QC    → Confirm Delivery + Report Issue
+                    Auto + disputed         → Resolve flow
+                    Action already taken    → "Awaiting next stage" pill
+                    Terminal completed      → "Closed out" pill
+                    Manual mode             → "Continue manually" → opens current stage's Task Module
+              */}
+              {(() => {
+                const stageNow = Math.max(selectedOrder.dagStage, forceCompletedStages[selectedOrder.id] ?? 0);
+                const live = (actionTakenIds.has(selectedOrder.id) || completedIds.has(selectedOrder.id))
+                  ? null
+                  : derivedActionKind(selectedOrder, stageNow);
+                const orderMode = getMode(selectedOrder.id);
+
+                // Terminal closed-out
+                if (completedIds.has(selectedOrder.id)) {
+                  return (
+                    <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#87986a]/10 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                      <div className="flex items-center gap-2.5">
+                        <CircleCheck className={`h-5 w-5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                        <div>
+                          <p className={`text-xs font-bold ${t.textPrimary}`}>Closed out</p>
+                          <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
+                            All five stages complete. Stock incremented, payment cleared.
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-semibold ${t.textPrimary}`}>Delivery couldn't be completed</p>
-                      <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>{selectedOrder.failureReason}</p>
-                      {selectedOrder.negotiating && (
-                        <p className={`text-[10px] mt-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{selectedOrder.agentAgent} is handling this. Second attempt at 10:00 AM.</p>
-                      )}
+                  );
+                }
+
+                // Resolve-issue
+                if (live === 'resolve-issue') {
+                  return (
+                    <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-red-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+                      <div className="flex items-start gap-3 mb-4">
+                        <div className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5">
+                          <AlertTriangle className="h-3.5 w-3.5 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold ${t.textPrimary}`}>Delivery couldn't be completed</p>
+                          <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>{selectedOrder.failureReason}</p>
+                          {selectedOrder.negotiating && (
+                            <p className={`text-[10px] mt-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{selectedOrder.agentAgent} is handling this. Second attempt at 10:00 AM.</p>
+                          )}
+                        </div>
+                      </div>
+                      <button onClick={() => executeAction(selectedOrder.id)}
+                        className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Resolve in Activity &amp; Governance
+                      </button>
+                    </div>
+                  );
+                }
+
+                // Approval gate (cap rule active + above threshold)
+                if (live === 'approve') {
+                  return (
+                    <div className="space-y-2">
+                      <button onClick={() => executeAction(selectedOrder.id)}
+                        className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold bg-[#87986a] hover:bg-[#6b7a54] text-white transition-colors">
+                        <ThumbsUp className="h-4 w-4" /> Approve &amp; Execute
+                      </button>
+                      <div className="flex justify-center">
+                        <button
+                          onClick={() => {
+                            logUserAction({
+                              kind: 'po-decline',
+                              entity: { type: 'po', id: selectedOrder.id },
+                              summary: `Declined ${selectedOrder.id} · ${selectedOrder.supplier}`,
+                              details: selectedOrder.humanDescription,
+                              outcome: 'overridden',
+                              meta: { amount: selectedOrder.amount, supplier: selectedOrder.supplier },
+                            });
+                            toast.warning(`Declined ${selectedOrder.id}`, {
+                              description: 'Agent recommendation rejected — it will not re-suggest without new data.',
+                            });
+                          }}
+                          className={`inline-flex items-center gap-1.5 text-xs font-semibold transition-colors ${isDark ? 'text-red-400 hover:text-red-300 hover:bg-red-500/10' : 'text-red-600 hover:text-red-700 hover:bg-red-50'} px-3 py-1.5 rounded-md`}>
+                          <ThumbsDown className="h-3 w-3" /> Decline
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Perishable QC at Stage 4
+                if (live === 'confirm-delivery') {
+                  return (
+                    <div className="space-y-2">
+                      <button onClick={() => openStageModule(selectedOrder.id, 4)}
+                        className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                        <CircleCheck className="h-4 w-4" /> Confirm Delivery · upload POD
+                      </button>
+                      <div className="flex justify-center">
+                        <button
+                          onClick={() => toast.info(`Report an issue · ${selectedOrder.id}`, {
+                            description: 'Opens a per-line-item receipt modal — accept-all / accept-partial / reject-quality / reject-wrong-item / pending-inspection. Emits a GoodsReceipt event and routes to dispute flow when needed.',
+                          })}
+                          className={`inline-flex items-center gap-1.5 text-xs font-semibold transition-colors ${isDark ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10' : 'text-amber-700 hover:text-amber-800 hover:bg-amber-50'} px-3 py-1.5 rounded-md`}>
+                          <AlertTriangle className="h-3 w-3" /> Report an Issue
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Manual mode with no specific gate — let the admin walk
+                // through the stages themselves.
+                if (orderMode === 'manual') {
+                  return (
+                    <button onClick={() => openStageModule(selectedOrder.id, stageNow)}
+                      className={`w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold border transition-colors ${
+                        isDark ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
+                      }`}>
+                      <Hand className="h-4 w-4" /> Continue manually · Stage {stageNow + 1}
+                    </button>
+                  );
+                }
+
+                // Auto + no gate → agent is driving. No CTA. Status pill only.
+                // This is the case the user kept asking about: 'why do I see
+                // Approve when it's Auto?'. Now there's nothing to click —
+                // just a status that says the agent has it.
+                const isAdvancing = actionTakenIds.has(selectedOrder.id) || stageNow < 4;
+                return (
+                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                    <div className="flex items-center gap-2.5">
+                      <Bot className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs font-bold ${t.textPrimary}`}>
+                          {selectedOrder.agentAgent} · Auto
+                        </p>
+                        <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
+                          {isAdvancing
+                            ? `Driving this PO end-to-end. ${stageNow < 4 ? `Currently at Stage ${stageNow + 1} (${DAG_STAGES[stageNow].label}). Next advance in a few seconds.` : 'Stage 4 awaiting auto-QC.'}`
+                            : 'No human gate active. Switch to Manual if you want to take over.'}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex gap-3 ml-10">
-                    <button onClick={() => executeAction(selectedOrder.id)}
-                      className="text-xs font-semibold text-red-500 hover:text-red-600 transition-colors inline-flex items-center gap-1">
-                      <PhoneCall className="h-3 w-3" /> Contact Supplier
-                    </button>
-                    <button className={`text-xs ${t.textMuted} hover:${t.textPrimary} transition-colors inline-flex items-center gap-1`}>
-                      <RefreshCw className="h-3 w-3" /> Reschedule
-                    </button>
-                  </div>
-                </div>
-              ) : selectedOrder.actionKind === 'approve' ? (
-                <div className="space-y-2">
-                  <button onClick={() => executeAction(selectedOrder.id)}
-                    className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold bg-[#87986a] hover:bg-[#6b7a54] text-white transition-colors">
-                    <ThumbsUp className="h-4 w-4" /> Approve &amp; Execute
-                  </button>
-                  <div className="flex justify-center">
-                    <button
-                      onClick={() => {
-                        logUserAction({
-                          kind: 'po-decline',
-                          entity: { type: 'po', id: selectedOrder.id },
-                          summary: `Declined ${selectedOrder.id} · ${selectedOrder.supplier}`,
-                          details: selectedOrder.humanDescription,
-                          outcome: 'overridden',
-                          meta: { amount: selectedOrder.amount, supplier: selectedOrder.supplier },
-                        });
-                        toast.warning(`Declined ${selectedOrder.id}`, {
-                          description: 'Agent recommendation rejected — it will not re-suggest without new data.',
-                        });
-                      }}
-                      // 6w — Decline is the negative-action counterpart to
-                      // Approve & Execute. Red text + red hover state makes
-                      // the destructive nature explicit.
-                      className={`inline-flex items-center gap-1.5 text-xs font-semibold transition-colors ${isDark ? 'text-red-400 hover:text-red-300 hover:bg-red-500/10' : 'text-red-600 hover:text-red-700 hover:bg-red-50'} px-3 py-1.5 rounded-md`}>
-                      <ThumbsDown className="h-3 w-3" /> Decline
-                    </button>
-                  </div>
-                </div>
-              ) : selectedOrder.actionKind === 'confirm-delivery' ? (
-                <div className="space-y-2">
-                  <button onClick={() => executeAction(selectedOrder.id)}
-                    className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors">
-                    <CircleCheck className="h-4 w-4" /> Confirm Delivery
-                  </button>
-                  <div className="flex justify-center">
-                    <button
-                      onClick={() => toast.info(`Report an issue · ${selectedOrder.id}`, {
-                        description: 'Production: opens a per-line-item receipt modal — accept-all / accept-partial (qty short-shipped) / reject-quality (with photos) / reject-wrong-item / pending-inspection. Emits a GoodsReceipt event and routes to dispute flow when needed.',
-                      })}
-                      className={`inline-flex items-center gap-1.5 text-xs transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                      <AlertTriangle className="h-3 w-3" /> Report an Issue
-                    </button>
-                  </div>
-                </div>
-              ) : null}
+                );
+              })()}
 
               {/* 6w — Tertiary actions. Same set + visual weight whether or
                   not the order is past Stage 3. Track is just gated by

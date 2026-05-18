@@ -437,7 +437,24 @@ Compiled list of every mutating action on this page (excludes navigation, filter
 
 ### Auto-mode autonomous flow (default)
 
-Auto orders **ride the journey end-to-end without admin clicks**. The auto-progress engine (`NewOrdersPage` useEffect, 8s cadence) walks each Auto order through stages 0 → 1 → 2 → 3 → 4, halting only at real HITL gates. Each advance:
+Auto orders **ride the journey end-to-end without admin clicks**. The auto-progress engine (`NewOrdersPage` useEffect, 8s cadence) walks each Auto order through stages 0 → 1 → 2 → 3 → 4, halting only at real HITL gates.
+
+**The journey detail card respects this** (Phase 6x). The action zone on a selected Auto order reads `derivedActionKind(order, effectiveStage)` — NOT the seeded `actionKind` (the wizard hard-codes `'approve'` at PO creation). So sub-cap Auto orders with no perishable QC do **not** render an Approve & Execute button. Instead they show a sage status pill:
+
+> **A-XX · Auto** · *Driving this PO end-to-end. Currently at Stage N (label). Next advance in a few seconds.*
+
+The five action-zone states on the journey card:
+
+| Condition | What renders |
+|---|---|
+| `completedIds.has(order)` | Sage "Closed out" pill — terminal |
+| `live === 'resolve-issue'` (disputed) | Red Resolve in A&G button + failure reason context |
+| `live === 'approve'` (cap rule active + above threshold) | Green Approve & Execute button + red Decline |
+| `live === 'confirm-delivery'` (Stage 4 perishable) | Blue Confirm Delivery button → opens Stage 4 Task Module |
+| Manual mode + no gate | Amber Continue manually button → opens current stage's Task Module |
+| Auto + no gate (the common case) | Sage "Agent driving · Auto" status pill — NO CTA |
+
+`live` is `derivedActionKind(order, stage)` after gating on `actionTakenIds` (admin already cleared the gate) and `completedIds` (terminal). Each advance:
 
 1. Writes realistic stage artifacts to `agentStageData` (policy ref, carrier, tracking, POD filename, real receiving-lead names).
 2. Stamps `stageCompletedAt[orderId][fromStage]`.

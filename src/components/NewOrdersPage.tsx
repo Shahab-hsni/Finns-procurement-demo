@@ -18,6 +18,7 @@ import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
 import { workflowTemplates } from '../lib/mockData';
 import { logUserAction, type ActionKind } from '../lib/actionLog';
+import { useAgentsPaused } from '../lib/autonomy';
 import { AgentCTA } from './AgentCTA';
 import { ManualNotes } from './ManualNotes';
 import { useRuntimePOs, type RuntimePO } from '../lib/poStore';
@@ -91,6 +92,45 @@ function hashStr(s: string) {
 function requiresHumanAuthorization(stageIdx: number) {
   return stageIdx === 1 || stageIdx === 4;
 }
+
+// ── Auto-mode HITL gates (6q) ─────────────────────────────────────────
+//
+// In Auto mode the agents are supposed to run the journey end-to-end.
+// The only legitimate places to stop and wait for the human are:
+//
+//   Stage 1 (Quote → PO Approved)  if order amount > AUTO_APPROVE_CAP_IDR
+//     A-04 won't auto-issue the PO above the cap. Admin sign-off needed.
+//
+//   Stage 4 (Delivered & Checked)  if the basket contains a perishable
+//     SKU that needs visual QC. Burrata, sashimi-grade tuna, MB7+ Wagyu
+//     can't be auto-cleared from a photo.
+//
+//   any stage                       if the order is disputed.
+//
+// Below the cap on stable items, an Auto order should ride 0→1→2→3→4
+// and self-clear without a single click. The user sees Atlas toasts +
+// chat messages narrating the progression; the order moves into the
+// Autonomous feed and stays there until it's terminal.
+const AUTO_APPROVE_CAP_IDR = 12_000_000;
+const PERISHABLE_KEYWORDS = [
+  'wagyu', 'sashimi', 'burrata', 'foie', 'oyster', 'mb7',
+];
+
+function basketHasPerishable(order: Order): boolean {
+  const blob = order.items.join(' ').toLowerCase();
+  return PERISHABLE_KEYWORDS.some(k => blob.includes(k));
+}
+
+/** True when the Auto agent must halt at this stage and surface to the human. */
+function autoHumanGateAt(order: Order, stage: number): boolean {
+  if (order.status === 'disputed')           return true;
+  if (stage === 1 && order.amount > AUTO_APPROVE_CAP_IDR) return true;
+  if (stage === 4 && basketHasPerishable(order))          return true;
+  return false;
+}
+
+/** Demo cadence — how long between auto-advances. Keep visible but not spammy. */
+const AUTO_ADVANCE_INTERVAL_MS = 8_000;
 
 // ── 5-Stage DAG (matches PLATFORM-MAP.md canonical model) ───────────
 const DAG_STAGES: { label: string; agentStep?: string }[] = [
@@ -296,8 +336,8 @@ const SEEDED_ORDERS: Order[] = [
     humanAction: 'Approve',
     humanStatus: 'Rush — par floor breached',
     humanDescription: 'Stake Wagyu par floor breach — 2-day gap risk for the weekend tasting menu.',
-    eta: 'May 18 · 09:00', dagStage: 0,
-    agentReasoning: "Restock Agent flagged par floor breach this morning. A-02 promoted to Rush playbook. AUS Premium Meats is your contracted Wagyu vendor — quote confirmed verbally with James Whitaker then backed by an emailed PDF within the 12% Rush premium tolerance. USD 1,840 locked at 15,490.",
+    eta: 'May 18 · 09:00', dagStage: 1,
+    agentReasoning: "Restock Agent flagged par floor breach this morning. A-02 promoted to Rush playbook. AUS Premium Meats is your contracted Wagyu vendor — quote confirmed verbally with James Whitaker then backed by an emailed PDF within the 12% Rush premium tolerance. USD 1,840 locked at 15,490. Above the Rp 12M auto-approve cap, so needs your sign-off before A-04 issues the PO.",
     agentAgent: 'A-02 (Restock)',
     assignedAgent: { id: 8, role: 'Restock' },
     financeInsight: "USD-denominated import. FX locked at 15,490 — IDR exposure capped at Rp 28.5M.",
@@ -954,6 +994,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
 
   const getMode = useCallback((id: string): LaborMode => laborMode[id] ?? 'auto', [laborMode]);
+  // System-wide pause from Activity & Governance → Agents tab. When on,
+  // every Auto entity behaves as if Manual — the auto-progress engine
+  // halts. Manual entities are unaffected.
+  const agentsPaused = useAgentsPaused();
 
   const setMode = useCallback((id: string, mode: LaborMode) => {
     setLaborMode(prev => ({ ...prev, [id]: mode }));
@@ -998,6 +1042,88 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const effectiveStage = useCallback((order: Order) => {
     return Math.max(order.dagStage, forceCompletedStages[order.id] ?? 0);
   }, [forceCompletedStages]);
+
+  // ── 6q · Auto-mode progress engine ─────────────────────────────────
+  //
+  // For every order in Auto mode that hasn't hit a HITL gate, ride one
+  // stage at a time on a steady cadence. The user sees the journey
+  // move without clicking. Halts at:
+  //
+  //   • Stage 4 itself (the last stage — terminal)
+  //   • Any stage where autoHumanGateAt() returns true
+  //   • Any order in completedIds (terminal) or disputed
+  //   • When agentsPaused (system kill switch)
+  //
+  // On each tick: scan ORDERS for the FIRST eligible candidate and
+  // advance just that one. One-at-a-time keeps the demo coherent and
+  // chat output from spamming. The setTimeout closure captures the
+  // current snapshot via deps — when forceCompletedStages changes the
+  // effect re-runs and the next candidate gets picked.
+  //
+  // Two specific journeys this enables:
+  //   • PO-3048 (autonomous, Stage 2) → 3 → 4 → auto-clear (greens, no
+  //     perishable keyword). Lands as Delivered without a click.
+  //   • PO-3041 after Approve (above cap → human gate at Stage 1) →
+  //     2 → 3 → 4 → halts (tuna sashimi triggers perishable QC gate).
+  //     Admin's only clicks: one Approve, one Confirm Delivery.
+  useEffect(() => {
+    if (agentsPaused) return;
+    // Find the next eligible Auto order that can advance.
+    let target: { order: Order; fromStage: number } | null = null;
+    for (const order of ORDERS) {
+      if (completedIds.has(order.id))         continue;
+      if (getMode(order.id) !== 'auto')       continue;
+      const eff = Math.max(order.dagStage, forceCompletedStages[order.id] ?? 0);
+      if (eff >= 4)                           continue;
+      if (autoHumanGateAt(order, eff))        continue;
+      target = { order, fromStage: eff };
+      break;
+    }
+    if (!target) return;
+    const handle = window.setTimeout(() => {
+      const { order, fromStage } = target!;
+      const toStage = fromStage + 1;
+      setForceCompletedStages(prev => ({
+        ...prev,
+        [order.id]: Math.max(prev[order.id] ?? 0, fromStage + 1),
+      }));
+      setStageCompletedAt(prev => ({
+        ...prev,
+        [order.id]: { ...(prev[order.id] ?? {}), [fromStage]: new Date().toISOString() },
+      }));
+      // Stage-specific narration in the Atlas chat. Frames it as the
+      // assigned agent's work, not generic "advanced one stage".
+      const agent = order.agentAgent;
+      const narration =
+        toStage === 1 ? `🤖 ${agent} confirmed the quote on ${order.id} — ${order.supplier} replied via ${order.id.includes('SUP-014') ? 'WhatsApp' : 'WhatsApp'}.`
+      : toStage === 2 ? `🤖 ${agent} cleared the policy stack on ${order.id}. PO issued to ${order.supplier}.`
+      : toStage === 3 ? `🚚 ${order.supplier} confirmed dispatch on ${order.id}. A-05 (Logistics) tracking — ETA ${order.eta}.`
+      : toStage === 4 ? `📦 ${order.supplier} delivered ${order.id} to receiving. ${basketHasPerishable(order) ? 'Perishable items — awaiting your visual QC.' : 'Auto-QC passed against PO spec. Stock incremented.'}`
+                      : `${agent}: ${order.id} advanced to Stage ${toStage + 1}.`;
+      setChatMessages(prev => [...prev, { from: 'atlas', text: narration }]);
+      logUserAction({
+        kind: 'po-stage-advance',
+        entity: { type: 'po', id: order.id },
+        summary: `Auto-advanced ${order.id} to Stage ${toStage + 1} (${DAG_STAGES[toStage].label})`,
+        venue: 'Multi',
+        meta: {
+          fromStage, toStage,
+          supplier: order.supplier,
+          agent,
+          auto: true,
+        },
+      });
+      // If we just landed at Stage 4 AND the basket is non-perishable,
+      // close it out — A-05's auto-QC passes immediately, stock writes,
+      // PO done. (Perishables sit at Stage 4 waiting for human Confirm
+      // Delivery; autoHumanGateAt blocks any further auto-progress for
+      // those.)
+      if (toStage === 4 && !basketHasPerishable(order)) {
+        setCompletedIds(prev => new Set([...prev, order.id]));
+      }
+    }, AUTO_ADVANCE_INTERVAL_MS);
+    return () => window.clearTimeout(handle);
+  }, [ORDERS, agentsPaused, completedIds, forceCompletedStages, getMode]);
 
   // ── High-visibility Status Badge ───────────────────────────────
   // Mirrors the dashboard ETA/status into the detail header (and any
@@ -1554,24 +1680,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     setChatMessages(prev => [...prev, {
       from: 'atlas',
       text: newStage === 2
-        ? `✅ ${order.id} approved. PO sent to ${order.supplier} via WhatsApp — awaiting their dispatch confirmation.`
+        ? `✅ ${order.id} approved. PO sent to ${order.supplier} via WhatsApp — A-05 will track from here.`
         : `✅ ${order.id} advanced to Stage ${newStage + 1} (${DAG_STAGES[newStage]?.label ?? 'next stage'}).`,
     }]);
-
-    // Demo timer: if we just advanced to Stage 2 (PO Approved), kick
-    // off the simulated dispatch confirmation 5s later so the user sees
-    // the journey ride into In Transit. Halts at Stage 3 — the next
-    // gate is human QC (Confirm Delivery), so we don't auto-advance
-    // through that one.
-    if (newStage === 2) {
-      setTimeout(() => {
-        forceCompleteStage(id, 2);
-        setChatMessages(prev => [...prev, {
-          from: 'atlas',
-          text: `🚚 ${order.supplier} confirmed dispatch on ${order.id} via WhatsApp. Truck rolling — ETA holds at ${order.eta}.`,
-        }]);
-      }, 5_000);
-    }
+    // From this point on, the auto-progress engine (see below) takes over
+    // and rides the journey through any remaining non-HITL stages on its
+    // own demo cadence. No further click needed from the admin unless
+    // the order hits a real human gate (above-cap, perishable QC, dispute).
   }, [forceCompletedStages, forceCompleteStage, onNavigate]);
 
   // ── Execute batch ──

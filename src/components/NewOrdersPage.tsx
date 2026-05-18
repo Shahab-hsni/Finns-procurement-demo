@@ -17,7 +17,7 @@ import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { theme as themeTokens } from '../lib/theme';
 import { workflowTemplates, finnsPolicyRules } from '../lib/mockData';
-import { logUserAction, type ActionKind } from '../lib/actionLog';
+import { logUserAction, readActionLog, type ActionKind } from '../lib/actionLog';
 import { useAgentsPaused } from '../lib/autonomy';
 import { AgentCTA } from './AgentCTA';
 import { ManualNotes } from './ManualNotes';
@@ -917,6 +917,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   // 6s — id of the PO whose Approve button has been clicked. Pops the
   // Approval Confirmation modal (Auto + cap gate active flow).
   const [approvalForId, setApprovalForId]   = useState<string | null>(null);
+  // 6v — id of the PO whose reasoning the user is viewing (Audit Mode
+  // Quick Journey → View reasoning). Renders the local Reasoning Chain
+  // modal; closing drops back into Quick Journey + Audit Mode intact.
+  const [reasoningForId, setReasoningForId] = useState<string | null>(null);
   const [showCmd, setShowCmd]               = useState(false);
   const [cmdQuery, setCmdQuery]             = useState('');
   const [journeyCompleteId, setJourneyCompleteId] = useState<string | null>(null);
@@ -2499,25 +2503,15 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               {primaryActionForStatus}
             </Button>
 
-            {/* Always-on: Open Full Workspace for live orders (secondary).
-                Hidden for historical because it would silently no-op. */}
-            {isLiveOrder && !isCompleted && !isCancelled && !isDisputed && !isOnHold && (
-              <Button size="sm" variant="outline"
-                onClick={() => setAuditMode(false)}
-                className={`w-full h-8 text-[11px] ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}>
-                <Maximize2 className="h-3 w-3 mr-1.5" /> Open in journey
-              </Button>
-            )}
-
+            {/* 6v — View Reasoning is now a local modal. The previous link
+                navigated to A&G with a #po= hash that A&G didn't read —
+                user landed on a generic page with no context and no way
+                back. Reasoning data is all local (agentReasoning + per-
+                stage synthesizeStageHistory). */}
             <Button size="sm" variant="outline"
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.location.hash = `po=${selectedOrder.id}`;
-                }
-                onNavigate?.('governance');
-              }}
+              onClick={() => setReasoningForId(selectedOrder.id)}
               className={`w-full h-8 text-[11px] ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}>
-              <History className="h-3 w-3 mr-1.5" /> View reasoning in A&G
+              <History className="h-3 w-3 mr-1.5" /> View reasoning
             </Button>
             <Button size="sm" variant="outline" onClick={() => setBridgeTarget({ orderId: selectedOrder.id, supplier: selectedOrder.supplier, channel: 'whatsapp', message: '' })}
               className={`w-full h-8 text-[11px] ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}>
@@ -4999,7 +4993,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
         {/* Right — always 280px; content swaps to Insights in Audit Mode */}
         <div className={`w-[280px] shrink-0 flex flex-col min-h-0 overflow-hidden border-l ${panelBorder} ${panelBg}`}>
-          {auditMode ? auditRightPanel : rightPanel}
+          {/* 6v — Source Bridge takeover works in audit too. When the user
+              hits Message Supplier from the Quick Journey, we render the
+              bridgePanel in the right slot regardless of mode. Closing the
+              bridge (X / back arrow) drops them back into the Quick Journey. */}
+          {auditMode
+            ? (bridgeTarget ? bridgePanel : auditRightPanel)
+            : rightPanel}
         </div>
       </div>
 
@@ -5119,6 +5119,125 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 }}
                   className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors inline-flex items-center gap-1.5 shadow-sm">
                   <Check className="h-3.5 w-3.5" /> Confirm Approval
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 6v — Reasoning Chain modal. Local to Orders so View Reasoning
+          works without a navigation away. Pulls per-stage logic from
+          synthesizeStageHistory + the action log filtered to this PO,
+          plus the order's top-level agentReasoning. */}
+      {reasoningForId && (() => {
+        const order = ALL_ORDERS.find(o => o.id === reasoningForId);
+        if (!order) return null;
+        const eff = Math.max(order.dagStage, forceCompletedStages[order.id] ?? 0);
+        // Pull this PO's action-log entries from the unified log.
+        const poEvents = readActionLog({ limit: 200 })
+          .filter(e => e.entity?.type === 'po' && e.entity?.id === order.id
+                    || e.meta?.poId === order.id
+                    || e.meta?.synthesisedPoId === order.id);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+               style={{ background: 'rgba(0,0,0,0.55)' }}
+               onClick={() => setReasoningForId(null)}>
+            <div onClick={(e) => e.stopPropagation()}
+                 className={`w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDark ? 'bg-[#1a1a1a] border-[#87986a]/40' : 'bg-white border-[#87986a]/40'}`}>
+              {/* Header */}
+              <div className={`shrink-0 px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
+                <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-[#87986a] text-white">
+                  <History className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                    Reasoning Chain
+                  </div>
+                  <h3 className={`text-sm font-bold mt-0.5 ${t.textPrimary}`}>{order.id} · {order.supplier}</h3>
+                  <p className={`text-[11px] mt-0.5 ${t.textMuted}`}>
+                    {fmtIdrShort(order.amount)} · Stage {eff + 1}/5 · {order.status}
+                  </p>
+                </div>
+                <button onClick={() => setReasoningForId(null)}
+                  className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#f4f6f0] text-gray-500'}`}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+                {/* Top-level agent reasoning */}
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                  <div className="flex items-start gap-2">
+                    <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                    <div className="min-w-0">
+                      <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                        {order.agentAgent} · narrative
+                      </div>
+                      <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>{order.agentReasoning}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Per-stage logic — walk the DAG up to effective stage. */}
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${t.textMuted}`}>
+                    Stage-by-stage logic
+                  </p>
+                  <div className="space-y-2">
+                    {DAG_STAGES.map((stage, i) => {
+                      if (i > eff) return null;
+                      const synth = synthesizeStageHistory(order, i);
+                      const clearedIso = stageCompletedAt[order.id]?.[i] ?? synth.verifiedAtIso;
+                      const cleared = clearedIso ? new Date(clearedIso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+                      return (
+                        <div key={i} className={`p-2.5 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+                              Stage {i + 1}
+                            </span>
+                            <span className={`text-[11px] font-semibold ${t.textPrimary}`}>{stage.label}</span>
+                            <span className={`ml-auto text-[9px] ${t.textMuted}`}>{cleared}</span>
+                          </div>
+                          <p className={`text-[10px] mt-1.5 leading-snug ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{synth.logic}</p>
+                          <div className={`mt-1.5 grid grid-cols-1 gap-0.5 text-[10px] ${t.textMuted}`}>
+                            <span><span className="font-semibold">Trigger:</span> {synth.trigger}</span>
+                            <span><span className="font-semibold">Proof:</span> {synth.proof}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Activity log entries for this PO */}
+                {poEvents.length > 0 && (
+                  <div>
+                    <p className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${t.textMuted}`}>
+                      Action log · {poEvents.length} entr{poEvents.length === 1 ? 'y' : 'ies'}
+                    </p>
+                    <div className="space-y-1.5">
+                      {poEvents.slice(0, 20).map(e => (
+                        <div key={e.id} className={`p-2 rounded text-[10px] ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50 border border-gray-200'}`}>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`font-bold px-1 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-600'}`}>{e.kind}</span>
+                            <span className={`${t.textMuted}`}>{new Date(e.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          <p className={`mt-1 leading-snug ${t.textPrimary}`}>{e.summary}</p>
+                          {e.details && <p className={`mt-0.5 italic ${t.textMuted}`}>{e.details}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className={`shrink-0 px-5 py-3 border-t flex items-center justify-end ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+                <button onClick={() => setReasoningForId(null)}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                  Close
                 </button>
               </div>
             </div>

@@ -569,9 +569,11 @@ Uses **Archetype A — Selection Data Grid** (see DESIGN.md).
 | `cancelled` | Re-order from scratch | Same carbon-copy route as completed |
 | `live` | Open Full Workspace | Collapses Audit Mode and loads the Single Order Journey |
 
-Secondary actions always available: **View reasoning in A&G** (`#po=PO-XXXX`) and **Message Supplier** (opens the Source Bridge thread for that vendor).
+Secondary actions always available:
+- **View reasoning** (Phase 6v) — opens the **Reasoning Chain modal** locally. Shows top-level agent narrative, per-stage logic up to current effective stage (Trigger / Proof / Verified-at), and the unified action-log entries filtered to this PO. Closes back to Quick Journey + Audit Mode intact. No navigation away.
+- **Message Supplier** (Phase 6v) — opens the Source Bridge thread as a right-panel takeover, working in Audit Mode (previously this button silently did nothing because `bridgePanel` only rendered through the non-audit `rightPanel`).
 
-The previous behaviour — live rows silently collapsed Audit Mode, historical rows had a broken Quick Journey (selectedOrder resolved against live `ORDERS` only, so it always rendered Operations Insights instead) — is fixed.
+The previous behaviour — live rows silently collapsed Audit Mode, historical rows had a broken Quick Journey, View reasoning navigated to a context-less A&G page, Message Supplier did nothing — is fixed.
 
 ### Grid view
 

@@ -525,7 +525,8 @@ Audit Mode:
 | Quick Journey — Open Full Workspace (live only) | Snaps out of Audit Mode and loads the selected order's full journey. |
 | Quick Journey — Re-order (completed / cancelled) | Carbon-copies into New Request with `#intent=express&mode=reorder&from=...&vendor=...&items=...`. |
 | Quick Journey — Resolve in A&G (disputed / on-hold) | Routes with `#dispute=PO-XXXX` to the disputes panel. |
-| Quick Journey — View reasoning in A&G | Routes with `#po=PO-XXXX` to the reasoning chain. |
+| Quick Journey — View reasoning | Opens the **Reasoning Chain modal** locally (Phase 6v) — agent narrative + per-stage logic + filtered action log. No navigation. |
+| Quick Journey — Message Supplier | Opens the Source Bridge as a right-panel takeover (works in Audit Mode per Phase 6v). |
 
 **Modals**
 

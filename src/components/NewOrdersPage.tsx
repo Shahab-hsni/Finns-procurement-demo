@@ -21,6 +21,7 @@ import { logUserAction, type ActionKind } from '../lib/actionLog';
 import { AgentCTA } from './AgentCTA';
 import { ManualNotes } from './ManualNotes';
 import { useRuntimePOs, type RuntimePO } from '../lib/poStore';
+import { useRFQs } from '../lib/rfqStore';
 
 interface OrdersPageProps {
   theme: 'dark' | 'light';
@@ -733,6 +734,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
   // Runtime POs (e.g. from RFQ Award) merge in front of the seeded list.
   const runtimePOs = useRuntimePOs();
+  // RFQs — used to surface the inbound vendor quote message in the
+  // Source Bridge for POs that came from an RFQ award.
+  const rfqRecords = useRFQs();
   const ORDERS: Order[] = useMemo(
     () => [...runtimePOs.map(runtimePOToOrder), ...SEEDED_ORDERS],
     [runtimePOs],
@@ -2749,12 +2753,12 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
             </div>{/* end left column */}
 
-            {/* Right column — 12-Stage Kernel Journey (title inside the card) */}
+            {/* Right column — 5-Stage Order Journey (title inside the card) */}
             <div className="w-[260px] shrink-0">
               <div className={`${t.cardPanel} space-y-3`}>
                 <div className="flex items-center justify-between">
                   <h3 className={`text-xs font-semibold ${t.textPrimary}`}>
-                    {isManual ? '12-Stage Task List' : '12-Stage Kernel Journey'} — Stage {stage + 1}
+                    {isManual ? '5-Stage Task List' : '5-Stage Order Journey'} — Stage {stage + 1}
                   </h3>
                   {isManual && (
                     <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500">
@@ -3058,6 +3062,23 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   ];
 
   // ── Source Bridge Panel ───────────────────────────────────────────
+  // ── Inbound quote message lookup (6h) ────────────────────────────
+  // If the open Source Bridge target is for a PO that was minted from
+  // an RFQ award, surface the actual vendor reply that started this
+  // PO as a chat bubble above the composer — "proof of where this came
+  // from". Bali channel context made visible.
+  const bridgeQuoteContext = (() => {
+    if (!bridgeTarget) return null;
+    const runtime = runtimePOById.get(bridgeTarget.orderId);
+    if (!runtime?.fromRfqId) return null;
+    const rfq = rfqRecords.find(r => r.id === runtime.fromRfqId);
+    if (!rfq) return null;
+    const quote = rfq.quotes.find(q => q.vendorId === runtime.awardedVendorId)
+      ?? rfq.quotes.find(q => q.vendorName === runtime.supplier);
+    if (!quote) return null;
+    return { runtime, rfq, quote };
+  })();
+
   const bridgePanel = bridgeTarget && (
     <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
       {/* Header */}
@@ -3077,6 +3098,60 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
       {/* Body — flex-col so textarea grows to fill */}
       <div className="flex-1 min-h-0 flex flex-col p-4 gap-4">
+        {/* Inbound quote thread — visible when this PO came from an RFQ. */}
+        {bridgeQuoteContext && (() => {
+          const { rfq, quote, runtime } = bridgeQuoteContext;
+          const channelLabel = rfq.channel === 'whatsapp' ? 'WhatsApp' : 'Email';
+          const channelBg = rfq.channel === 'whatsapp'
+            ? isDark ? 'bg-[#25D366]/15 text-[#7dd9a4]' : 'bg-[#25D366]/10 text-[#1a8c47]'
+            : isDark ? 'bg-blue-500/15 text-blue-300' : 'bg-blue-50 text-blue-700';
+          const receivedLabel = quote.receivedAt
+            ? new Date(quote.receivedAt).toLocaleString('en-US', {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+              })
+            : null;
+          return (
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <p className={`text-[11px] font-semibold ${t.textMuted}`}>Inbound quote · proof of source</p>
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${channelBg}`}>
+                  <MessageCircle className="h-2.5 w-2.5" />
+                  via {channelLabel}
+                </span>
+              </div>
+              <div className={`flex items-start gap-2`}>
+                <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-700'
+                }`}>
+                  {runtime.supplier.split(' ').slice(0, 2).map(s => s[0]).join('').toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className={`p-2.5 rounded-lg rounded-tl-sm ${
+                    isDark ? 'bg-[#2a2a2a] text-gray-200' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    <p className="text-[11px] leading-relaxed">
+                      Pak <strong>{runtime.quoteFrom?.split(' ·')[0] ?? runtime.supplier}</strong> — for {rfq.id}:
+                      we can do <strong>Rp {(quote.totalIdr / 1_000_000).toFixed(2)}M</strong> total
+                      with <strong>{quote.leadTimeDays}d lead</strong>.
+                      {quote.note && <> {quote.note}</>}
+                      {' '}Confirm and I'll send the formal quote PDF.
+                    </p>
+                  </div>
+                  <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+                    {runtime.quoteFrom ?? runtime.supplier}
+                    {receivedLabel && <> · {receivedLabel}</>}
+                  </p>
+                </div>
+              </div>
+              <div className={`mt-2 pt-2 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+                <span className={`text-[9px] ${t.textMuted}`}>
+                  Awarded from {rfq.id} → drafted {runtime.id} ({rfq.quotes.length} quote{rfq.quotes.length === 1 ? '' : 's'} received).
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Channel selector — connected segmented control */}
         <div>
           <p className={`text-[11px] font-semibold mb-2 ${t.textMuted}`}>Route via</p>

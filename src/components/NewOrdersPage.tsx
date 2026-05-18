@@ -22,6 +22,7 @@ import { AgentCTA } from './AgentCTA';
 import { ManualNotes } from './ManualNotes';
 import { useRuntimePOs, type RuntimePO } from '../lib/poStore';
 import { useRFQs } from '../lib/rfqStore';
+import { fmtIdrShort } from '../lib/format';
 
 interface OrdersPageProps {
   theme: 'dark' | 'light';
@@ -316,6 +317,22 @@ const SEEDED_ORDERS: Order[] = [
     workflowTemplate: 'WF-STD',
   },
   {
+    id: 'PO-3048', supplier: 'Krakatoa Coldstore',
+    items: ['Pork belly 18kg · BC + RC', 'Chicken thighs 28kg · all'],
+    amount: 6_700_000, group: 'autonomous',
+    humanAction: '',
+    humanStatus: 'PO approved — vendor confirming dispatch window',
+    humanDescription: 'A-04 cleared the policy stack at 07:12. WhatsApp PO sent to Ngurah Wisesa; awaiting his pickup-window confirmation before dispatch.',
+    eta: 'May 17 · 06:00', dagStage: 2,
+    agentReasoning: "A-04 (Spend Watchdog) cleared this under the auto-approve cap (Rp 8M) — no rule blocks. Ngurah Wisesa (Krakatoa) typically replies within 2h on WhatsApp confirming the pickup window for next-morning drops. Cold-chain SLA 96%. Nothing for you to do unless his ETA reply drifts past today.",
+    agentAgent: 'A-04 (Spend Watchdog)',
+    assignedAgent: { id: 1, role: 'Spend Watchdog' },
+    saving: { time: '1.2h', cost: 180_000 },
+    createdAt: '2026-05-16T07:12:00.000Z',
+    status: 'live',
+    workflowTemplate: 'WF-STD',
+  },
+  {
     id: 'PO-3044', supplier: 'Bintang Distribusi',
     items: ['Bintang Beer cases · 90 BC · 54 SP · 36 RC'],
     amount: 9_400_000, group: 'autonomous',
@@ -467,11 +484,12 @@ function makeHistoricalOrders(): Order[] {
       humanStatus: `Delivered`,
       humanDescription: `${supplier} delivered on time. Cold-chain verified, auto-payment cleared.`,
       eta: completedAt.slice(0, 10),
-      dagStage: 11,
+      dagStage: 4,
       agentReasoning: `SLA met. ${agent.role} agent closed out without intervention.`,
       agentAgent: agentLabel(agent),
       assignedAgent: agent,
-      saving: { time: `${(1 + (seed % 35) / 10).toFixed(1)}h`, cost: 80 + (seed % 950) },
+      // Savings stored in IDR — scaled to match the live-PO range (40k–1M Rp per PO).
+      saving: { time: `${(1 + (seed % 35) / 10).toFixed(1)}h`, cost: (80 + (seed % 950)) * 1000 },
       createdAt,
       completedAt,
       status: 'completed',
@@ -499,7 +517,7 @@ function makeHistoricalOrders(): Order[] {
       humanStatus: 'Delivered late',
       humanDescription: `${supplier} delivery arrived ${4 + (seed % 18)}h past contract window. Exception logged.`,
       eta: completedAt.slice(0, 10),
-      dagStage: 11,
+      dagStage: 4,
       agentReasoning: 'Carrier reported port congestion at origin. SLA breach logged against supplier scorecard.',
       agentAgent: agentLabel(agent),
       assignedAgent: agent,
@@ -532,7 +550,7 @@ function makeHistoricalOrders(): Order[] {
       humanStatus: 'Disputed',
       humanDescription: `Dispute opened — ${RESOLUTIONS.disputed[seed % RESOLUTIONS.disputed.length]}.`,
       eta: 'Dispute pending',
-      dagStage: 11,
+      dagStage: 4,
       agentReasoning: 'Exception flagged at delivery. A-05 (Logistics) escalated to admin review.',
       agentAgent: agentLabel(agent),
       assignedAgent: agent,
@@ -596,7 +614,7 @@ function makeHistoricalOrders(): Order[] {
       humanStatus: 'On hold',
       humanDescription: RESOLUTIONS['on-hold'][seed % RESOLUTIONS['on-hold'].length],
       eta: 'Pending',
-      dagStage: 2 + (seed % 4),
+      dagStage: 2 + (seed % 3),  // 2 (PO Approved), 3 (In Transit), 4 (Delivered)
       agentReasoning: `Hold gate engaged by ${agentLabel(agent)}. Awaiting external clearance before resuming.`,
       agentAgent: agentLabel(agent),
       assignedAgent: agent,
@@ -976,12 +994,12 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     const isDone = completedIds.has(order.id);
     const isResolveIssue = order.actionKind === 'resolve-issue';
     const isImminent = !!order.etaMinutes && order.etaMinutes <= 15;
-    const isDelivered = stage >= 11 || isDone;
+    const isDelivered = stage >= 4 || isDone;
     if (isResolveIssue) return { label: 'Delayed', tone: 'amber' as const, pulse: false, icon: AlertTriangle };
     if (isImminent && !isDelivered) return { label: 'Arriving Now', tone: 'green' as const, pulse: true, icon: Truck };
     if (isDelivered) return { label: 'Delivered', tone: 'sage' as const, pulse: false, icon: CircleCheck };
-    if (stage >= 6) return { label: `In Transit · ${order.eta}`, tone: 'blue' as const, pulse: false, icon: Truck };
-    if (stage >= 4) return { label: `Vendor Processing · ${order.eta}`, tone: 'amber' as const, pulse: false, icon: Clock };
+    if (stage === 3) return { label: `In Transit · ${order.eta}`, tone: 'blue' as const, pulse: false, icon: Truck };
+    if (stage === 2) return { label: `PO Approved · ${order.eta}`, tone: 'amber' as const, pulse: false, icon: Clock };
     if (order.actionKind === 'approve') return { label: `${order.humanStatus} · ${order.eta}`, tone: 'amber' as const, pulse: false, icon: Clock };
     if (order.actionKind === 'confirm-delivery') return { label: `${order.humanStatus} · ${order.eta}`, tone: 'blue' as const, pulse: false, icon: Truck };
     return { label: `${order.humanStatus} · ${order.eta}`, tone: 'neutral' as const, pulse: false, icon: Clock };
@@ -1426,7 +1444,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     if (order?.saving) {
       setChatMessages((prev) => [...prev, {
         from: 'atlas',
-        text: `✅ ${order.humanAction} completed for ${id}. Saved ${order.saving.time} of manual work and $${order.saving.cost.toLocaleString()}. Next autonomous step initiated.`
+        text: `✅ ${order.humanAction} completed for ${id}. Saved ${order.saving.time} of manual work and ${fmtIdrShort(order.saving.cost)}. Next autonomous step initiated.`
       }]);
     }
     // ── Action log: every executed CTA emits a typed entry ──
@@ -1463,7 +1481,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     batchOrders.forEach((o) => setCompletedIds((prev) => new Set([...prev, o.id])));
     setChatMessages((prev) => [...prev, {
       from: 'atlas',
-      text: `✅ Batch finalized — ${batchSummary.total} orders processed. Saved $${batchSummary.savings.toLocaleString()} and ${batchSummary.hours}h of labor.`
+      text: `✅ Batch finalized — ${batchSummary.total} orders processed. Saved ${fmtIdrShort(batchSummary.savings)} and ${batchSummary.hours}h of labor.`
     }]);
   }, [batchOrders, batchSummary]);
 
@@ -1500,8 +1518,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       if (order.actionKind === 'approve')     return { BadgeIcon: Clock,         badgeText: order.humanStatus,             badgeColorLight: 'text-amber-700', badgeColorDark: 'text-amber-400' };
       if (order.actionKind === 'confirm-delivery') return { BadgeIcon: Truck,   badgeText: order.humanStatus,             badgeColorLight: 'text-blue-600',  badgeColorDark: 'text-blue-400'  };
       if (isImminent)                         return { BadgeIcon: Truck,         badgeText: order.humanStatus,             badgeColorLight: 'text-green-600', badgeColorDark: 'text-green-400' };
-      if (order.dagStage >= 6)                return { BadgeIcon: Truck,         badgeText: order.humanStatus,             badgeColorLight: 'text-blue-600',  badgeColorDark: 'text-blue-400'  };
-      if (order.dagStage === 11)              return { BadgeIcon: CircleCheck,   badgeText: order.humanStatus,             badgeColorLight: 'text-green-600', badgeColorDark: 'text-green-400' };
+      if (order.dagStage === 4)               return { BadgeIcon: CircleCheck,   badgeText: order.humanStatus,             badgeColorLight: 'text-green-600', badgeColorDark: 'text-green-400' };
+      if (order.dagStage === 3)               return { BadgeIcon: Truck,         badgeText: order.humanStatus,             badgeColorLight: 'text-blue-600',  badgeColorDark: 'text-blue-400'  };
       return                                         { BadgeIcon: Clock,         badgeText: order.humanStatus,             badgeColorLight: 'text-gray-400',  badgeColorDark: 'text-gray-500'  };
     })();
     const badgeColor = isDark ? badgeColorDark : badgeColorLight;
@@ -1867,7 +1885,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                       }`}>{pill.label}</span>
                     </td>
                     <td className="py-2 px-2 text-center">
-                      <span className={`text-[10px] font-mono ${t.textMuted}`}>{o.dagStage}/11</span>
+                      <span className={`text-[10px] font-mono ${t.textMuted}`}>{o.dagStage + 1}/5</span>
                     </td>
                     <td className="py-2 px-2">
                       <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold ${
@@ -1887,7 +1905,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     </td>
                     <td className="py-2 px-2 pr-3 text-right">
                       <span className={`text-[10px] font-semibold ${o.saving?.cost ? (isDark ? 'text-green-400' : 'text-green-700') : t.textMuted}`}>
-                        {o.saving?.cost ? `$${o.saving.cost.toLocaleString()}` : '—'}
+                        {o.saving?.cost ? fmtIdrShort(o.saving.cost) : '—'}
                       </span>
                     </td>
                   </tr>
@@ -1966,7 +1984,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
               <div className="flex items-baseline justify-between mb-1">
                 <span className={`text-lg font-bold ${t.textPrimary}`}>${selectedOrder.amount.toLocaleString()}</span>
-                <span className={`text-[10px] ${t.textMuted}`}>Stage {selectedOrder.dagStage}/11</span>
+                <span className={`text-[10px] ${t.textMuted}`}>Stage {selectedOrder.dagStage + 1}/5</span>
               </div>
               <p className={`text-[10px] ${t.textMuted}`}>{selectedOrder.humanDescription}</p>
             </div>
@@ -2103,10 +2121,14 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   })();
 
   // ── LEFT PANEL ────────────────────────────────────────────────────
+  // Structure: shrink-0 header + flex-1 min-h-0 overflow-y-auto scroll
+  // region. The scroll region wraps both card sections so the user can
+  // scrub the priority feed AND the autonomous feed independently of
+  // the page chrome.
   const leftPanel = (
-    <div className={`flex flex-col h-full ${!isDark ? 'bg-white' : ''}`}>
-      {/* Header + global actions */}
-      <div className={`px-4 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+    <div className={`flex flex-col h-full min-h-0 ${!isDark ? 'bg-white' : ''}`}>
+      {/* Header + global actions (fixed) */}
+      <div className={`shrink-0 px-4 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
         <div className="flex items-center justify-between">
           <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Orders</h2>
           <div className="flex items-center gap-2">
@@ -2134,6 +2156,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <span className={`ml-auto font-mono text-[9px] px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-500'}`}>⌘K</span>
         </button>
       </div>
+
+      {/* Scroll region — needs-action + autonomous feeds */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
 
       {/* ── Needs Your Action (Priority Feed) ── */}
       <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
@@ -2195,10 +2220,12 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           {autoOrders.map((o) => <OrderCard key={o.id} order={o} />)}
         </div>
       </div>
+
+      </div>{/* end scroll region */}
     </div>
   );
 
-  // ── 12-STAGE VERTICAL DAG ─────────────────────────────────────────
+  // ── 5-STAGE VERTICAL DAG ──────────────────────────────────────────
   // Manual Takeover hook: in `manualMode`, every stage becomes an
   // interactive Task Module (Edit / Execute / Plan), not a passive bar.
   const VerticalDag = ({ stage, manualMode, orderId, manualEntries, stageDelegations }: {
@@ -2426,7 +2453,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           {journeyOrder.saving && (
             <div className="flex gap-4 mt-8">
               <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
-                <span className="text-xl font-bold text-green-400">${journeyOrder.saving.cost.toLocaleString()}</span>
+                <span className="text-xl font-bold text-green-400">{fmtIdrShort(journeyOrder.saving.cost)}</span>
                 <p className={`text-[10px] mt-1 ${t.textMuted}`}>Cost saved</p>
               </div>
               <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
@@ -2455,7 +2482,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <h2 className={`text-lg font-bold ${t.textPrimary}`}>Batch Finalized — {batchSummary.total} Orders</h2>
           <div className="flex gap-4 mt-8">
             <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
-              <span className="text-xl font-bold text-green-400">${batchSummary.savings.toLocaleString()}</span>
+              <span className="text-xl font-bold text-green-400">{fmtIdrShort(batchSummary.savings)}</span>
               <p className={`text-[10px] mt-1 ${t.textMuted}`}>Total saved</p>
             </div>
             <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
@@ -2546,7 +2573,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               {/* Re-order — visible action for delivered orders.
                   Surfaces the carbon-copy path here instead of burying it in
                   the Stage 5 trace modal. */}
-              {(stage >= 11 || completedIds.has(selectedOrder.id)) && (
+              {(stage >= 4 || completedIds.has(selectedOrder.id)) && (
                 <button
                   onClick={() => {
                     if (typeof window !== 'undefined') {
@@ -2560,7 +2587,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     }
                     onNavigate?.('request');
                   }}
-                  title={`Carbon-copy ${selectedOrder.id} into a new request — lands on Step 6 (Review) for one-click authorize`}
+                  title={`Carbon-copy ${selectedOrder.id} into a new request — lands on Step 4 (Review) for one-click authorize`}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm border ${
                     isDark ? 'bg-[#1f2a1f] border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/15'
                           : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e8eddf]'
@@ -2594,7 +2621,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     onClick={() => setMode(selectedOrder.id, 'auto')}
                     className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-[#6b7a54] hover:text-[#4a5a3a] transition-colors"
                   >
-                    <PlayCircle className="h-3 w-3" /> Resume Agent →
+                    <PlayCircle className="h-3 w-3" /> Resume Auto →
                   </button>
                 </div>
               </div>
@@ -2614,7 +2641,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 </div>
                 {selectedOrder.saving && selectedOrder.saving.cost > 0 && (
                   <div className="text-right">
-                    <span className="text-sm font-bold text-green-400">${selectedOrder.saving.cost.toLocaleString()}</span>
+                    <span className="text-sm font-bold text-green-400">{fmtIdrShort(selectedOrder.saving.cost)}</span>
                     <p className={`text-[10px] ${t.textMuted}`}>estimated saving</p>
                   </div>
                 )}
@@ -2703,9 +2730,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               ) : null}
 
               {/* Tertiary actions — stage-gated */}
-              {(stage >= 6 || completedIds.has(selectedOrder.id)) && (
+              {(stage >= 3 || completedIds.has(selectedOrder.id)) && (
                 <div className={`flex items-center justify-center gap-5 pt-2 border-t ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-                  {stage >= 6 && (
+                  {stage >= 3 && (
                     <button className={`inline-flex items-center gap-1 text-[11px] transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700'}`}>
                       <MapPin className="h-3 w-3" /> Track
                     </button>
@@ -2724,7 +2751,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   )}
                 </div>
               )}
-              {stage < 6 && !completedIds.has(selectedOrder.id) && (
+              {stage < 3 && !completedIds.has(selectedOrder.id) && (
                 <div className={`flex items-center justify-center pt-2 border-t ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
                   <button
                     onClick={() => setBridgeTarget({ orderId: selectedOrder.id, supplier: selectedOrder.supplier, channel: 'whatsapp', message: '' })}
@@ -2735,8 +2762,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               )}
             </div>{/* end detail card */}
 
-            {/* Live Tracking — only from Stage 7 (Dispatched) onwards */}
-            {stage >= 6 && (
+            {/* Live Tracking — only from Stage 4 (In Transit) onwards */}
+            {stage >= 3 && (
               <div className={`${t.cardPanel} space-y-3`}>
                 <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Live Tracking</h3>
                 <div className={`h-20 rounded-xl border flex items-center justify-center ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-[#f4f6f0] border-[#e5e5e0]'}`}>
@@ -2964,9 +2991,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           {/* Workforce Vitals — labor-aware metrics */}
           <div className="grid grid-cols-4 gap-3">
             {[
-              { label: 'Total Active Value', value: `$${ORDERS.filter((o) => effectiveStage(o) < 11).reduce((s, o) => s + o.amount, 0).toLocaleString()}`, accent: false, sub: `${activeOrders.length} active` },
+              { label: 'Total Active Value', value: fmtIdrShort(ORDERS.filter((o) => effectiveStage(o) < 4).reduce((s, o) => s + o.amount, 0)), accent: false, sub: `${activeOrders.length} active` },
               { label: 'Human Hours Reclaimed', value: `${hoursReclaimed}h`, accent: true, sub: 'this week · agent-attributed' },
-              { label: 'Savings This Week', value: `$${ORDERS.reduce((s, o) => s + (o.saving?.cost ?? 0), 0).toLocaleString()}`, accent: true, sub: 'agent-driven' },
+              { label: 'Savings This Week', value: fmtIdrShort(ORDERS.reduce((s, o) => s + (o.saving?.cost ?? 0), 0)), accent: true, sub: 'agent-driven' },
               { label: 'Agent-Managed', value: `${autoOrders.length}`, accent: false, sub: `of ${ORDERS.length} orders` },
             ].map(({ label, value, accent, sub }) => (
               <div key={label} className={`p-4 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
@@ -3014,7 +3041,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <div>
             <h3 className={`text-xs font-semibold mb-3 ${t.textPrimary}`}>Arriving Next 48 Hours</h3>
             <div className="space-y-2">
-              {ORDERS.filter((o) => o.dagStage < 11 && o.dagStage >= 6).map((order) => {
+              {ORDERS.filter((o) => o.dagStage === 3).map((order) => {
                 const isImminent = !!order.etaMinutes && order.etaMinutes <= 15;
                 return (
                   <button key={order.id} onClick={() => toggleSelect(order.id, false)}
@@ -3307,7 +3334,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     onClick={() => setMode(order.id, 'auto')}
                     className={`mt-2 inline-flex items-center gap-1 text-[10px] font-semibold transition-colors ${isDark ? 'text-[#a3b085] hover:text-white' : 'text-[#6b7a54] hover:text-[#4a5a3a]'}`}
                   >
-                    <PlayCircle className="h-2.5 w-2.5" /> Resume Agent →
+                    <PlayCircle className="h-2.5 w-2.5" /> Resume Auto →
                   </button>
                 </div>
               </div>
@@ -3353,7 +3380,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   ))}
                 </div>
                 <p className={`text-[9px] mt-2 ${t.textMuted}`}>
-                  These will be synced when you Resume Agent — I will not redo or re-verify them.
+                  These will be synced when you Resume Auto — I will not redo or re-verify them.
                 </p>
               </div>
             )}
@@ -3490,7 +3517,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 {
                   icon: DollarSign,
                   title: 'Pricing Confidence',
-                  text: `Cross-referenced against the Group Buying pool. Aggregate savings estimate: $${batchSummary.savings.toLocaleString()} vs. individual procurement.`,
+                  text: `Quotes validated against your 30-day market median. Aggregate saving on this batch: ${fmtIdrShort(batchSummary.savings)} vs. running these POs individually.`,
                   color: isDark ? 'text-blue-400' : 'text-blue-600',
                 },
                 {
@@ -3523,13 +3550,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             </div>
             <div className="space-y-1.5">
               {[
-                { label: 'Labor hours saved by batch', value: `~${batchSummary.hours}h` },
-                { label: 'Manual steps eliminated', value: `${batchSummary.total * 3}` },
-                { label: 'Projected savings', value: `$${batchSummary.savings.toLocaleString()}` },
-              ].map(({ label, value }) => (
+                { label: 'Labor hours saved by batch', value: `~${batchSummary.hours}h`, isSaving: false },
+                { label: 'Manual steps eliminated', value: `${batchSummary.total * 3}`, isSaving: false },
+                { label: 'Projected savings', value: fmtIdrShort(batchSummary.savings), isSaving: true },
+              ].map(({ label, value, isSaving }) => (
                 <div key={label} className="flex items-center justify-between">
                   <span className={`text-[10px] ${t.textMuted}`}>{label}</span>
-                  <span className={`text-xs font-semibold ${value.includes('$') ? 'text-green-400' : t.textPrimary}`}>{value}</span>
+                  <span className={`text-xs font-semibold ${isSaving ? 'text-green-400' : t.textPrimary}`}>{value}</span>
                 </div>
               ))}
             </div>
@@ -4044,7 +4071,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               ) : (
                 <>
                   {/* Re-order — only on Stage 5 (Delivered & Checked) Review Mode */}
-                  {stageIdx === 11 && (
+                  {stageIdx === 4 && (
                     <button
                       onClick={() => {
                         closeStageModule();
@@ -4350,8 +4377,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   className={`w-full text-left flex items-center gap-3 p-2.5 rounded-lg transition-colors ${isDark ? 'hover:bg-gray-800' : 'hover:bg-[#f4f6f0]'}`}>
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f4f6f0]'}`}>
                     {order.actionKind === 'resolve-issue' ? <AlertTriangle className="h-3.5 w-3.5 text-red-400" /> :
-                     order.dagStage === 11                ? <CircleCheck className="h-3.5 w-3.5 text-green-400" /> :
-                     order.dagStage >= 6                  ? <Truck className={`h-3.5 w-3.5 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} /> :
+                     order.dagStage === 4                 ? <CircleCheck className="h-3.5 w-3.5 text-green-400" /> :
+                     order.dagStage === 3                 ? <Truck className={`h-3.5 w-3.5 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} /> :
                                                             <Clock className={`h-3.5 w-3.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />}
                   </div>
                   <div className="flex-1 min-w-0">

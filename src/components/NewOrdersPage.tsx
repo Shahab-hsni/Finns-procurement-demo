@@ -132,6 +132,68 @@ function autoHumanGateAt(order: Order, stage: number): boolean {
 /** Demo cadence — how long between auto-advances. Keep visible but not spammy. */
 const AUTO_ADVANCE_INTERVAL_MS = 8_000;
 
+// ── 6r · Stage data the AUTO agent writes when it advances ─────────────
+//
+// When the auto-progress engine completes a stage, we record realistic
+// per-stage artifacts so the Stage Task Module shows real data (and
+// proper Agent attribution) when the admin reviews it afterwards. Each
+// agent does specific work and signs off in its own way.
+//
+// Pure helper — no React state inside.
+function agentStageDataFor(
+  order: Order,
+  completingStage: number,            // the stage being marked complete (NOT toStage)
+  quoteChannelFromRuntime?: string,   // 'WhatsApp' | 'Email' | undefined
+  quoteLeadDaysFromRuntime?: number,
+): Record<string, string> {
+  const seed = hashStr(`${order.id}-${completingStage}-agent`);
+  const num = (digits: number) => String(seed % 10 ** digits).padStart(digits, '0');
+  // Pick a venue tag from the items list when possible — needed for the
+  // POD receiver label at Stage 4.
+  const venueMatch = order.items.join(' ').match(/BC|RC|ST|SP/);
+  const venue = venueMatch?.[0] ?? 'BC';
+  const venueReceivers: Record<string, string> = {
+    BC: 'Wayan Sukarjo (BC Kitchen)',
+    RC: 'Ketut Mahendra (RC Receiving)',
+    ST: 'Made Wirawan (Stake Receiving)',
+    SP: 'Putu Adi (Splash Stockroom)',
+  };
+  if (completingStage === 0) {
+    return {
+      reason: `${order.workflowTemplate === 'WF-RSH' ? 'Par floor breach (Rush)' : 'Restock cycle'} · ${order.items[0]?.split(' ')[0] ?? 'SKU'}`,
+      urgency: order.workflowTemplate === 'WF-RSH' ? 'urgent' : 'standard',
+    };
+  }
+  if (completingStage === 1) {
+    return {
+      channel: quoteChannelFromRuntime ?? 'WhatsApp',
+      lead_time: quoteLeadDaysFromRuntime != null ? `${quoteLeadDaysFromRuntime} days` : `${1 + (seed % 3)} days`,
+      quote_amt: String(order.amount),
+    };
+  }
+  if (completingStage === 2) {
+    return {
+      po_pdf:     `${order.id}_PO_v1.pdf`,
+      policy_ref: `POL-2026-${num(5)}`,
+    };
+  }
+  if (completingStage === 3) {
+    return {
+      carrier:  order.items.join(' ').toLowerCase().includes('beer') ? 'Bintang Logistics' : 'PT Express Bali',
+      tracking: `TRK-${num(7)}`,
+      eta:      order.eta,
+    };
+  }
+  if (completingStage === 4) {
+    return {
+      pod:         `${order.id}_signed_POD.jpg`,
+      qc_outcome:  order.status === 'disputed' ? 'fail' : 'pass',
+      receiver:    venueReceivers[venue] ?? venueReceivers.BC,
+    };
+  }
+  return {};
+}
+
 // ── 5-Stage DAG (matches PLATFORM-MAP.md canonical model) ───────────
 const DAG_STAGES: { label: string; agentStep?: string }[] = [
   { label: 'Request',                  agentStep: 'A-02 (Restock) raised the demand signal — par breach, scheduled trigger, or human-issued.' },
@@ -848,6 +910,12 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   // Per-order manual stage data: { [orderId]: { [stageIdx]: { fieldKey: value } } }.
   // Doubles as the audit trail and the basis for the Resumption Handshake.
   const [manualStageData, setManualStageData] = useState<Record<string, Record<number, Record<string, string>>>>({});
+  // 6r — parallel store for the data the AUTO agent wrote when the
+  // auto-progress engine completed a stage. Same shape as manualStageData
+  // but separate so attribution stays accurate: a field is "Admin
+  // Verified" only when manualStageData has a value for it; agent
+  // writes never flip the badge to admin.
+  const [agentStageData, setAgentStageData] = useState<Record<string, Record<number, Record<string, string>>>>({});
   // Active Handshake delegations: { [orderId]: { [stageIdx]: true } }.
   // Persists across Save Draft — order can be in Manual Mode while a
   // specific sub-task is delegated back to Atlas.
@@ -1083,6 +1151,30 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     const handle = window.setTimeout(() => {
       const { order, fromStage } = target!;
       const toStage = fromStage + 1;
+
+      // ── Write the agent's stage data ──
+      // 6r — record realistic artifacts for the stage that just got
+      // completed. Pull from RFQ runtime for the quote leg (Stage 1
+      // completion) so channel + lead time + amount reflect the real
+      // award, not a hash-synthesised guess.
+      const runtime = runtimePOById.get(order.id);
+      const rfq = runtime?.fromRfqId ? rfqRecords.find(r => r.id === runtime.fromRfqId) : null;
+      const awardedQuote = rfq?.quotes.find(q => q.vendorId === runtime?.awardedVendorId)
+        ?? rfq?.quotes.find(q => q.vendorName === runtime?.supplier);
+      const channelLabel = runtime?.quoteChannel === 'email' ? 'Email'
+                         : runtime?.quoteChannel === 'whatsapp' ? 'WhatsApp'
+                         : undefined;
+      const stageWrite = agentStageDataFor(
+        order,
+        fromStage,
+        channelLabel,
+        awardedQuote?.leadTimeDays,
+      );
+      setAgentStageData(prev => ({
+        ...prev,
+        [order.id]: { ...(prev[order.id] ?? {}), [fromStage]: stageWrite },
+      }));
+
       setForceCompletedStages(prev => ({
         ...prev,
         [order.id]: Math.max(prev[order.id] ?? 0, fromStage + 1),
@@ -1091,15 +1183,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         ...prev,
         [order.id]: { ...(prev[order.id] ?? {}), [fromStage]: new Date().toISOString() },
       }));
-      // Stage-specific narration in the Atlas chat. Frames it as the
-      // assigned agent's work, not generic "advanced one stage".
-      const agent = order.agentAgent;
+
+      // Stage-specific narration: name the actual agent + the artifact
+      // it just produced. The user can click into the next-stage trace
+      // modal and see the same values rendered with "Agent Verified".
       const narration =
-        toStage === 1 ? `🤖 ${agent} confirmed the quote on ${order.id} — ${order.supplier} replied via ${order.id.includes('SUP-014') ? 'WhatsApp' : 'WhatsApp'}.`
-      : toStage === 2 ? `🤖 ${agent} cleared the policy stack on ${order.id}. PO issued to ${order.supplier}.`
-      : toStage === 3 ? `🚚 ${order.supplier} confirmed dispatch on ${order.id}. A-05 (Logistics) tracking — ETA ${order.eta}.`
-      : toStage === 4 ? `📦 ${order.supplier} delivered ${order.id} to receiving. ${basketHasPerishable(order) ? 'Perishable items — awaiting your visual QC.' : 'Auto-QC passed against PO spec. Stock incremented.'}`
-                      : `${agent}: ${order.id} advanced to Stage ${toStage + 1}.`;
+        toStage === 1 ? `🤖 A-01 (Sourcing) logged the quote on ${order.id} — ${stageWrite.channel} reply from ${order.supplier}, ${stageWrite.lead_time} lead, total ${fmtIdrShort(order.amount)}.`
+      : toStage === 2 ? `✅ A-04 (Spend Watchdog) cleared the policy stack on ${order.id}. Policy ref ${stageWrite.policy_ref} · PO ${stageWrite.po_pdf} issued to ${order.supplier} via WhatsApp.`
+      : toStage === 3 ? `🚚 A-05 (Logistics) confirmed dispatch on ${order.id}. Carrier ${stageWrite.carrier} · tracking ${stageWrite.tracking}. ETA holds at ${order.eta}.`
+      : toStage === 4 ? `📦 ${order.supplier} delivered ${order.id} to ${stageWrite.receiver}. ${basketHasPerishable(order) ? 'Perishable items — awaiting your visual QC.' : `Auto-QC ${stageWrite.qc_outcome} against PO spec · POD ${stageWrite.pod}. Stock incremented.`}`
+                      : `${order.agentAgent}: ${order.id} advanced to Stage ${toStage + 1}.`;
       setChatMessages(prev => [...prev, { from: 'atlas', text: narration }]);
       logUserAction({
         kind: 'po-stage-advance',
@@ -1109,21 +1202,34 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         meta: {
           fromStage, toStage,
           supplier: order.supplier,
-          agent,
+          agent: order.agentAgent,
           auto: true,
+          artifacts: stageWrite,
         },
       });
       // If we just landed at Stage 4 AND the basket is non-perishable,
-      // close it out — A-05's auto-QC passes immediately, stock writes,
-      // PO done. (Perishables sit at Stage 4 waiting for human Confirm
-      // Delivery; autoHumanGateAt blocks any further auto-progress for
-      // those.)
+      // also write the Stage 4 artifacts (POD + QC outcome) and close
+      // out — A-05's auto-QC passes immediately. (Perishables sit at
+      // Stage 4 waiting for human Confirm Delivery.)
       if (toStage === 4 && !basketHasPerishable(order)) {
+        const stage4Write = agentStageDataFor(order, 4);
+        setAgentStageData(prev => ({
+          ...prev,
+          [order.id]: { ...(prev[order.id] ?? {}), 4: stage4Write },
+        }));
+        setForceCompletedStages(prev => ({
+          ...prev,
+          [order.id]: Math.max(prev[order.id] ?? 0, 5),
+        }));
+        setStageCompletedAt(prev => ({
+          ...prev,
+          [order.id]: { ...(prev[order.id] ?? {}), 4: new Date().toISOString() },
+        }));
         setCompletedIds(prev => new Set([...prev, order.id]));
       }
     }, AUTO_ADVANCE_INTERVAL_MS);
     return () => window.clearTimeout(handle);
-  }, [ORDERS, agentsPaused, completedIds, forceCompletedStages, getMode]);
+  }, [ORDERS, agentsPaused, completedIds, forceCompletedStages, getMode, runtimePOById, rfqRecords]);
 
   // ── High-visibility Status Badge ───────────────────────────────
   // Mirrors the dashboard ETA/status into the detail header (and any
@@ -1274,7 +1380,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     return { kind: 'agent', label: `${agentLabel(order.assignedAgent)} Verified` };
   }, [manualStageData]);
   // Stage-level attribution = Admin if the Admin touched ANY field on this
-  // stage; otherwise Agent. Used for the header badge.
+  // stage; otherwise Agent. Used for the header badge. agentStageData
+  // never flips this to Admin — that's reserved for human edits.
   const getStageAttribution = useCallback((order: Order, stageIdx: number): Attribution => {
     const hadManualEntry = !!manualStageData[order.id]?.[stageIdx]
       && Object.values(manualStageData[order.id][stageIdx]).some(v => v && v.trim().length > 0);
@@ -1311,12 +1418,18 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     }
     return 'cleared earlier in this order';
   }, [stageCompletedAt]);
-  // Resolved value for a field (manual override > synthesized).
+  // Resolved value for a field. Order of precedence:
+  //   1. Admin manual write (manualStageData)
+  //   2. Agent auto-progress write (agentStageData)  ← 6r
+  //   3. Hash-synthesised fallback (only for historical orders that
+  //      neither the admin nor the live engine ever touched).
   const getFieldDisplayValue = useCallback((order: Order, stageIdx: number, fieldKey: string): string => {
     const manual = manualStageData[order.id]?.[stageIdx]?.[fieldKey];
     if (manual && manual.length > 0) return manual;
+    const agent = agentStageData[order.id]?.[stageIdx]?.[fieldKey];
+    if (agent && agent.length > 0) return agent;
     return synthesizeStageHistory(order, stageIdx).data[fieldKey] ?? '';
-  }, [manualStageData]);
+  }, [manualStageData, agentStageData]);
 
   // ── Active Handshake — delegate this stage back to Atlas ────────
   const isDelegated = useCallback((orderId: string, stageIdx: number) => !!delegations[orderId]?.[stageIdx], [delegations]);

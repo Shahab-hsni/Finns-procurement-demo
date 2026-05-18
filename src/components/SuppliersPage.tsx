@@ -3445,7 +3445,10 @@ function renderRelationshipWorkspace(
             <AgentCTA
               isDark={isDark}
               variant="inline"
-              forceMode={getMode(selected.id)}
+              // 6y — `getMode` lives in SuppliersPage's component scope and is
+              // not in scope inside this top-level helper. The caller already
+              // resolves it and passes through the `mode` param.
+              forceMode={mode}
               agentLabel={`${agentBadge(selected.assignedAgent)} · ${selected.assignedAgent.role}`}
               reasoning={selected.agentNotes}
               autoExecutionNote={`${agentBadge(selected.assignedAgent)} is actively monitoring this vendor and will propose renegotiations / sourcing alternatives within policy.`}

@@ -184,8 +184,15 @@ export default function App() {
     <ErrorBoundary>
       <Toaster />
       <div className={`h-screen flex flex-col ${screenBg}`}>
-        {/* ── Top Bar ── */}
-        <div className={`h-14 ${topBarBg} border-b ${topBarBorder} flex items-center justify-between px-4 shrink-0`}>
+        {/* ── Top Bar ──
+            6y — laid out as a 3-column grid (auto · 1fr · auto) instead of
+            flex+justify-between. The middle column centres the nav
+            relative to the FULL header width, so the buttons stay
+            geometrically fixed even when the right cluster grows/shrinks
+            (e.g. the draft-in-progress pill appearing on non-Request
+            pages). Flex+justify-between was shifting the nav whenever
+            the right cluster's width changed. */}
+        <div className={`h-14 ${topBarBg} border-b ${topBarBorder} grid grid-cols-[auto_1fr_auto] items-center px-4 shrink-0`}>
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 bg-gradient-to-br from-[#87986a] to-[#6b7a54] rounded-lg flex items-center justify-center">
               <span className="text-white text-sm">F</span>
@@ -193,24 +200,27 @@ export default function App() {
             <span className={`${logoText} font-medium text-sm`}>Finn's</span>
           </div>
 
-          {/* Flat single-row navigation (no Agents dropdown) */}
-          <nav className={`flex items-center gap-0.5 rounded-full px-1 py-0.5 border ${navBg}`}>
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setCurrentPage(item.id)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
-                  currentPage === item.id
-                    ? 'bg-[#87986a] text-white shadow-sm'
-                    : navInactive
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
+          {/* Centred nav slot — the wrapping flex justify-center keeps the
+              pill geometrically pinned to the middle of the full bar. */}
+          <div className="flex justify-center">
+            <nav className={`flex items-center gap-0.5 rounded-full px-1 py-0.5 border ${navBg}`}>
+              {navItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setCurrentPage(item.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
+                    currentPage === item.id
+                      ? 'bg-[#87986a] text-white shadow-sm'
+                      : navInactive
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center justify-end gap-1">
             {/* Draft-in-progress pill */}
             {hasDraft && currentPage !== 'request' && draftMeta && (
               <button

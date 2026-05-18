@@ -23,6 +23,11 @@ import { ManualNotes } from './ManualNotes';
 import { useRuntimePOs, type RuntimePO } from '../lib/poStore';
 import { useRFQs } from '../lib/rfqStore';
 import { fmtIdrShort } from '../lib/format';
+import {
+  useThread, appendMessage, setThread,
+  readThread,
+  type BridgeMessage, type BridgeChannel,
+} from '../lib/sourceBridgeStore';
 
 interface OrdersPageProps {
   theme: 'dark' | 'light';
@@ -79,8 +84,12 @@ function hashStr(s: string) {
 // Stage 1 (Request) and Stage 5 (Delivered & Checked) have human
 // gatekeepers — even in Agent mode, the primary action remains
 // "Review & Authorize" for these stages.
+// Stage 1 (Quote/Vendor Confirmed) is the PO approval gate — the admin
+// reviews the inbound quote + policy stack before the PO is sent to the
+// vendor. Stage 4 (Delivered & Checked) is the QC gate at receiving.
+// Those two require explicit Authorize copy on the action button.
 function requiresHumanAuthorization(stageIdx: number) {
-  return stageIdx === 0 || stageIdx === 4;
+  return stageIdx === 1 || stageIdx === 4;
 }
 
 // ── 5-Stage DAG (matches PLATFORM-MAP.md canonical model) ───────────
@@ -776,6 +785,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const [selectedIds, setSelectedIds]       = useState<Set<string>>(new Set());
   const [chatInput, setChatInput]           = useState('');
   const [completedIds, setCompletedIds]     = useState<Set<string>>(new Set());
+  // 6p — orders where the admin took the gate action but the journey
+  // hasn't terminated yet. These leave the Needs-Action card (the
+  // agent is now driving the next stage) but should NOT show the sage
+  // "Completed" badge. completedIds remains reserved for terminal POs.
+  const [actionTakenIds, setActionTakenIds] = useState<Set<string>>(new Set());
   const [showCmd, setShowCmd]               = useState(false);
   const [cmdQuery, setCmdQuery]             = useState('');
   const [journeyCompleteId, setJourneyCompleteId] = useState<string | null>(null);
@@ -839,7 +853,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const [scheduledEntries, setScheduledEntries] = useState<ScheduledEntry[]>([]);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [bridgeTarget, setBridgeTarget] = useState<{
-    orderId: string; supplier: string; channel: 'whatsapp' | 'telegram'; message: string;
+    orderId: string; supplier: string; channel: BridgeChannel; message: string;
   } | null>(null);
 
   // ── Audit Mode state ────────────────────────────────────────────────
@@ -1023,8 +1037,31 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     setValidationErrors([]);
     setEditingFields(new Set());
     // Pre-fill draft with any prior submission for this stage
-    setStageDraft(manualStageData[orderId]?.[stageIdx] ?? {});
-  }, [manualStageData]);
+    let initialDraft = manualStageData[orderId]?.[stageIdx] ?? {};
+
+    // 6p — RFQ pre-fill for Stage 1 (Quote/Vendor Confirmed). The
+    // quote came in via the wizard award, so channel + amount + lead
+    // time are already in the runtime PO record. Pre-populate the
+    // draft so the admin isn't asked to retype data they already
+    // gave us. They can still edit any field before clicking Authorize.
+    if (stageIdx === 1 && Object.keys(initialDraft).length === 0) {
+      const runtime = runtimePOById.get(orderId);
+      if (runtime?.fromRfqId) {
+        const rfq = rfqRecords.find(r => r.id === runtime.fromRfqId);
+        const quote = rfq?.quotes.find(q => q.vendorId === runtime.awardedVendorId)
+          ?? rfq?.quotes.find(q => q.vendorName === runtime.supplier);
+        const channelLabel = runtime.quoteChannel === 'whatsapp' ? 'WhatsApp'
+                           : runtime.quoteChannel === 'email'    ? 'Email'
+                           : '';
+        initialDraft = {
+          channel:   channelLabel,
+          lead_time: quote ? `${quote.leadTimeDays} days` : '',
+          quote_amt: String(runtime.amount),
+        };
+      }
+    }
+    setStageDraft(initialDraft);
+  }, [manualStageData, runtimePOById, rfqRecords]);
 
   const closeStageModule = useCallback(() => {
     setOpenStage(null);
@@ -1184,8 +1221,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const selectedId    = isSingle ? [...selectedIds][0] : null;
   const selectedOrder = selectedId ? ORDERS.find((o) => o.id === selectedId) ?? null : null;
 
-  const actionOrders = ORDERS.filter((o) => o.group === 'needs-action' && !completedIds.has(o.id));
-  const autoOrders   = ORDERS.filter((o) => o.group === 'autonomous' || completedIds.has(o.id));
+  const actionOrders = ORDERS.filter((o) => o.group === 'needs-action' && !completedIds.has(o.id) && !actionTakenIds.has(o.id));
+  const autoOrders   = ORDERS.filter((o) => o.group === 'autonomous' || completedIds.has(o.id) || actionTakenIds.has(o.id));
   const batchOrders  = ORDERS.filter((o) => selectedIds.has(o.id));
 
   // ── Audit Mode — derived data ─────────────────────────────────────
@@ -1437,43 +1474,105 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   }, []);
 
   // ── Execute single action ──
+  // Wires the priority-feed CTAs (Approve / Confirm Delivery / Resolve
+  // Issue) to actual stage advancement instead of just marking the
+  // order "completed". Three branches by actionKind:
+  //
+  //   approve          → forceCompleteStage(current). For Stage 1 → 2
+  //                      (PO Approved/sent), a 5s demo timer auto-
+  //                      advances to Stage 3 (In Transit) so the journey
+  //                      visibly moves. Stops at Stage 3 — the QC gate
+  //                      is held for the user to click Confirm Delivery.
+  //   confirm-delivery → marks the order fully terminal. forceCompleteStage(4)
+  //                      pushes effectiveStage to 5 (past the rail end),
+  //                      adds to completedIds for the sage "Completed" badge.
+  //   resolve-issue    → routes the user to Activity & Governance where
+  //                      the dispute panel lives. Does not auto-resolve.
   const executeAction = useCallback((id: string) => {
     const order = ORDERS.find((o) => o.id === id);
-    setCompletedIds((prev) => new Set([...prev, id]));
-    setJourneyCompleteId(id);
-    if (order?.saving) {
-      setChatMessages((prev) => [...prev, {
-        from: 'atlas',
-        text: `✅ ${order.humanAction} completed for ${id}. Saved ${order.saving.time} of manual work and ${fmtIdrShort(order.saving.cost)}. Next autonomous step initiated.`
-      }]);
-    }
-    // ── Action log: every executed CTA emits a typed entry ──
-    if (order) {
-      const kindMap: Record<NonNullable<Order['actionKind']>, ActionKind> = {
-        'approve':           'po-approve',
-        'confirm-delivery':  'po-stage-advance',
-        'resolve-issue':     'po-message-supplier',
-        'pay':               'po-approve',
-      };
-      const kind: ActionKind = order.actionKind ? kindMap[order.actionKind] : 'po-stage-advance';
-      const amountIDR = `Rp ${(order.amount / 1_000_000).toFixed(1)}M`;
-      const summary = order.actionKind === 'approve'
-        ? `Approved ${order.id} · ${order.supplier} · ${amountIDR}`
-        : order.actionKind === 'confirm-delivery'
-        ? `Confirmed delivery on ${order.id} · ${order.supplier}`
-        : order.actionKind === 'resolve-issue'
-        ? `Contacted supplier on ${order.id} · ${order.supplier} · ${order.failureReason ?? 'issue resolution'}`
-        : `Advanced ${order.id} · ${order.supplier}`;
+    if (!order) return;
+    const currentStage = Math.max(order.dagStage, forceCompletedStages[id] ?? 0);
+
+    // ── Branch by actionKind ───────────────────────────────────
+    if (order.actionKind === 'resolve-issue') {
+      // Disputes live on A&G. The Orders CTA logs the intent + routes.
       logUserAction({
-        kind,
+        kind: 'po-message-supplier',
         entity: { type: 'po', id: order.id },
-        summary,
+        summary: `Opened dispute resolution for ${order.id} · ${order.supplier}`,
+        venue: 'Multi',
+        details: order.failureReason ?? order.humanDescription,
+        meta: { amount: order.amount, supplier: order.supplier, workflow: order.workflowTemplate, route: 'governance' },
+      });
+      toast.info(`Routing to Activity & Governance`, {
+        description: `${order.id} dispute opens in the disputes panel.`,
+      });
+      if (typeof window !== 'undefined') {
+        window.location.hash = `dispute=${order.id}`;
+      }
+      onNavigate?.('governance');
+      return;
+    }
+
+    if (order.actionKind === 'confirm-delivery') {
+      // Terminal: QC pass on a delivered order. Stamp + complete.
+      forceCompleteStage(id, 4);
+      setCompletedIds(prev => new Set([...prev, id]));
+      setJourneyCompleteId(id);
+      logUserAction({
+        kind: 'po-stage-advance',
+        entity: { type: 'po', id: order.id },
+        summary: `Confirmed delivery + QC on ${order.id} · ${order.supplier}`,
         venue: 'Multi',
         details: order.humanDescription,
-        meta: { amount: order.amount, supplier: order.supplier, workflow: order.workflowTemplate },
+        meta: { amount: order.amount, supplier: order.supplier, workflow: order.workflowTemplate, terminal: true },
       });
+      if (order.saving) {
+        setChatMessages(prev => [...prev, {
+          from: 'atlas',
+          text: `✅ ${order.id} closed out. Saved ${order.saving.time} of manual work and ${fmtIdrShort(order.saving.cost)}.`,
+        }]);
+      }
+      return;
     }
-  }, []);
+
+    // Default: Approve (advance one stage). Used at Stage 0 (Request
+    // → Quote/Vendor Confirmed) and Stage 1 (Quote/Vendor Confirmed
+    // → PO Approved).
+    forceCompleteStage(id, currentStage);
+    setActionTakenIds(prev => new Set([...prev, id]));
+    const newStage = currentStage + 1;
+    const amountIDR = `Rp ${(order.amount / 1_000_000).toFixed(1)}M`;
+    logUserAction({
+      kind: 'po-approve',
+      entity: { type: 'po', id: order.id },
+      summary: `Approved ${order.id} · ${order.supplier} · ${amountIDR}`,
+      venue: 'Multi',
+      details: order.humanDescription,
+      meta: { amount: order.amount, supplier: order.supplier, workflow: order.workflowTemplate, fromStage: currentStage, toStage: newStage },
+    });
+    setChatMessages(prev => [...prev, {
+      from: 'atlas',
+      text: newStage === 2
+        ? `✅ ${order.id} approved. PO sent to ${order.supplier} via WhatsApp — awaiting their dispatch confirmation.`
+        : `✅ ${order.id} advanced to Stage ${newStage + 1} (${DAG_STAGES[newStage]?.label ?? 'next stage'}).`,
+    }]);
+
+    // Demo timer: if we just advanced to Stage 2 (PO Approved), kick
+    // off the simulated dispatch confirmation 5s later so the user sees
+    // the journey ride into In Transit. Halts at Stage 3 — the next
+    // gate is human QC (Confirm Delivery), so we don't auto-advance
+    // through that one.
+    if (newStage === 2) {
+      setTimeout(() => {
+        forceCompleteStage(id, 2);
+        setChatMessages(prev => [...prev, {
+          from: 'atlas',
+          text: `🚚 ${order.supplier} confirmed dispatch on ${order.id} via WhatsApp. Truck rolling — ETA holds at ${order.eta}.`,
+        }]);
+      }, 5_000);
+    }
+  }, [forceCompletedStages, forceCompleteStage, onNavigate]);
 
   // ── Execute batch ──
   const executeBatch = useCallback(() => {
@@ -3089,11 +3188,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   ];
 
   // ── Source Bridge Panel ───────────────────────────────────────────
-  // ── Inbound quote message lookup (6h) ────────────────────────────
+  // ── Inbound quote message lookup ─────────────────────────────────
   // If the open Source Bridge target is for a PO that was minted from
   // an RFQ award, surface the actual vendor reply that started this
-  // PO as a chat bubble above the composer — "proof of where this came
-  // from". Bali channel context made visible.
+  // PO. Used to seed the thread store on first open.
   const bridgeQuoteContext = (() => {
     if (!bridgeTarget) return null;
     const runtime = runtimePOById.get(bridgeTarget.orderId);
@@ -3106,10 +3204,92 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     return { runtime, rfq, quote };
   })();
 
-  const bridgePanel = bridgeTarget && (
+  // Thread for the open Source Bridge. Re-renders when appendMessage fires.
+  const bridgeThread = useThread(bridgeTarget?.orderId);
+
+  // Seed the thread on first open. For RFQ-sourced POs the inbound quote
+  // bubble is the first message. The PO-sent system note + admin's
+  // approval reply also synthesise here so the demo conversation feels
+  // complete on first view.
+  useEffect(() => {
+    if (!bridgeTarget) return;
+    const existing = readThread(bridgeTarget.orderId);
+    if (existing.length > 0) return;
+    const ctx = bridgeQuoteContext;
+    const order = ORDERS.find(o => o.id === bridgeTarget.orderId);
+    const supplierName = bridgeTarget.supplier;
+    const acctMgrName = ctx?.runtime.quoteFrom?.split(' ·')[0] ?? supplierName;
+    const channel: BridgeChannel = ctx?.rfq.channel === 'email' ? 'email' : 'whatsapp';
+    const messages: BridgeMessage[] = [];
+    if (ctx) {
+      const quote = ctx.quote;
+      messages.push({
+        id: `${bridgeTarget.orderId}-quote`,
+        poId: bridgeTarget.orderId,
+        author: 'vendor',
+        authorLabel: acctMgrName,
+        channel,
+        kind: 'inbound-quote',
+        text: `For ${ctx.rfq.id}: we can do Rp ${(quote.totalIdr / 1_000_000).toFixed(2)}M total with ${quote.leadTimeDays}d lead.${quote.note ? ` ${quote.note}` : ''} Confirm and I'll send the formal quote PDF.`,
+        sentAt: quote.receivedAt,
+      });
+      // System notice when the admin authorised the PO.
+      messages.push({
+        id: `${bridgeTarget.orderId}-po-sent`,
+        poId: bridgeTarget.orderId,
+        author: 'admin',
+        authorLabel: 'System',
+        channel,
+        kind: 'po-sent',
+        text: `PO ${bridgeTarget.orderId} sent to ${supplierName}`,
+        sentAt: new Date(new Date(quote.receivedAt).getTime() + 3 * 60_000).toISOString(),
+      });
+      // Vendor's dispatch confirmation if the order is at Stage 3+.
+      const effStage = order ? Math.max(order.dagStage, forceCompletedStages[order.id] ?? 0) : 0;
+      if (effStage >= 3) {
+        messages.push({
+          id: `${bridgeTarget.orderId}-dispatch`,
+          poId: bridgeTarget.orderId,
+          author: 'vendor',
+          authorLabel: acctMgrName,
+          channel,
+          kind: 'dispatch-confirm',
+          text: `Pak, sudah jalan. Truck dispatched. ETA holds at ${order?.eta ?? 'today'}. Will WhatsApp the unloading photo on arrival.`,
+          sentAt: new Date(new Date(quote.receivedAt).getTime() + 6 * 3600_000).toISOString(),
+        });
+      }
+    } else {
+      // Non-RFQ PO — direct vendor pick. Seed a generic conversation
+      // opener so the thread isn't visually empty on first open.
+      messages.push({
+        id: `${bridgeTarget.orderId}-opener`,
+        poId: bridgeTarget.orderId,
+        author: 'vendor',
+        authorLabel: supplierName,
+        channel: 'whatsapp',
+        kind: 'reply',
+        text: `Pak, PO ${bridgeTarget.orderId} diterima. Akan kami siapkan sesuai jadwal.`,
+        sentAt: order?.createdAt ?? new Date().toISOString(),
+      });
+    }
+    if (messages.length > 0) setThread(bridgeTarget.orderId, messages);
+  }, [bridgeTarget?.orderId, bridgeQuoteContext, forceCompletedStages]);
+
+  const bridgePanel = (() => {
+    if (!bridgeTarget) return null;
+    const channel = bridgeTarget.channel;
+    const channelLabel = channel === 'whatsapp' ? 'WhatsApp' : 'Email';
+    const channelColor = channel === 'whatsapp' ? 'bg-[#25D366]' : 'bg-blue-600';
+    const channelHover = channel === 'whatsapp' ? 'hover:bg-[#1ea952]' : 'hover:bg-blue-700';
+    const channelText  = channel === 'whatsapp'
+      ? isDark ? 'text-[#7dd9a4]' : 'text-[#1a8c47]'
+      : isDark ? 'text-blue-300'  : 'text-blue-700';
+    const thread = bridgeThread;
+    const acctMgrName = bridgeQuoteContext?.runtime.quoteFrom?.split(' ·')[0] ?? bridgeTarget.supplier;
+    return (
     <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
       {/* Header */}
-      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={`shrink-0 p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
         <div className="flex items-center gap-2 mb-0.5">
           <button
             onClick={() => setBridgeTarget(null)}
@@ -3120,144 +3300,154 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <Lock className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
           <span className={`text-sm font-semibold ${t.textPrimary}`}>Source Bridge</span>
         </div>
-        <p className={`text-xs ${t.textMuted} pl-7`}>{bridgeTarget.supplier} · encrypted</p>
+        <p className={`text-xs ${t.textMuted} pl-7`}>
+          {bridgeTarget.supplier} · {acctMgrName} · {bridgeTarget.orderId}
+        </p>
       </div>
 
-      {/* Body — flex-col so textarea grows to fill */}
-      <div className="flex-1 min-h-0 flex flex-col p-4 gap-4">
-        {/* Inbound quote thread — visible when this PO came from an RFQ. */}
-        {bridgeQuoteContext && (() => {
-          const { rfq, quote, runtime } = bridgeQuoteContext;
-          const channelLabel = rfq.channel === 'whatsapp' ? 'WhatsApp' : 'Email';
-          const channelBg = rfq.channel === 'whatsapp'
-            ? isDark ? 'bg-[#25D366]/15 text-[#7dd9a4]' : 'bg-[#25D366]/10 text-[#1a8c47]'
-            : isDark ? 'bg-blue-500/15 text-blue-300' : 'bg-blue-50 text-blue-700';
-          const receivedLabel = quote.receivedAt
-            ? new Date(quote.receivedAt).toLocaleString('en-US', {
-                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-              })
-            : null;
-          return (
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-                <p className={`text-[11px] font-semibold ${t.textMuted}`}>Inbound quote · proof of source</p>
-                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${channelBg}`}>
-                  <MessageCircle className="h-2.5 w-2.5" />
-                  via {channelLabel}
-                </span>
-              </div>
-              <div className={`flex items-start gap-2`}>
-                <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                  isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-700'
+      {/* Channel selector — WhatsApp / Email (Bali rule: no Telegram). */}
+      <div className={`shrink-0 px-4 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+        <div className={`flex rounded-lg border overflow-hidden ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'}`}>
+          <button
+            onClick={() => setBridgeTarget(b => b ? { ...b, channel: 'whatsapp' } : b)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold transition-colors ${
+              channel === 'whatsapp'
+                ? 'bg-[#25D366] text-white'
+                : isDark ? 'bg-[#2a2a2a] text-gray-400 hover:bg-gray-800' : 'bg-white text-gray-500 hover:bg-[#f4f6f0]'
+            }`}
+          >
+            <MessageCircle className="h-3 w-3" /> WhatsApp
+          </button>
+          <div className={`w-px shrink-0 ${isDark ? 'bg-gray-700' : 'bg-[#e5e5e0]'}`} />
+          <button
+            onClick={() => setBridgeTarget(b => b ? { ...b, channel: 'email' } : b)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold transition-colors ${
+              channel === 'email'
+                ? 'bg-blue-600 text-white'
+                : isDark ? 'bg-[#2a2a2a] text-gray-400 hover:bg-gray-800' : 'bg-white text-gray-500 hover:bg-[#f4f6f0]'
+            }`}
+          >
+            <Send className="h-3 w-3" /> Email
+          </button>
+        </div>
+      </div>
+
+      {/* Thread — full conversation history. Scrolls independently. */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
+        {thread.length === 0 && (
+          <p className={`text-[11px] text-center py-6 ${t.textMuted}`}>
+            No prior messages with {bridgeTarget.supplier} on {bridgeTarget.orderId}.
+            <br />Send the first message below.
+          </p>
+        )}
+        {thread.map(msg => {
+          const fromAdmin = msg.author === 'admin';
+          const msgChannelLabel = msg.channel === 'whatsapp' ? 'WhatsApp' : 'Email';
+          const initials = msg.authorLabel.split(' ').slice(0, 2).map(s => s[0]).join('').toUpperCase();
+          const isInbound = msg.kind === 'inbound-quote';
+          const isSystem  = msg.kind === 'po-sent';
+          const timeLabel = new Date(msg.sentAt).toLocaleString('en-US', {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+          });
+          if (isSystem) {
+            return (
+              <div key={msg.id} className="flex justify-center">
+                <div className={`px-2.5 py-1 rounded-full text-[9px] font-semibold ${
+                  isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
                 }`}>
-                  {runtime.supplier.split(' ').slice(0, 2).map(s => s[0]).join('').toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className={`p-2.5 rounded-lg rounded-tl-sm ${
-                    isDark ? 'bg-[#2a2a2a] text-gray-200' : 'bg-gray-100 text-gray-800'
-                  }`}>
-                    <p className="text-[11px] leading-relaxed">
-                      Pak <strong>{runtime.quoteFrom?.split(' ·')[0] ?? runtime.supplier}</strong> — for {rfq.id}:
-                      we can do <strong>Rp {(quote.totalIdr / 1_000_000).toFixed(2)}M</strong> total
-                      with <strong>{quote.leadTimeDays}d lead</strong>.
-                      {quote.note && <> {quote.note}</>}
-                      {' '}Confirm and I'll send the formal quote PDF.
-                    </p>
-                  </div>
-                  <p className={`text-[9px] mt-1 ${t.textMuted}`}>
-                    {runtime.quoteFrom ?? runtime.supplier}
-                    {receivedLabel && <> · {receivedLabel}</>}
-                  </p>
+                  {msg.text} · {timeLabel}
                 </div>
               </div>
-              <div className={`mt-2 pt-2 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
-                <span className={`text-[9px] ${t.textMuted}`}>
-                  Awarded from {rfq.id} → drafted {runtime.id} ({rfq.quotes.length} quote{rfq.quotes.length === 1 ? '' : 's'} received).
-                </span>
+            );
+          }
+          return (
+            <div key={msg.id} className={`flex items-start gap-2 ${fromAdmin ? 'flex-row-reverse' : ''}`}>
+              <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                fromAdmin
+                  ? isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                  : isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-700'
+              }`}>
+                {fromAdmin ? 'You' : initials}
+              </div>
+              <div className={`flex-1 min-w-0 ${fromAdmin ? 'flex flex-col items-end' : ''}`}>
+                <div className={`max-w-[88%] p-2.5 rounded-lg text-[11px] leading-relaxed ${
+                  fromAdmin
+                    ? 'rounded-tr-sm ' + (isDark ? 'bg-[#87986a]/20 text-gray-100' : 'bg-[#f4f6f0] text-gray-800')
+                    : 'rounded-tl-sm ' + (isDark ? 'bg-[#2a2a2a] text-gray-200' : 'bg-gray-100 text-gray-800')
+                }`}>
+                  {isInbound && (
+                    <div className={`text-[9px] font-bold uppercase tracking-wide mb-1 ${
+                      isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                    }`}>
+                      Quote · proof of source
+                    </div>
+                  )}
+                  <p>{msg.text}</p>
+                </div>
+                <p className={`text-[9px] mt-1 ${t.textMuted} ${fromAdmin ? 'text-right' : ''}`}>
+                  {msg.authorLabel} · via {msgChannelLabel} · {timeLabel}
+                </p>
               </div>
             </div>
           );
-        })()}
-
-        {/* Channel selector — connected segmented control */}
-        <div>
-          <p className={`text-[11px] font-semibold mb-2 ${t.textMuted}`}>Route via</p>
-          <div className={`flex rounded-lg border overflow-hidden ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'}`}>
-            <button
-              onClick={() => setBridgeTarget(b => b ? { ...b, channel: 'whatsapp' } : b)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold transition-colors ${
-                bridgeTarget.channel === 'whatsapp'
-                  ? 'bg-[#25D366] text-white'
-                  : isDark ? 'bg-[#2a2a2a] text-gray-400 hover:bg-gray-800' : 'bg-white text-gray-500 hover:bg-[#f4f6f0]'
-              }`}
-            >
-              <MessageCircle className="h-3 w-3" /> WhatsApp
-            </button>
-            <div className={`w-px shrink-0 ${isDark ? 'bg-gray-700' : 'bg-[#e5e5e0]'}`} />
-            <button
-              onClick={() => setBridgeTarget(b => b ? { ...b, channel: 'telegram' } : b)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold transition-colors ${
-                bridgeTarget.channel === 'telegram'
-                  ? 'bg-[#0088cc] text-white'
-                  : isDark ? 'bg-[#2a2a2a] text-gray-400 hover:bg-gray-800' : 'bg-white text-gray-500 hover:bg-[#f4f6f0]'
-              }`}
-            >
-              <Send className="h-3 w-3" /> Telegram
-            </button>
-          </div>
-        </div>
-
-        {/* Message — flex-1 so it fills remaining body height */}
-        <div className="flex-1 flex flex-col">
-          <p className={`text-[11px] font-semibold mb-2 ${t.textMuted}`}>Message</p>
-          <textarea
-            value={bridgeTarget.message}
-            onChange={(e) => setBridgeTarget(b => b ? { ...b, message: e.target.value } : b)}
-            placeholder={`Message ${bridgeTarget.supplier}…`}
-            className={`flex-1 w-full rounded-xl px-3 py-2.5 text-xs outline-none border resize-none leading-relaxed ${
-              isDark
-                ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#87986a]/50'
-                : 'bg-white border-[#e5e5e0] placeholder:text-gray-400 focus:border-[#87986a]/50'
-            }`}
-          />
-        </div>
+        })}
       </div>
 
-      {/* Footer — gateway note + send */}
-      <div className={`p-3 border-t space-y-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f4f6f0]'}`}>
-          <Lock className={`h-2.5 w-2.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+      {/* Compose — pinned bottom. Sending appends to the thread; the
+          panel stays open so the user can continue the conversation. */}
+      <div className={`shrink-0 p-3 border-t space-y-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+        <textarea
+          value={bridgeTarget.message}
+          onChange={(e) => setBridgeTarget(b => b ? { ...b, message: e.target.value } : b)}
+          placeholder={`Message ${bridgeTarget.supplier} via ${channelLabel}…`}
+          rows={2}
+          className={`w-full rounded-xl px-3 py-2 text-xs outline-none border resize-none leading-relaxed ${
+            isDark
+              ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#87986a]/50'
+              : 'bg-white border-[#e5e5e0] placeholder:text-gray-400 focus:border-[#87986a]/50'
+          }`}
+        />
+        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f4f6f0]'}`}>
+          <Lock className={`h-2.5 w-2.5 shrink-0 ${channelText}`} />
           <p className={`text-[9px] ${t.textMuted}`}>
-            Routed via Buyamia Gateway → {bridgeTarget.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'} · encrypted
+            Routed via Finn's Gateway → {channelLabel} · encrypted
           </p>
         </div>
         <button
           onClick={() => {
             const text = bridgeTarget.message.trim();
             if (!text) return;
+            // Append to thread store + log action. Panel stays open.
+            appendMessage({
+              poId: bridgeTarget.orderId,
+              author: 'admin',
+              authorLabel: 'You',
+              channel,
+              kind: 'reply',
+              text,
+            });
             logUserAction({
               kind: 'po-message-supplier',
               entity: { type: 'po', id: bridgeTarget.orderId },
-              summary: `Messaged ${bridgeTarget.supplier} re: ${bridgeTarget.orderId} via ${bridgeTarget.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'} · ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`,
+              summary: `Messaged ${bridgeTarget.supplier} re: ${bridgeTarget.orderId} via ${channelLabel} · ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`,
               details: text,
-              meta: { channel: bridgeTarget.channel, supplier: bridgeTarget.supplier },
+              meta: { channel, supplier: bridgeTarget.supplier },
             });
-            toast.success(`Sent via ${bridgeTarget.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}`, {
-              description: `${bridgeTarget.supplier} · routed through the Finn's Gateway.`,
+            setBridgeTarget(b => b ? { ...b, message: '' } : b);
+            toast.success(`Sent via ${channelLabel}`, {
+              description: `${acctMgrName} · ${bridgeTarget.supplier}`,
             });
-            setBridgeTarget(null);
           }}
           disabled={!bridgeTarget.message.trim()}
-          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-white ${
-            bridgeTarget.channel === 'whatsapp' ? 'bg-[#25D366] hover:bg-[#1ea952]' : 'bg-[#0088cc] hover:bg-[#0077bb]'
-          }`}
+          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-white ${channelColor} ${channelHover}`}
         >
           <Send className="h-3.5 w-3.5" />
-          Send via {bridgeTarget.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+          Send via {channelLabel}
         </button>
       </div>
     </div>
-  );
+    );
+  })();
 
   const rightPanel = bridgeTarget ? bridgePanel : (
     <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
@@ -3852,6 +4042,32 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           </div>
           )}
 
+          {/* 6p — RFQ pre-fill banner. When Stage 1 (Quote/Vendor
+              Confirmed) is opened on a PO that was minted from an RFQ
+              award, the inputs are auto-populated from the wizard's
+              runtime data. This banner makes the source explicit so
+              the user knows they're reviewing, not retyping. */}
+          {!reviewMode && stageIdx === 1 && (() => {
+            const runtime = runtimePOById.get(order.id);
+            if (!runtime?.fromRfqId) return null;
+            return (
+              <div className={`px-5 py-3 border-b ${isDark ? 'bg-[#87986a]/8 border-gray-800' : 'bg-[#f4f6f0] border-[#e5e5e0]'}`}>
+                <div className="flex items-start gap-2">
+                  <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                  <div className="min-w-0">
+                    <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                      Pre-filled from {runtime.fromRfqId}
+                    </div>
+                    <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>
+                      Channel, lead time, and quote amount came in with the vendor's reply on the wizard award.
+                      Review and click <strong>Review &amp; Authorize PO</strong> to send to {runtime.supplier}.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* ═══ Form fields — Input Mode renders the editable controls.
               Review Mode renders Verified Data labels; in Manual Mode each
               row exposes a per-field Edit pencil that flips just that field
@@ -4122,7 +4338,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     : <Check className="h-3 w-3" />}
                   {status === 'Execute'
                     ? requiresHumanAuthorization(stageIdx)
-                      ? stageIdx === 0 ? 'Review & Authorize PO' : 'Review & Authorize Delivery'
+                      ? stageIdx === 1 ? 'Review & Authorize PO' : 'Review & Authorize Delivery'
                       : 'Mark Stage Complete'
                     : 'Save & Pre-stage'}
                 </button>

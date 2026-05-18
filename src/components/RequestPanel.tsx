@@ -24,6 +24,15 @@ import { useRFQs, awardRFQ, cancelRFQ, type RFQQuote } from "../lib/rfqStore";
 import { createPO, updatePO, type RuntimePO } from "../lib/poStore";
 import { logUserAction, readActionLog } from "../lib/actionLog";
 import { detectItem, suggestVendorsForItems } from "../lib/itemIntel";
+import {
+  summarizeMarketTrends,
+  suggestComplementary,
+  summarizeVendorIntel,
+  vendorHistory,
+  summarizeLogistics,
+  summarizeReadiness,
+  type ComplementarySuggestion,
+} from "../lib/atlasIntel";
 import { readEntityNote, useEntityNote } from "../lib/entityNotes";
 
 interface RequestPanelProps {
@@ -517,6 +526,20 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
 
   function removeItem(id: string) {
     setItems(items.filter(i => i.id !== id));
+  }
+
+  /** Add a complementary-item suggestion straight into the basket. */
+  function addComplementary(s: ComplementarySuggestion) {
+    setItems(prev => [...prev, {
+      id: `${Date.now()}-${s.name.replace(/\s+/g, '-').toLowerCase()}`,
+      name: s.name,
+      category: s.category,
+      qty: s.qty,
+      unit: s.unit,
+      unitPriceIdr: 0,
+      venues: ['BC'],
+    }]);
+    toast.success(`Added ${s.name}`, { description: `From Atlas suggestion · ${s.qty}${s.unit}.` });
   }
 
   function toggleItemVenue(itemId: string, v: VenueTag) {
@@ -1395,6 +1418,53 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             {/* ── STEP 1: Items ─────────────────────────────────────── */}
             {step === 1 && (
               <>
+                {/* Atlas · Market Price Trends — synthesized 30d trend
+                    across the current basket. Inline (not in the right
+                    panel) because it shapes the decision the user is
+                    making right here: keep adding, or lock now. */}
+                {(() => {
+                  const trends = summarizeMarketTrends(items.map(it => it.name));
+                  if (!trends) return null;
+                  return (
+                    <div className={`p-3 rounded-lg border mb-4 ${
+                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-wide ${SAGE.icon(isDark)}`}>
+                              Atlas · Market Price Trends
+                            </span>
+                            <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>· 30d</span>
+                          </div>
+                          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            {trends.lead}{' '}
+                            <span className={`font-semibold ${SAGE.icon(isDark)}`}>{trends.recommendation}</span>
+                          </p>
+                          {trends.trends.length > 0 && (
+                            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                              {trends.trends.slice(0, 6).map(t => (
+                                <span key={t.name} className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded ${
+                                  t.direction === 'down'
+                                    ? isDark ? 'bg-green-500/10 text-green-400' : 'bg-green-50 text-green-700'
+                                    : t.direction === 'up'
+                                      ? isDark ? 'bg-amber-500/10 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                      : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
+                                }`}>
+                                  {t.direction === 'down' ? '↓' : t.direction === 'up' ? '↑' : '→'}
+                                  {Math.abs(t.pct).toFixed(1)}%
+                                  <span className="opacity-70 truncate max-w-[80px]">{t.name}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className={cardClass}>
                   <div className="space-y-5">
                     <div>
@@ -1500,6 +1570,55 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   </div>
                 </div>
 
+                {/* Atlas · Complementary items — items that frequently
+                    co-occur in past Finn's POs of the same category mix.
+                    Click [+ Add] to drop one into the basket. Hidden
+                    when there are no suggestions left to make. */}
+                {(() => {
+                  const suggestions = suggestComplementary(items.map(it => it.name));
+                  if (suggestions.length === 0) return null;
+                  return (
+                    <div className={`p-3 rounded-lg border mb-6 ${
+                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                    }`}>
+                      <div className="flex items-start gap-2 mb-2">
+                        <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-wide ${SAGE.icon(isDark)}`}>
+                              Atlas · Suggested Items
+                            </span>
+                          </div>
+                          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            Based on past orders, these {suggestions.length === 1 ? 'item is' : 'items are'} typically requested alongside your current basket.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        {suggestions.map(s => (
+                          <div key={s.name} className={`flex items-center gap-2 p-2 rounded ${
+                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#dbe3ce]'
+                          }`}>
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-[11px] font-semibold ${labelClass}`}>{s.name}</p>
+                              <p className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                {s.qty}{s.unit} · {s.reason}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => addComplementary(s)}
+                              className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded font-bold transition-colors ${
+                                isDark ? 'bg-[#87986a]/20 text-[#a3b085] hover:bg-[#87986a]/30' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e6ecda] border border-[#dbe3ce]'
+                              }`}>
+                              <Plus className="h-3 w-3" /> Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Per-PO autonomy picker (Phase 6d) — sits on Step 1
                     so the choice is locked before Step 2's auto-pre-pick
                     runs. Default = Auto. Manual flips the wizard's
@@ -1581,6 +1700,35 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 only way out is Award (advance) or Cancel RFQ (reset). */}
             {step === 2 && (
               <>
+                {/* Atlas · Vendor Intel — high-level read of the directory
+                    against the current basket. Sits above the cross-category
+                    banner so users see the broad picture before any
+                    constraint warnings. Hidden inside an RFQ flow (the
+                    waiting view carries its own intel). */}
+                {!wizardRfqId && (() => {
+                  const intel = summarizeVendorIntel(items.map(it => it.name));
+                  if (!intel) return null;
+                  return (
+                    <div className={`p-3 rounded-lg border ${
+                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-wide ${SAGE.icon(isDark)}`}>
+                              Atlas · Vendor Intel
+                            </span>
+                          </div>
+                          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            {intel.message}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* 6i — Cross-category banner. Fires when items span ≥2
                     categories AND no single vendor in the directory
                     covers them all. Three CTAs: auto-split (skip vendor
@@ -1803,6 +1951,34 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       })}
                     </div>
                   </div>
+                  );
+                })()}
+
+                {/* Atlas · Picked-vendor history — inline insight under
+                    the directory when the user has selected a single
+                    vendor. Pulls past interactions from the action log
+                    + supplier metrics. Hidden mid-RFQ (different state). */}
+                {!wizardRfqId && sourcingPath === 'pick' && selectedVendors.length === 1 && (() => {
+                  const history = vendorHistory(selectedVendors[0]);
+                  if (!history) return null;
+                  return (
+                    <div className={`p-3 rounded-lg border ${
+                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-wide ${SAGE.icon(isDark)}`}>
+                              A-01 · {history.vendorName}
+                            </span>
+                          </div>
+                          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            {history.message}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   );
                 })()}
 
@@ -2121,6 +2297,59 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   </div>
                 </div>
 
+                {/* Atlas · Logistics Intel — A-05 readout of the chosen
+                    date + venue + (if known) vendor. Surfaces flex
+                    assessment + scheduling conflicts. */}
+                {(() => {
+                  const logVendorId = awardedQuote?.vendorId ?? selectedVendors[0] ?? null;
+                  const intel = summarizeLogistics(
+                    logVendorId,
+                    neededBy,
+                    parseInt(windowDays) || 0,
+                    targetVenues,
+                  );
+                  if (!intel) return null;
+                  return (
+                    <div className={`p-3 rounded-lg border ${
+                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-wide ${SAGE.icon(isDark)}`}>
+                              A-05 · Logistics Intel
+                            </span>
+                            <span className={`text-[9px] px-1 py-0.5 rounded ${
+                              intel.flexAssessment === 'tight'
+                                ? isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                : intel.flexAssessment === 'comfortable'
+                                  ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                                  : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {intel.flexAssessment} window
+                            </span>
+                          </div>
+                          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            {intel.message}
+                          </p>
+                          {intel.conflicts.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {intel.conflicts.slice(0, 4).map(c => (
+                                <span key={c.poId} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                  isDark ? 'bg-amber-500/10 text-amber-300' : 'bg-amber-50 text-amber-700'
+                                }`}>
+                                  {c.poId}{c.supplier ? ` · ${c.supplier}` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className={cardClass}>
                   <h2 className={`text-sm font-semibold mb-3 ${labelClass}`}>Delivery Window</h2>
                   <div className="grid grid-cols-2 gap-3">
@@ -2180,6 +2409,39 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             {/* ── STEP 4: Review ───────────────────────────────────── */}
             {step === 4 && (
               <>
+                {/* Atlas · Ready to Launch — final posture summary on
+                    top of Step 4. Consumes policyPreview (already
+                    computed) + atlasIntel.summarizeReadiness for the
+                    spend-cap headroom line. */}
+                {(() => {
+                  const readiness = summarizeReadiness(policyPreview.amount, policyPreview.checks);
+                  return (
+                    <div className={`p-3 rounded-lg border ${
+                      readiness.policyGreen
+                        ? isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                        : isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        {readiness.policyGreen
+                          ? <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
+                          : <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-wide ${
+                              readiness.policyGreen ? SAGE.icon(isDark) : isDark ? 'text-amber-300' : 'text-amber-700'
+                            }`}>
+                              Atlas · {readiness.policyGreen ? 'Ready to Launch' : 'Review Before Launch'}
+                            </span>
+                          </div>
+                          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            {readiness.message}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* 6i — Single-vendor coverage warning. Fires when the
                     user is on Path A (no RFQ award), splitMode is off,
                     they picked one vendor, and that vendor doesn't

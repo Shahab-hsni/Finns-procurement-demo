@@ -7,7 +7,7 @@ import {
   Maximize2, Minimize2, LayoutGrid, List, Mail, Phone, Building2,
   Beef, Fish, Apple, Wine, Archive, Send, Lock, ChevronDown, ChevronUp,
   Calendar, Target, MoreVertical, Users, User, UserPlus, ShieldCheck,
-  PauseCircle, PlayCircle, ExternalLink, Hand
+  PauseCircle, PlayCircle, ExternalLink, Hand, Sparkles
 } from 'lucide-react';
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip,
@@ -527,7 +527,7 @@ function LaborSwitch({
         title={agentActive ? `${agentBadge(agent)} executing — click to take over manually` : 'Manual takeover active — click to release back to Agent'}
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border transition-colors whitespace-nowrap ${
           agentActive
-            ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+            ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
             : isDark ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-amber-50 border-amber-400/40 text-amber-700'
         }`}
       >
@@ -542,7 +542,7 @@ function LaborSwitch({
         onClick={(e) => { e.stopPropagation(); onChange('auto'); onOpenAgent?.(); }}
         className={`flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full text-[10px] font-semibold transition-colors ${
           agentActive
-            ? 'bg-[#87986a] text-white shadow-sm'
+            ? 'bg-[#4bbcbe] text-white shadow-sm'
             : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'
         }`}
         title={agentActive
@@ -585,15 +585,15 @@ function AgentStatusLine({
   onOpenAgent?: () => void;
   dense?: boolean;
 }) {
-  const sageText = isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]';
+  const sageText = isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]';
   const amberText = 'text-amber-500';
   const subText = isDark ? 'text-gray-500' : 'text-gray-500';
   if (mode === 'auto') {
     return (
       <div className={`flex items-center gap-1.5 ${dense ? 'text-[9px]' : 'text-[10px]'} ${subText}`}>
         <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-[#87986a] opacity-60 animate-ping" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#87986a]" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-[#4bbcbe] opacity-60 animate-ping" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#4bbcbe]" />
         </span>
         <span className={sageText + ' font-medium'}>Executing</span>
         <span>·</span>
@@ -705,6 +705,9 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
 
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>('s-001');
+  // Atlas chat (right panel — Suppliers)
+  const [atlasInput, setAtlasInput] = useState('');
+  const [atlasMsgs, setAtlasMsgs] = useState<Array<{ role: 'user' | 'atlas'; text: string }>>([]);
   const [comparisonActive, setComparisonActive] = useState(false);
   const [compareTooltipVisible, setCompareTooltipVisible] = useState(false);
   const compareTooltipTimer = useRef<number | null>(null);
@@ -745,6 +748,27 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
     window.addEventListener('finns-qc-failure', handler);
     return () => window.removeEventListener('finns-qc-failure', handler);
   }, []);
+
+  // Held suppliers — blocks new POs. Persisted so RequestPanel can read it.
+  const [heldSuppliers, setHeldSuppliers] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('finns-held-suppliers') ?? '[]') as string[]); }
+    catch { return new Set(); }
+  });
+  useEffect(() => {
+    localStorage.setItem('finns-held-suppliers', JSON.stringify([...heldSuppliers]));
+    window.dispatchEvent(new CustomEvent('finns-held-suppliers-changed'));
+  }, [heldSuppliers]);
+
+  // Score adjustments — accumulated deductions from QC events. Keyed by supplier name.
+  const [scoreAdjustments, setScoreAdjustments] = useState<Record<string, number>>({});
+  // Tracks which alert card has the Adjust Score inline form expanded.
+  // Keyed by alert orderId.
+  const [adjustScoreState, setAdjustScoreState] = useState<
+    Record<string, { deduct: number; reason: string }>
+  >({});
+
+  // Effective score after adjustments (always ≥ 0).
+  const adjScore = (s: Supplier) => Math.max(0, s.score + (scoreAdjustments[s.name] ?? 0));
 
   const filtered = useMemo(() =>
     SUPPLIERS.filter(s =>
@@ -1049,7 +1073,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               title="Selection Mode"
               className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
                 sidebarSelectMode
-                  ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                  ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                   : isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'
               }`}
             >
@@ -1080,10 +1104,10 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
         {sidebarSelectMode && (
           <>
             <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border ${
-              isDark ? 'border-[#87986a]/30 bg-[#87986a]/8' : 'border-[#87986a]/30 bg-[#f4f6f0]'
+              isDark ? 'border-[#4bbcbe]/30 bg-[#4bbcbe]/8' : 'border-[#4bbcbe]/30 bg-[#eafafa]'
             }`}>
-              <Users className={`h-3 w-3 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
-              <span className={`text-[10px] font-semibold leading-tight ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+              <Users className={`h-3 w-3 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+              <span className={`text-[10px] font-semibold leading-tight ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                 {sidebarSelected.size === 0
                   ? 'Select vendors to compare or broadcast'
                   : `${sidebarSelected.size} selected`}
@@ -1094,9 +1118,9 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                 onClick={handleTriggerCompare}
                 className={`relative flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-semibold transition-colors ${
                   comparisonActive
-                    ? 'bg-[#87986a] border-[#87986a] text-white'
+                    ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white'
                     : sidebarSelected.size === 2
-                    ? isDark ? 'border-[#87986a]/50 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-[#87986a]/50 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                    ? isDark ? 'border-[#4bbcbe]/50 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'border-[#4bbcbe]/50 text-[#2c9a9c] hover:bg-[#eafafa]'
                     : isDark ? 'border-gray-700 text-gray-500 hover:border-gray-600' : 'border-gray-200 text-gray-400 hover:border-gray-300'
                 }`}
               >
@@ -1116,7 +1140,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                 disabled={sidebarSelected.size < 2}
                 className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-semibold transition-colors ${
                   sidebarSelected.size >= 2
-                    ? isDark ? 'border-[#87986a]/50 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-[#87986a]/50 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                    ? isDark ? 'border-[#4bbcbe]/50 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'border-[#4bbcbe]/50 text-[#2c9a9c] hover:bg-[#eafafa]'
                     : isDark ? 'border-gray-700 text-gray-500 cursor-not-allowed opacity-50' : 'border-gray-200 text-gray-400 cursor-not-allowed opacity-50'
                 }`}
               >
@@ -1168,7 +1192,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                       onClick={() => handleSelect(s.id)}
                       className={`w-full text-left p-2.5 rounded-lg border transition-all ${
                         isSelected || isChecked
-                          ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 ring-1 ring-[#87986a]/20' : 'bg-[#f4f6f0] border-[#87986a]/40 ring-1 ring-[#87986a]/20'
+                          ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 ring-1 ring-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#4bbcbe]/40 ring-1 ring-[#4bbcbe]/20'
                           : hasQcFailure
                           ? isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
                           : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:border-gray-700' : 'bg-gray-50 border-gray-200 hover:border-gray-300'
@@ -1178,7 +1202,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                         <div className="flex items-center gap-1.5 min-w-0">
                           {sidebarSelectMode && (
                             <div className={`w-3 h-3 rounded border-2 shrink-0 flex items-center justify-center ${
-                              isChecked ? 'bg-[#87986a] border-[#87986a]' : isDark ? 'border-gray-600' : 'border-gray-400'
+                              isChecked ? 'bg-[#4bbcbe] border-[#4bbcbe]' : isDark ? 'border-gray-600' : 'border-gray-400'
                             }`}>
                               {isChecked && <CheckCircle className="h-2 w-2 text-white" />}
                             </div>
@@ -1186,9 +1210,14 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                           <span className="text-sm leading-none shrink-0">{s.flag}</span>
                           <span className={`text-[11px] font-medium truncate ${t.textPrimary}`}>{s.name}</span>
                           {hasQcFailure && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="QC failure logged" />}
+                          {heldSuppliers.has(s.name) && (
+                            <span className={`text-[8px] font-bold px-1 py-px rounded ${isDark ? 'bg-red-500/20 text-red-400' : 'bg-red-50 text-red-600'}`}>
+                              HOLD
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <span className={`text-xs font-bold ${scoreColor(s.score)}`}>{s.score}</span>
+                          <span className={`text-xs font-bold ${scoreColor(adjScore(s))}`}>{adjScore(s)}</span>
                           <TrendIcon className={`h-2.5 w-2.5 ${s.trend === 'up' ? 'text-green-400' : s.trend === 'down' ? 'text-red-400' : t.textMuted}`} />
                         </div>
                       </div>
@@ -1200,7 +1229,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                         <div className="h-4">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={s.sparkline.map((v, i) => ({ v, i }))}>
-                              <Line type="monotone" dataKey="v" stroke={s.trend === 'down' ? '#ef4444' : '#87986a'} strokeWidth={1.2} dot={false} />
+                              <Line type="monotone" dataKey="v" stroke={s.trend === 'down' ? '#ef4444' : '#4bbcbe'} strokeWidth={1.2} dot={false} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
@@ -1242,13 +1271,13 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             <div className={`flex items-center rounded-lg border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
               <button onClick={() => setAuditView('table')} title="Table view"
                 className={`flex items-center justify-center w-7 h-6 rounded-l-lg transition-colors ${
-                  auditView === 'table' ? (isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]') : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')
+                  auditView === 'table' ? (isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]') : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')
                 }`}>
                 <List className="h-3.5 w-3.5" />
               </button>
               <button onClick={() => setAuditView('grid')} title="Grid view"
                 className={`flex items-center justify-center w-7 h-6 rounded-r-lg transition-colors ${
-                  auditView === 'grid' ? (isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]') : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')
+                  auditView === 'grid' ? (isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]') : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')
                 }`}>
                 <LayoutGrid className="h-3.5 w-3.5" />
               </button>
@@ -1299,7 +1328,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             <button
               onClick={() => setAuditCategoryFilter(null)}
               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
-                !auditCategoryFilter ? (isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]') : (isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500')
+                !auditCategoryFilter ? (isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]') : (isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500')
               }`}>
               All Categories
             </button>
@@ -1328,7 +1357,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                 onClick={() => setAdvancedOpen(v => !v)}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
                   advancedOpen || scoreMin > 0 || contractMaxDays < 365
-                    ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                    ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
                     : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-400' : 'bg-white border-gray-200 text-gray-500'
                 }`}>
                 <Filter className="h-2.5 w-2.5" />
@@ -1353,8 +1382,8 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                     </div>
                     <input type="range" min={0} max={100} step={5} value={scoreMin}
                            onChange={e => setScoreMin(Number(e.target.value))}
-                           className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#87986a]"
-                           style={{ background: `linear-gradient(to right, #87986a ${scoreMin}%, ${isDark ? '#444' : '#e5e7eb'} ${scoreMin}%)` }} />
+                           className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#4bbcbe]"
+                           style={{ background: `linear-gradient(to right, #4bbcbe ${scoreMin}%, ${isDark ? '#444' : '#e5e7eb'} ${scoreMin}%)` }} />
                     <div className="flex justify-between mt-0.5">
                       <span className={`text-[9px] ${t.textMuted}`}>0</span>
                       <span className={`text-[9px] ${t.textMuted}`}>100</span>
@@ -1371,8 +1400,8 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                     </div>
                     <input type="range" min={14} max={365} step={7} value={contractMaxDays}
                            onChange={e => setContractMaxDays(Number(e.target.value))}
-                           className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#87986a]"
-                           style={{ background: `linear-gradient(to right, #87986a ${((contractMaxDays - 14) / 351) * 100}%, ${isDark ? '#444' : '#e5e7eb'} ${((contractMaxDays - 14) / 351) * 100}%)` }} />
+                           className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#4bbcbe]"
+                           style={{ background: `linear-gradient(to right, #4bbcbe ${((contractMaxDays - 14) / 351) * 100}%, ${isDark ? '#444' : '#e5e7eb'} ${((contractMaxDays - 14) / 351) * 100}%)` }} />
                     <div className="flex justify-between mt-0.5">
                       <span className={`text-[9px] ${t.textMuted}`}>14d</span>
                       <span className={`text-[9px] ${t.textMuted}`}>365d</span>
@@ -1380,7 +1409,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                   </div>
 
                   <button onClick={() => setAdvancedOpen(false)}
-                          className="w-full py-1.5 rounded-lg text-[11px] font-medium bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                          className="w-full py-1.5 rounded-lg text-[11px] font-medium bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors">
                     Apply
                   </button>
                 </div>
@@ -1399,8 +1428,8 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                 <th className="py-2 pl-3 pr-1" style={{ minWidth: 36 }}>
                   <button onClick={handleToggleAllAuditCheck}
                           className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-                            allAuditChecked ? 'bg-[#87986a] border-[#87986a]'
-                            : someAuditChecked ? 'border-[#87986a] bg-[#87986a]/30'
+                            allAuditChecked ? 'bg-[#4bbcbe] border-[#4bbcbe]'
+                            : someAuditChecked ? 'border-[#4bbcbe] bg-[#4bbcbe]/30'
                             : isDark ? 'border-gray-600' : 'border-gray-400'
                           }`}>
                     {(allAuditChecked || someAuditChecked) && <CheckCircle className="h-2.5 w-2.5 text-white" />}
@@ -1430,14 +1459,14 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                   <tr key={s.id}
                       onClick={() => { setKebabOpenId(null); handleSelect(s.id); }}
                       className={`cursor-pointer border-b transition-colors ${
-                        selectedId === s.id ? (isDark ? 'bg-[#87986a]/10 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#87986a]/20')
+                        selectedId === s.id ? (isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#4bbcbe]/20')
                         : isChecked ? (isDark ? 'bg-blue-500/5 border-blue-500/15' : 'bg-blue-50/50 border-blue-200/50')
                         : isDark ? 'border-gray-800/50 hover:bg-gray-800/40' : 'border-gray-100 hover:bg-gray-50'
                       }`}>
                     {/* Checkbox */}
                     <td className="py-2.5 pl-3 pr-1" onClick={e => handleToggleAuditCheck(s.id, e)}>
                       <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-                        isChecked ? 'bg-[#87986a] border-[#87986a]' : isDark ? 'border-gray-600 hover:border-gray-400' : 'border-gray-400 hover:border-gray-600'
+                        isChecked ? 'bg-[#4bbcbe] border-[#4bbcbe]' : isDark ? 'border-gray-600 hover:border-gray-400' : 'border-gray-400 hover:border-gray-600'
                       }`}>
                         {isChecked && <CheckCircle className="h-2.5 w-2.5 text-white" />}
                       </div>
@@ -1570,7 +1599,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                 <div key={s.id}
                      onClick={() => { setKebabOpenId(null); handleSelect(s.id); }}
                      className={`relative cursor-pointer rounded-xl border transition-all overflow-visible ${
-                       isSel ? (isDark ? 'border-[#87986a]/60 ring-1 ring-[#87986a]/30' : 'border-[#87986a]/60 ring-1 ring-[#87986a]/30')
+                       isSel ? (isDark ? 'border-[#4bbcbe]/60 ring-1 ring-[#4bbcbe]/30' : 'border-[#4bbcbe]/60 ring-1 ring-[#4bbcbe]/30')
                        : isChecked ? (isDark ? 'border-blue-500/40 ring-1 ring-blue-500/20' : 'border-blue-400/40 ring-1 ring-blue-400/20')
                        : isDark ? 'bg-[#1a1a1a] border-gray-800 hover:border-gray-700' : 'bg-white border-gray-200 hover:border-gray-300'
                      }`}>
@@ -1652,7 +1681,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
         const checkedIds = Array.from(auditChecked);
         const allManual = checkedIds.every(id => getMode(id) === 'manual');
         return (
-        <div className={`shrink-0 px-3 py-2 border-t ${panelBorder} flex items-center gap-2 ${isDark ? 'bg-[#1e2a1e]' : 'bg-[#f0f4e8]'}`}>
+        <div className={`shrink-0 px-3 py-2 border-t ${panelBorder} flex items-center gap-2 ${isDark ? 'bg-[#1e2a1e]' : 'bg-[#eafafa]'}`}>
           <span className={`text-[10px] font-semibold ${t.textPrimary} shrink-0`}>{auditChecked.size} vendor{auditChecked.size > 1 ? 's' : ''} selected</span>
           <div className="flex items-center gap-1.5 ml-auto">
             {/* Bulk Labor Switch — pause / resume agents across the network */}
@@ -1660,8 +1689,8 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               onClick={() => bulkSetMode(checkedIds, allManual ? 'auto' : 'manual')}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-colors whitespace-nowrap ${
                 allManual
-                  ? isDark ? 'border-[#87986a]/50 bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25'
-                           : 'border-[#87986a]/50 bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e8eddf]'
+                  ? isDark ? 'border-[#4bbcbe]/50 bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25'
+                           : 'border-[#4bbcbe]/50 bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5]'
                   : isDark ? 'border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
                            : 'border-amber-500/50 bg-amber-50 text-amber-700 hover:bg-amber-100'
               }`}
@@ -1674,14 +1703,14 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               <button onClick={handleBulkCompare}
                       className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-all duration-300 whitespace-nowrap ${
                         showComparisonMatrix
-                          ? isDark ? 'bg-[#87986a]/20 border-[#87986a]/50 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/50 text-[#6b7a54]'
+                          ? isDark ? 'bg-[#4bbcbe]/20 border-[#4bbcbe]/50 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/50 text-[#2c9a9c]'
                           : isDark ? 'border-gray-600 text-gray-200 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-100'
                       }`}>
                 <GitMerge className="h-2.5 w-2.5" /> Compare
               </button>
             )}
             <button onClick={() => { setBroadcastOpen(true); setMessagingOpen(false); }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors whitespace-nowrap">
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors whitespace-nowrap">
               <Globe className="h-2.5 w-2.5" /> Broadcast
             </button>
             <button onClick={handleExport}
@@ -1710,7 +1739,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             <div className={`text-sm font-semibold mt-1 ${t.textSecondary}`}>Renegotiation Initiated</div>
             <div className={`text-xs mt-0.5 ${t.textMuted}`}>{hardenedName} · agent drafting opening offer</div>
             <div className="flex justify-center gap-2 mt-3 hardened-sparkles">
-              {[...Array(5)].map((_, i) => <Award key={i} className="h-5 w-5 text-[#a3b085]" />)}
+              {[...Array(5)].map((_, i) => <Award key={i} className="h-5 w-5 text-[#82d3d5]" />)}
             </div>
           </div>
         </div>
@@ -1720,27 +1749,150 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
         {/* ═══ QC FAILURE ALERTS ═══ */}
         {qcFailureAlerts.length > 0 && (
           <div className="space-y-2">
-            {qcFailureAlerts.map((alert, i) => (
-              <div key={`${alert.orderId}-${alert.ts}`} className={`flex items-start gap-3 p-3 rounded-lg border ${
-                isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
-              }`}>
-                <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-semibold ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>
-                    QC Failure — {alert.supplier}
-                  </p>
-                  <p className={`text-[10px] mt-0.5 ${isDark ? 'text-amber-400/80' : 'text-amber-700'}`}>
-                    Order {alert.orderId} failed Quality Check. Review vendor profile and consider trust-score adjustment.
-                  </p>
+            {qcFailureAlerts.map((alert, i) => {
+              const isHeld = heldSuppliers.has(alert.supplier);
+              const adj = adjustScoreState[alert.orderId];
+              const supplier = SUPPLIERS.find(s => s.name === alert.supplier);
+              const currentScore = supplier ? adjScore(supplier) : 0;
+              return (
+                <div key={`${alert.orderId}-${alert.ts}`} className={`rounded-xl border overflow-hidden ${
+                  isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+                }`}>
+                  {/* Alert header row */}
+                  <div className="flex items-start gap-3 p-3">
+                    <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-semibold ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>
+                        QC Failure — {alert.supplier}
+                      </p>
+                      <p className={`text-[10px] mt-0.5 ${isDark ? 'text-amber-400/80' : 'text-amber-700'}`}>
+                        Order {alert.orderId} failed Quality Check. Take action below.
+                      </p>
+                    </div>
+                  </div>
+                  {/* Action row */}
+                  <div className={`px-3 pb-3 flex items-center gap-2 flex-wrap`}>
+                    {/* Hold Next PO */}
+                    <button
+                      onClick={() => {
+                        setHeldSuppliers(prev => {
+                          const next = new Set(prev);
+                          isHeld ? next.delete(alert.supplier) : next.add(alert.supplier);
+                          return next;
+                        });
+                        logUserAction({
+                          kind: 'vendor-pause',
+                          entity: { type: 'supplier', id: alert.supplier },
+                          summary: isHeld
+                            ? `Removed PO hold on ${alert.supplier} · ${alert.orderId}`
+                            : `Placed PO hold on ${alert.supplier} — QC failure on ${alert.orderId}`,
+                        });
+                        toast[isHeld ? 'success' : 'warning'](
+                          isHeld ? `PO hold removed · ${alert.supplier}` : `PO hold active · ${alert.supplier}`,
+                          { description: isHeld ? 'New POs can now be issued.' : 'New POs blocked until hold is lifted.' }
+                        );
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-colors ${
+                        isHeld
+                          ? isDark ? 'bg-red-500/20 border-red-500/40 text-red-300' : 'bg-red-50 border-red-300 text-red-700'
+                          : isDark ? 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25' : 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200'
+                      }`}
+                    >
+                      {isHeld ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                      {isHeld ? 'Hold active — remove' : 'Hold Next PO'}
+                    </button>
+                    {/* Adjust Score */}
+                    <button
+                      onClick={() => setAdjustScoreState(prev =>
+                        prev[alert.orderId]
+                          ? { ...prev, [alert.orderId]: undefined as any }
+                          : { ...prev, [alert.orderId]: { deduct: 5, reason: `QC failure · ${alert.orderId}` } }
+                      )}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-colors ${
+                        adj
+                          ? isDark ? 'bg-[#4bbcbe]/20 border-[#4bbcbe]/40 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
+                          : isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {adj ? 'Score adjustment ▲' : 'Adjust Score ▼'}
+                    </button>
+                    {/* Dismiss */}
+                    <button
+                      onClick={() => setQcFailureAlerts(prev => prev.filter((_, j) => j !== i))}
+                      className={`ml-auto text-[10px] transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  {/* Inline Adjust Score form */}
+                  {adj && (
+                    <div className={`px-3 pb-3 pt-2 border-t space-y-2.5 ${isDark ? 'border-amber-500/20' : 'border-amber-200'}`}>
+                      <p className={`text-[10px] font-semibold ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>
+                        Score adjustment · {alert.supplier} · current: {currentScore}
+                      </p>
+                      {/* Deduction presets */}
+                      <div className="flex items-center gap-1.5">
+                        {[-5, -10, -15].map(d => (
+                          <button
+                            key={d}
+                            onClick={() => setAdjustScoreState(prev => ({ ...prev, [alert.orderId]: { ...adj, deduct: Math.abs(d) } }))}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                              adj.deduct === Math.abs(d)
+                                ? isDark ? 'bg-red-500/20 border-red-500/40 text-red-300' : 'bg-red-100 border-red-300 text-red-700'
+                                : isDark ? 'border-gray-700 text-gray-400 hover:bg-gray-800' : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {d}
+                          </button>
+                        ))}
+                        <span className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                          → new score: {Math.max(0, currentScore - adj.deduct)}
+                        </span>
+                      </div>
+                      {/* Reason */}
+                      <input
+                        value={adj.reason}
+                        onChange={e => setAdjustScoreState(prev => ({ ...prev, [alert.orderId]: { ...adj, reason: e.target.value } }))}
+                        placeholder="Reason"
+                        className={`w-full rounded-lg px-3 py-1.5 text-[10px] border outline-none ${
+                          isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-600 focus:border-amber-500/50'
+                                 : 'bg-white border-[#dddddd] text-gray-800 placeholder:text-gray-400 focus:border-amber-400/60'
+                        }`}
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setAdjustScoreState(prev => { const n = { ...prev }; delete n[alert.orderId]; return n; })}
+                          className={`text-[10px] transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            setScoreAdjustments(prev => ({
+                              ...prev,
+                              [alert.supplier]: (prev[alert.supplier] ?? 0) - adj.deduct,
+                            }));
+                            logUserAction({
+                              kind: 'vendor-renegotiate',
+                              entity: { type: 'supplier', id: alert.supplier },
+                              summary: `Score adjusted −${adj.deduct} for ${alert.supplier} · ${adj.reason}`,
+                              meta: { deduct: adj.deduct, reason: adj.reason, orderId: alert.orderId },
+                            });
+                            toast.warning(`Score adjusted −${adj.deduct} · ${alert.supplier}`, {
+                              description: adj.reason,
+                            });
+                            setAdjustScoreState(prev => { const n = { ...prev }; delete n[alert.orderId]; return n; });
+                          }}
+                          className="ml-auto px-3 py-1.5 rounded-lg text-[10px] font-semibold bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white transition-colors"
+                        >
+                          Apply adjustment
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <button
-                  onClick={() => setQcFailureAlerts(prev => prev.filter((_, j) => j !== i))}
-                  className={`shrink-0 p-0.5 rounded transition-colors ${isDark ? 'text-amber-500 hover:text-amber-300' : 'text-amber-500 hover:text-amber-700'}`}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -1759,7 +1911,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             {/* Buyamia Vitals */}
             <div className="grid grid-cols-4 gap-3">
               {[
-                { icon: Activity,    label: 'Network Health',    value: `${Math.round(SUPPLIERS.reduce((s, v) => s + v.score, 0) / SUPPLIERS.length)}`, sub: 'avg composite', color: '#87986a' },
+                { icon: Activity,    label: 'Network Health',    value: `${Math.round(SUPPLIERS.reduce((s, v) => s + v.score, 0) / SUPPLIERS.length)}`, sub: 'avg composite', color: '#4bbcbe' },
                 { icon: AlertTriangle, label: 'Action Items',    value: grouped.action.length,                                                           sub: 'need attention',  color: '#ef4444' },
                 { icon: DollarSign,  label: 'Agent Savings YTD', value: `$${(SUPPLIERS.reduce((s, v) => s + v.savingsYTD, 0) / 1000).toFixed(1)}K`,      sub: 'agent-attributed', color: '#10b981' },
                 { icon: Calendar,    label: 'Renewals <60d',     value: renewalsCount,                                                                    sub: 'contracts due',    color: '#f59e0b' },
@@ -1887,16 +2039,48 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
         )}
 
         {/* ═══ RELATIONSHIP WORKSPACE ═══ */}
-        {!isComparing && selected && renderRelationshipWorkspace(
-          selected, t, isDark, tooltipStyle, metricFilter, setMetricFilter,
-          filteredOrders, handleBackToEcosystem, handleExecuteRenegotiate,
-          dossierOpen, setDossierOpen, handleOpenMap,
-          getMode(selected.id),
-          (next) => setMode(selected.id, next),
-          () => openGovernance(selected.assignedAgent.id),
-          getEffectiveJourneyStage(selected),
-          manualJourneyEntries[selected.id],
-          (stageIdx: number) => openJourneyModule(selected.id, stageIdx),
+        {!isComparing && selected && (
+          <>
+            {/* PO Hold active banner — injected above the workspace */}
+            {heldSuppliers.has(selected.name) && (
+              <div className={`mx-6 mt-4 flex items-center gap-3 p-3 rounded-xl border ${
+                isDark ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'
+              }`}>
+                <AlertTriangle className={`h-4 w-4 shrink-0 ${isDark ? 'text-red-400' : 'text-red-600'}`} />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-semibold ${isDark ? 'text-red-300' : 'text-red-800'}`}>
+                    PO Hold active — new POs blocked
+                  </p>
+                  <p className={`text-[10px] mt-0.5 ${isDark ? 'text-red-400/80' : 'text-red-700'}`}>
+                    A QC dispute is pending. Resolve before issuing new orders to this vendor.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setHeldSuppliers(prev => { const n = new Set(prev); n.delete(selected.name); return n; });
+                    logUserAction({ kind: 'vendor-resume', entity: { type: 'supplier', id: selected.name }, summary: `PO hold removed · ${selected.name}` });
+                    toast.success(`PO hold removed · ${selected.name}`);
+                  }}
+                  className={`shrink-0 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
+                    isDark ? 'border-red-500/40 text-red-300 hover:bg-red-500/20' : 'border-red-300 text-red-700 hover:bg-red-100'
+                  }`}
+                >
+                  Remove Hold
+                </button>
+              </div>
+            )}
+            {renderRelationshipWorkspace(
+              selected, t, isDark, tooltipStyle, metricFilter, setMetricFilter,
+              filteredOrders, handleBackToEcosystem, handleExecuteRenegotiate,
+              dossierOpen, setDossierOpen, handleOpenMap,
+              getMode(selected.id),
+              (next) => setMode(selected.id, next),
+              () => openGovernance(selected.assignedAgent.id),
+              getEffectiveJourneyStage(selected),
+              manualJourneyEntries[selected.id],
+              (stageIdx: number) => openJourneyModule(selected.id, stageIdx),
+            )}
+          </>
         )}
       </div>
     </div>
@@ -1923,7 +2107,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             </div>
           </div>
           <button onClick={handleOpenFullWorkspace} title="Open Full Workspace"
-                  className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors ${isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e8eddf]'}`}>
+                  className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5]'}`}>
             <Maximize2 className="h-3 w-3" /> Full
           </button>
         </div>
@@ -1940,7 +2124,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             <span>Managed by:</span>
             <button
               onClick={() => openGovernance(selected.assignedAgent.id)}
-              className={`inline-flex items-center gap-0.5 font-semibold hover:underline ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}
+              className={`inline-flex items-center gap-0.5 font-semibold hover:underline ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}
               title="Tune autonomy & approval limits in Governance"
             >
               {agentLabel(selected.assignedAgent)}
@@ -1976,7 +2160,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               <>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className={`text-[10px] font-semibold ${t.sectionLabel}`}>RELATIONSHIP JOURNEY</h4>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>
                     {Math.round((peekEffStage / 12) * 100)}%
                   </span>
                 </div>
@@ -2002,12 +2186,12 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                           className={`w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-bold z-10 ${
                             done
                               ? clickable
-                                ? 'bg-[#87986a] text-white cursor-pointer hover:bg-amber-500'
-                                : 'bg-[#87986a] text-white'
+                                ? 'bg-[#4bbcbe] text-white cursor-pointer hover:bg-amber-500'
+                                : 'bg-[#4bbcbe] text-white'
                             : active
                               ? clickable
                                 ? 'bg-amber-500 text-white ring-2 ring-amber-500/50 cursor-pointer hover:bg-amber-600'
-                                : `bg-[#87986a]/20 text-[#87986a] ring-2 ring-[#87986a]/50`
+                                : `bg-[#4bbcbe]/20 text-[#4bbcbe] ring-2 ring-[#4bbcbe]/50`
                             : upcoming && clickable
                               ? (isDark ? 'border-2 border-amber-500/40 text-amber-300 bg-transparent cursor-pointer hover:bg-amber-500/15' : 'border-2 border-amber-400/50 text-amber-700 bg-transparent cursor-pointer hover:bg-amber-50')
                               : isDark ? 'bg-gray-800 text-gray-500 border border-gray-700' : 'bg-white text-gray-400 border border-gray-300'
@@ -2022,7 +2206,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                             minHeight: 18,
                             marginTop: 2,
                             marginBottom: 2,
-                            background: done ? '#87986a' : 'transparent',
+                            background: done ? '#4bbcbe' : 'transparent',
                             borderLeft: done ? 'none' : `2px dashed ${isDark ? '#444' : '#cbd5e1'}`,
                           }} />
                         )}
@@ -2036,7 +2220,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                           <span className={`shrink-0 text-[8px] px-1 py-0.5 rounded font-semibold ${
                             clickable
                               ? 'bg-amber-500/15 text-amber-500'
-                              : isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                              : isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                           }`}>
                             {clickable ? 'execute now' : 'current'}
                           </span>
@@ -2061,7 +2245,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
         <div className={`mx-4 mb-4 p-3 rounded-lg ${
           peekIsManual
             ? isDark ? 'bg-amber-500/5 border border-amber-500/30' : 'bg-amber-50/60 border border-amber-300/50'
-            : isDark ? 'bg-[#87986a]/8 border border-[#87986a]/20' : 'bg-[#f4f6f0] border border-[#dbe3ce]'
+            : isDark ? 'bg-[#4bbcbe]/8 border border-[#4bbcbe]/20' : 'bg-[#eafafa] border border-[#c4eef0]'
         }`}>
           <div className="flex items-center gap-1.5 mb-1.5">
             {peekIsManual ? <Hand className="h-3 w-3 text-amber-500" /> : <Bot className={`h-3 w-3 ${t.sageIcon}`} />}
@@ -2088,7 +2272,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
       {/* ── Bottom action zone: Full Workspace only ── */}
       <div className={`shrink-0 p-3 border-t ${panelBorder}`}>
         <button onClick={handleOpenFullWorkspace}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-semibold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-all">
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-semibold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-all">
           <Maximize2 className="h-3 w-3" /> Open Full Workspace
         </button>
       </div>
@@ -2112,9 +2296,56 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
 
   const sidebarBroadcastReady = !expandedSidebar && sidebarSelectMode && sidebarSelected.size >= 2;
 
+  // Atlas subtitle adapts to current right-panel mode
+  const atlasSubtitle = isComparing
+    ? `Comparative Delta · ${compareSuppliers[0]?.name.split(' ')[0]} vs ${compareSuppliers[1]?.name.split(' ')[0]}`
+    : activeSupplier
+      ? `Relationship ROI · ${activeSupplier.name}`
+      : 'Network Overview';
+
+  // Context questions adapt to mode
+  const contextQuestions = isComparing ? [
+    `Which vendor is better for urgent orders?`,
+    `What's the cost risk of single-sourcing ${compareSuppliers[0]?.name.split(' ')[0]}?`,
+    `Show me their QC incident history`,
+  ] : activeSupplier ? [
+    `Why does ${activeSupplier.name.split(' ')[0]}'s score trend the way it does?`,
+    `What's the backup vendor if ${activeSupplier.name.split(' ')[0]} can't deliver?`,
+    `Summarise my relationship risk with this vendor`,
+  ] : [
+    `Which vendor needs my attention most urgently?`,
+    `Where is my supply chain most exposed right now?`,
+    `Which category has the weakest vendor coverage?`,
+  ];
+
+  const sendAtlas = () => {
+    const q = atlasInput.trim();
+    if (!q) return;
+    setAtlasMsgs(prev => [...prev, { role: 'user', text: q }]);
+    setAtlasInput('');
+    setTimeout(() => {
+      setAtlasMsgs(prev => [...prev, {
+        role: 'atlas',
+        text: activeSupplier
+          ? `Pulling relationship data for ${activeSupplier.name}. Composite score ${adjScore(activeSupplier)}, on-time ${activeSupplier.reliability}%, ${activeSupplier.categories.join(' + ')} categories. Ask me about risk, alternatives, or contract terms.`
+          : `Scanning your vendor directory. ${SUPPLIERS.length} vendors across ${new Set(SUPPLIERS.flatMap(s => s.categories)).size} categories. What would you like to know?`,
+      }]);
+    }, 600);
+  };
+
   const rightPanel = (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-1 overflow-y-auto">
+      {/* ── Atlas header — always present ─────────────────────────────── */}
+      <div className={`shrink-0 p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
+        <div className="flex items-center gap-2 mb-0.5">
+          <Sparkles className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
+          <span className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-[#222222]'}`}>Atlas</span>
+          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+        </div>
+        <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-[#6b7280]'}`}>{atlasSubtitle}</p>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {/* ── Comparative Delta (Atlas synthesis, no per-vendor cards) ── */}
         {isComparing ? (() => {
           const [a, b] = compareSuppliers;
@@ -2175,11 +2406,11 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               {/* Recommendation */}
               <div className={`mt-2.5 p-3 rounded-lg border ${t.sageBg} ${t.sageBorder}`}>
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <Award className={`h-3 w-3 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
-                  <div className={`text-[9px] uppercase tracking-wide font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>Recommendation</div>
+                  <Award className={`h-3 w-3 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+                  <div className={`text-[9px] uppercase tracking-wide font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>Recommendation</div>
                 </div>
                 <p className={`text-[11px] leading-relaxed ${t.textPrimary}`}>{recommendation}</p>
-                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-[#87986a]/15">
+                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-[#4bbcbe]/15">
                   <span className={`text-[9px] ${t.textMuted}`}>Suggested winner:</span>
                   <span className="text-[10px]">{winner.flag}</span>
                   <span className={`text-[10px] font-semibold ${t.textPrimary}`}>{winner.name}</span>
@@ -2203,7 +2434,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                   return (
                     <div key={d.l} className="flex items-center justify-between mb-1">
                       <span className={`text-[10px] ${t.textMuted}`}>{d.l}</span>
-                      <span className={`text-[10px] font-semibold ${delta === 0 ? t.textMuted : aWins ? 'text-[#87986a]' : 'text-blue-400'}`}>
+                      <span className={`text-[10px] font-semibold ${delta === 0 ? t.textMuted : aWins ? 'text-[#4bbcbe]' : 'text-blue-400'}`}>
                         {delta === 0 ? 'Tied' : `${aWins ? aName : bName} ${d.lowerBetter ? '−' : '+'}${d.fmt(Math.abs(delta))}`}
                       </span>
                     </div>
@@ -2276,7 +2507,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               </div>
               <div className={`p-3 rounded-lg ${t.sageBg} border ${t.sageBorder}`}>
                 <span className={`text-[10px] ${t.textMuted}`}>Savings YTD (agent-attributed)</span>
-                <div className="text-xl font-bold text-[#87986a] mt-0.5">${activeSupplier.savingsYTD.toLocaleString()}</div>
+                <div className="text-xl font-bold text-[#4bbcbe] mt-0.5">${activeSupplier.savingsYTD.toLocaleString()}</div>
                 <p className={`text-[10px] mt-1.5 leading-relaxed ${t.textSecondary}`}>
                   {activeSupplier.savingsYTD > 8000
                     ? `High-value partner. Saved via early-bird discounts and group-buy pooling this year.`
@@ -2284,11 +2515,11 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
                     ? `Reliable partner with moderate savings. Consider volume commitment for larger upside.`
                     : `Low-savings partner. A-01 has 3 alternatives pre-qualified if optimization is desired.`}
                 </p>
-                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#87986a]/15">
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#4bbcbe]/15">
                   <span className={`text-[10px] ${t.textMuted}`}>Partner grade:</span>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                     activeSupplier.score >= 90 ? 'bg-green-500 text-white'
-                    : activeSupplier.score >= 85 ? 'bg-[#87986a] text-white'
+                    : activeSupplier.score >= 85 ? 'bg-[#4bbcbe] text-white'
                     : activeSupplier.score >= 80 ? 'bg-amber-500 text-white'
                     : 'bg-red-500 text-white'
                   }`}>
@@ -2402,19 +2633,19 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
           return (
           <>
             <div className="flex items-center gap-1.5 mb-2">
-              <Lock className={`h-3 w-3 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+              <Lock className={`h-3 w-3 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
               <span className={`text-[10px] font-semibold uppercase tracking-wide ${t.textMuted}`}>Secure Messaging Portal</span>
             </div>
             <button
               onClick={() => { setBroadcastOpen(true); setMessagingOpen(false); }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-all"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-all"
             >
               <Globe className="h-3.5 w-3.5" />
               Message Both
             </button>
             <button
               onClick={() => { setSelectedId(winner.id); setMessagingOpen(true); setBroadcastOpen(false); }}
-              className={`w-full mt-1.5 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all border ${isDark ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'}`}
+              className={`w-full mt-1.5 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all border ${isDark ? 'border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#eafafa]'}`}
             >
               <MessageCircle className="h-3.5 w-3.5" />
               Message Winner · {winner.name.split(' ')[0]}
@@ -2425,7 +2656,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
           <>
             <button
               onClick={() => { setBroadcastOpen(true); setMessagingOpen(false); }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-all"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-all"
             >
               <Globe className="h-3.5 w-3.5" />
               <MessageCircle className="h-3.5 w-3.5" />
@@ -2440,7 +2671,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             <button
               onClick={() => { setBroadcastOpen(true); setMessagingOpen(false); }}
               className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold transition-all ${
-                isDark ? 'bg-[#2a2a2a] border border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10' : 'bg-white border border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                isDark ? 'bg-[#2a2a2a] border border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'bg-white border border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#eafafa]'
               }`}
             >
               <Globe className="h-3 w-3" />
@@ -2456,7 +2687,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             <button
               onClick={() => { setMessagingOpen(true); setBroadcastOpen(false); }}
               className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold transition-all ${
-                isDark ? 'bg-[#2a2a2a] border border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10' : 'bg-white border border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                isDark ? 'bg-[#2a2a2a] border border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'bg-white border border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#eafafa]'
               }`}
             >
               <Lock className="h-3 w-3" />
@@ -2470,6 +2701,81 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
         ) : (
           <p className={`text-[10px] text-center ${t.textMuted}`}>Select a vendor to begin</p>
         )}
+      </div>
+
+      {/* ── Atlas chat — pinned to bottom (Rule 2) ─────────────────── */}
+      <div className={`shrink-0 border-t ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
+        {/* Context questions */}
+        <div className="px-3 pt-3 space-y-1">
+          {contextQuestions.map(q => (
+            <button
+              key={q}
+              onClick={() => {
+                setAtlasMsgs(prev => [...prev, { role: 'user', text: q }]);
+                setTimeout(() => {
+                  setAtlasMsgs(prev => [...prev, {
+                    role: 'atlas',
+                    text: activeSupplier
+                      ? `Analysing ${activeSupplier.name} — composite ${adjScore(activeSupplier)}, on-time ${activeSupplier.reliability}%, ${activeSupplier.categories.join(' + ')}. ${q.includes('backup') ? `Nearest alternative by category overlap: ${SUPPLIERS.filter(s => s.id !== activeSupplier.id && s.categories.some(c => activeSupplier.categories.includes(c)))[0]?.name ?? 'none on file'}.` : 'Ask me for more detail.'}`
+                      : `Scanning vendor directory. ${SUPPLIERS.length} vendors, ${new Set(SUPPLIERS.flatMap(s => s.categories)).size} categories covered. ${q.includes('attention') ? 'Highest-risk vendor: ' + (SUPPLIERS.slice().sort((a,b) => a.score - b.score)[0]?.name ?? '—') + ' · lowest composite.' : 'Ask me anything.'}`,
+                  }]);
+                }, 500);
+              }}
+              className={`w-full text-left p-2 rounded-lg text-[10px] transition-colors ${
+                isDark ? 'text-gray-400 hover:bg-gray-800 hover:text-white' : 'text-gray-500 hover:bg-[#eafafa] hover:text-gray-900'
+              }`}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+        {/* Chat thread (last 3 messages) */}
+        {atlasMsgs.length > 0 && (
+          <div className="px-3 pt-2 space-y-1.5 max-h-[120px] overflow-y-auto">
+            {atlasMsgs.slice(-4).map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'items-start gap-1.5'}`}>
+                {m.role === 'atlas' && (
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${isDark ? 'bg-[#4bbcbe]/20' : 'bg-[#eafafa]'}`}>
+                    <Sparkles className={`h-2.5 w-2.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+                  </div>
+                )}
+                <div className={`max-w-[85%] px-2.5 py-1.5 rounded-xl text-[10px] leading-relaxed ${
+                  m.role === 'user'
+                    ? 'bg-[#4bbcbe] text-white rounded-tr-sm'
+                    : isDark ? 'bg-[#2a2a2a] text-gray-300 rounded-tl-sm' : 'bg-[#eafafa] text-gray-700 rounded-tl-sm'
+                }`}>
+                  {m.text}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Chat input */}
+        <div className="flex items-end gap-2 p-3">
+          <textarea
+            value={atlasInput}
+            onChange={e => setAtlasInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAtlas(); } }}
+            placeholder="Ask Atlas about vendors…"
+            rows={1}
+            className={`flex-1 text-[11px] px-3 py-2 rounded-xl border resize-none outline-none ${
+              isDark
+                ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-600 focus:border-[#4bbcbe]/50'
+                : 'bg-white border-[#dddddd] placeholder:text-gray-300 focus:border-[#4bbcbe]/50'
+            }`}
+          />
+          <button
+            onClick={sendAtlas}
+            disabled={!atlasInput.trim()}
+            className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center transition-colors mb-0.5 ${
+              atlasInput.trim()
+                ? 'bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white'
+                : isDark ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-[#dddddd] text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            <Send className="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2527,7 +2833,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             <div key={m.id} className={`flex ${m.from === 'admin' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] px-2.5 py-1.5 rounded-lg text-[10px] leading-relaxed ${
                 m.from === 'admin'
-                  ? isDark ? 'bg-[#87986a]/20 text-[#dbe3ce]' : 'bg-[#87986a]/15 text-[#3d4933]'
+                  ? isDark ? 'bg-[#4bbcbe]/20 text-[#c4eef0]' : 'bg-[#4bbcbe]/15 text-[#3d4933]'
                   : isDark ? 'bg-[#2a2a2a] text-gray-300' : 'bg-gray-100 text-gray-700'
               }`}>
                 <p>{m.text}</p>
@@ -2553,7 +2859,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
           />
           <button onClick={handleSendMessage} disabled={!messageDraft.trim()}
                   className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                    messageDraft.trim() ? 'bg-[#87986a] text-white hover:bg-[#6b7a54]' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'
+                    messageDraft.trim() ? 'bg-[#4bbcbe] text-white hover:bg-[#2c9a9c]' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'
                   }`}>
             <Send className="h-3.5 w-3.5" />
           </button>
@@ -2641,7 +2947,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             setBroadcastOpen(false);
           }}
           disabled={!broadcastDraft.trim()}
-          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[11px] font-semibold transition-all ${broadcastDraft.trim() ? 'bg-[#87986a] text-white hover:bg-[#6b7a54]' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'}`}
+          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[11px] font-semibold transition-all ${broadcastDraft.trim() ? 'bg-[#4bbcbe] text-white hover:bg-[#2c9a9c]' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'}`}
         >
           <Send className="h-3.5 w-3.5" />
           Send to {broadcastTargets.length} Vendors
@@ -2676,7 +2982,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
           box-shadow: 0 30px 80px rgba(135,152,106,0.25);
         }
         .hardened-grade {
-          background: linear-gradient(135deg, #87986a, #a3b085, #6b7a54);
+          background: linear-gradient(135deg, #4bbcbe, #82d3d5, #2c9a9c);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -2697,11 +3003,11 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             Right side hosts the elevated Onboard New Vendor CTA — humans are
             the sole gateway for new vendor data (Manual Discovery Portal). */}
         <div className={`shrink-0 flex items-center gap-3 px-4 py-2.5 border-b ${panelBorder} ${
-          isDark ? 'bg-gradient-to-r from-[#1f2a1f] via-[#1a1a1a] to-[#1a1a1a]' : 'bg-gradient-to-r from-[#f0f4e8] via-white to-white'
+          isDark ? 'bg-gradient-to-r from-[#1d3535] via-[#1a1a1a] to-[#1a1a1a]' : 'bg-gradient-to-r from-[#eafafa] via-white to-white'
         }`}>
           <div className="flex items-center gap-2 min-w-0">
             <div className={`flex items-center justify-center w-7 h-7 rounded-lg shrink-0 ${
-              isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#87986a]/15 text-[#6b7a54]'
+              isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#4bbcbe]/15 text-[#2c9a9c]'
             }`}>
               <ShieldCheck className="h-4 w-4" />
             </div>
@@ -2709,7 +3015,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className={`text-[11px] font-bold ${t.textPrimary}`}>AI Sourcing Mode:</span>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  isDark ? 'bg-[#87986a]/20 text-[#a3b085] border border-[#87986a]/40' : 'bg-[#f4f6f0] text-[#6b7a54] border border-[#87986a]/40'
+                  isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border border-[#4bbcbe]/40' : 'bg-[#eafafa] text-[#2c9a9c] border border-[#4bbcbe]/40'
                 }`}>
                   <Lock className="h-2.5 w-2.5" />
                   Locked to Internal Directory
@@ -2737,7 +3043,7 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
             {/* Elevated primary action — Manual Discovery Portal */}
             <button
               onClick={handleOnboardVendor}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] active:scale-[0.98] transition-all shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] active:scale-[0.98] transition-all shadow-sm"
             >
               <UserPlus className="h-3.5 w-3.5" />
               Onboard New Vendor
@@ -2838,10 +3144,10 @@ export function SuppliersPage({ theme, onNavigate }: SuppliersPageProps) {
               </div>
 
               {/* Rationale */}
-              <div className={`px-5 py-2.5 border-b flex items-start gap-2 ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-gray-200 bg-[#f4f6f0]'}`}>
-                <Bot className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+              <div className={`px-5 py-2.5 border-b flex items-start gap-2 ${isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-gray-200 bg-[#eafafa]'}`}>
+                <Bot className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                 <div className="min-w-0">
-                  <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>Why this stage exists</div>
+                  <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>Why this stage exists</div>
                   <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>{mod.rationale}</p>
                 </div>
               </div>
@@ -3006,7 +3312,7 @@ function renderRelationshipWorkspace(
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5">
         <button onClick={handleBack}
-                className={`flex items-center gap-1 text-xs transition-colors ${t.textMuted} hover:text-[#87986a]`}>
+                className={`flex items-center gap-1 text-xs transition-colors ${t.textMuted} hover:text-[#4bbcbe]`}>
           <ArrowLeft className="h-3 w-3" />
           Ecosystem
         </button>
@@ -3112,7 +3418,7 @@ function renderRelationshipWorkspace(
                   <span>Managed by:</span>
                   <button
                     onClick={openGovernance}
-                    className={`inline-flex items-center gap-1 font-semibold hover:underline ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}
+                    className={`inline-flex items-center gap-1 font-semibold hover:underline ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}
                     title="Open this agent's directory profile to tune autonomy & approval limits"
                   >
                     <Bot className="h-3 w-3" />
@@ -3154,7 +3460,7 @@ function renderRelationshipWorkspace(
               <div className={`text-[9px] uppercase tracking-wide mb-1.5 ${t.textMuted}`}>Address</div>
               <p className={`text-[11px] leading-relaxed ${t.textSecondary}`}>{selected.address}</p>
               <button onClick={handleOpenMap}
-                      className={`mt-2 inline-flex items-center gap-1 text-[10px] font-medium transition-colors ${isDark ? 'text-[#a3b085] hover:text-[#c5d3a8]' : 'text-[#6b7a54] hover:text-[#556142]'}`}>
+                      className={`mt-2 inline-flex items-center gap-1 text-[10px] font-medium transition-colors ${isDark ? 'text-[#82d3d5] hover:text-[#c5d3a8]' : 'text-[#2c9a9c] hover:text-[#556142]'}`}>
                 <MapPin className="h-2.5 w-2.5" /> View on Map
               </button>
             </div>
@@ -3167,11 +3473,11 @@ function renderRelationshipWorkspace(
                   <div key={c.role}>
                     <div className={`text-[10px] font-semibold ${t.textPrimary}`}>{c.role} · {c.name}</div>
                     <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                      <a href={`mailto:${c.email}`} className={`inline-flex items-center gap-1 text-[9px] transition-colors ${isDark ? 'text-gray-400 hover:text-[#a3b085]' : 'text-gray-500 hover:text-[#6b7a54]'}`}>
+                      <a href={`mailto:${c.email}`} className={`inline-flex items-center gap-1 text-[9px] transition-colors ${isDark ? 'text-gray-400 hover:text-[#82d3d5]' : 'text-gray-500 hover:text-[#2c9a9c]'}`}>
                         <Mail className="h-2.5 w-2.5" /> {c.email}
                       </a>
                     </div>
-                    <a href={`tel:${c.phone.replace(/\s/g, '')}`} className={`inline-flex items-center gap-1 text-[9px] transition-colors ${isDark ? 'text-gray-400 hover:text-[#a3b085]' : 'text-gray-500 hover:text-[#6b7a54]'}`}>
+                    <a href={`tel:${c.phone.replace(/\s/g, '')}`} className={`inline-flex items-center gap-1 text-[9px] transition-colors ${isDark ? 'text-gray-400 hover:text-[#82d3d5]' : 'text-gray-500 hover:text-[#2c9a9c]'}`}>
                       <Phone className="h-2.5 w-2.5" /> {c.phone}
                     </a>
                   </div>
@@ -3230,7 +3536,7 @@ function renderRelationshipWorkspace(
                   style={{ left: `${leftPct}%`, width: `${widthPct}%`, height: 2 }}
                 >
                   {completed ? (
-                    <div className="h-full bg-[#87986a]" />
+                    <div className="h-full bg-[#4bbcbe]" />
                   ) : (
                     <div className="h-full w-full"
                          style={{
@@ -3263,12 +3569,12 @@ function renderRelationshipWorkspace(
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
                       done
                         ? clickable
-                          ? 'bg-[#87986a] text-white cursor-pointer hover:bg-amber-500'
-                          : 'bg-[#87986a] text-white'
+                          ? 'bg-[#4bbcbe] text-white cursor-pointer hover:bg-amber-500'
+                          : 'bg-[#4bbcbe] text-white'
                       : active
                         ? clickable
                           ? 'bg-amber-500 text-white ring-2 ring-amber-500/50 ring-offset-2 cursor-pointer hover:bg-amber-600 ' + (isDark ? 'ring-offset-[#1a1a1a]' : 'ring-offset-white')
-                          : 'bg-[#87986a]/20 text-[#87986a] ring-2 ring-[#87986a]/50 ring-offset-2 ' + (isDark ? 'ring-offset-[#1a1a1a]' : 'ring-offset-white')
+                          : 'bg-[#4bbcbe]/20 text-[#4bbcbe] ring-2 ring-[#4bbcbe]/50 ring-offset-2 ' + (isDark ? 'ring-offset-[#1a1a1a]' : 'ring-offset-white')
                       : upcoming && clickable
                         ? (isDark ? 'border-2 border-amber-500/40 text-amber-300 bg-transparent cursor-pointer hover:bg-amber-500/15' : 'border-2 border-amber-400/50 text-amber-700 bg-transparent cursor-pointer hover:bg-amber-50')
                         : isDark ? 'bg-gray-800 text-gray-500 border border-gray-700' : 'bg-white text-gray-400 border border-gray-300'
@@ -3285,7 +3591,7 @@ function renderRelationshipWorkspace(
                     <span className={`mt-1 text-[8px] px-1 py-0.5 rounded font-semibold ${
                       clickable
                         ? 'bg-amber-500/15 text-amber-500'
-                        : isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                        : isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                     }`}>
                       {clickable ? 'Execute now' : 'Current'}
                     </span>
@@ -3368,9 +3674,9 @@ function renderRelationshipWorkspace(
                         <rect x={textAnchor === 'end' ? -50 : textAnchor === 'start' ? 0 : -25}
                               y={-9} width={50} height={18} rx={9}
                               fill={isActive ? (isDark ? 'rgba(135,152,106,0.2)' : 'rgba(135,152,106,0.15)') : 'transparent'}
-                              stroke={isActive ? '#87986a' : 'transparent'} strokeWidth={1} />
+                              stroke={isActive ? '#4bbcbe' : 'transparent'} strokeWidth={1} />
                         <text x={0} y={0} dy={3} textAnchor={textAnchor}
-                              fill={isActive ? '#87986a' : (isDark ? '#aaa' : '#666')}
+                              fill={isActive ? '#4bbcbe' : (isDark ? '#aaa' : '#666')}
                               fontSize={10}
                               fontWeight={isActive ? 700 : 500}
                               style={{ userSelect: 'none' }}>
@@ -3380,7 +3686,7 @@ function renderRelationshipWorkspace(
                     );
                   }}
                 />
-                <Radar dataKey="value" stroke="#87986a" fill="#87986a" fillOpacity={0.25} strokeWidth={2} />
+                <Radar dataKey="value" stroke="#4bbcbe" fill="#4bbcbe" fillOpacity={0.25} strokeWidth={2} />
               </RadarChart>
             </ResponsiveContainer>
           </div>
@@ -3400,7 +3706,7 @@ function renderRelationshipWorkspace(
                   onClick={() => setMetricFilter(active ? null : m.key)}
                   className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[10px] transition-all ${
                     active
-                      ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                      ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
                       : isDark ? 'bg-[#2a2a2a] border-gray-800 text-gray-400 hover:border-gray-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'
                   }`}
                 >
@@ -3421,7 +3727,7 @@ function renderRelationshipWorkspace(
       <div className={`p-4 rounded-lg border ${
         isManual
           ? isDark ? 'bg-amber-500/5 border-amber-500/30' : 'bg-amber-50/60 border-amber-300/50'
-          : isDark ? 'bg-[#87986a]/8 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+          : isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]'
       }`}>
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
@@ -3431,7 +3737,7 @@ function renderRelationshipWorkspace(
             </span>
           </div>
           <span className={`inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide ${
-            isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+            isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
           }`}>
             <Lock className="h-2.5 w-2.5" /> Internal directory only
           </span>
@@ -3469,7 +3775,7 @@ function renderRelationshipWorkspace(
             <button
               onClick={() => setMode('agent')}
               className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all border ${
-                isDark ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                isDark ? 'border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#eafafa]'
               }`}
               title="Resume Agent — return tasks to autonomous execution"
             >
@@ -3480,7 +3786,7 @@ function renderRelationshipWorkspace(
         ) : (
           <button
             onClick={handleRenegotiate}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold transition-all bg-[#87986a] text-white hover:bg-[#6b7a54] active:scale-[0.98]"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold transition-all bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] active:scale-[0.98]"
             title="Production: opens a multi-week renegotiation workspace (prep brief → opening offer → vendor counter rounds → red-line → signed amendment). 'Hardened' state only after a signed amendment is on file."
           >
             <Zap className="h-3.5 w-3.5" />
@@ -3570,7 +3876,7 @@ function renderExpandedMatrix(
     { key: 'contractValue',  label: 'Annual Contract' },
     { key: 'savingsYTD',     label: 'Savings YTD ($)' },
   ];
-  const COLORS = ['#87986a', '#60a5fa', '#f59e0b', '#a78bfa', '#f87171', '#34d399', '#fb923c'];
+  const COLORS = ['#4bbcbe', '#60a5fa', '#f59e0b', '#a78bfa', '#f87171', '#34d399', '#fb923c'];
   const is2 = suppliers.length === 2;
 
   return (
@@ -3743,7 +4049,7 @@ function renderComparison(
             ]} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
               <PolarGrid stroke={isDark ? '#333' : '#e5e7eb'} />
               <PolarAngleAxis dataKey="metric" tick={{ fontSize: 10, fill: isDark ? '#888' : '#666' }} />
-              <Radar name={a.name} dataKey="a" stroke="#87986a" fill="#87986a" fillOpacity={0.22} strokeWidth={2} />
+              <Radar name={a.name} dataKey="a" stroke="#4bbcbe" fill="#4bbcbe" fillOpacity={0.22} strokeWidth={2} />
               <Radar name={b.name} dataKey="b" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.22} strokeWidth={2} />
               <Tooltip contentStyle={tooltipStyle} />
             </RadarChart>
@@ -3751,7 +4057,7 @@ function renderComparison(
         </div>
         <div className="flex items-center justify-center gap-4 mt-2">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-0.5 bg-[#87986a]" />
+            <div className="w-3 h-0.5 bg-[#4bbcbe]" />
             <span className={`text-[10px] ${t.textSecondary}`}>{a.name}</span>
           </div>
           <div className="flex items-center gap-1.5">

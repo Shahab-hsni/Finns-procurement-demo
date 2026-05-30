@@ -139,7 +139,7 @@ export function ManualNotes({ isDark, type, id, entityLabel, className }: Manual
               <X className="h-3 w-3 mr-1" /> Cancel
             </Button>
             <Button onClick={handleSave}
-                    className="bg-[#87986a] hover:bg-[#6b7a54] text-white h-7 px-2.5 text-[10px]">
+                    className="bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white h-7 px-2.5 text-[10px]">
               <Save className="h-3 w-3 mr-1" /> Save
             </Button>
           </div>

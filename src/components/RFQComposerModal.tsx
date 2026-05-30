@@ -269,7 +269,7 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
   const textPrimary = isDark ? 'text-white' : 'text-gray-900';
   const textMuted   = isDark ? 'text-gray-400' : 'text-gray-600';
   const inputClass  = `${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400'}`;
-  const chipActive  = isDark ? 'bg-[#87986a]/20 text-[#a3b085] border-[#87986a]/50' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#87986a]/40';
+  const chipActive  = isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border-[#4bbcbe]/50' : 'bg-[#eafafa] text-[#2c9a9c] border-[#4bbcbe]/40';
   const chipIdle    = isDark ? 'bg-[#2a2a2a] text-gray-400 border-gray-700 hover:border-gray-600' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300';
 
   return (
@@ -423,7 +423,7 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
               // ── 6j · Grouped vendor view (cross-category basket) ──
               <div className="space-y-3">
                 <div className={`p-2 rounded-md text-[10px] ${
-                  isDark ? 'bg-[#87986a]/8 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                  isDark ? 'bg-[#4bbcbe]/8 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                 }`}>
                   A-01 grouped vendors by which items in your basket they can quote on. Pick one from each section — a vendor only sees the items they actually supply.
                 </div>
@@ -461,12 +461,12 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
                             <button key={v.id} onClick={() => toggleVendor(v.id)}
                                     className={`w-full text-left flex items-center gap-3 px-3 py-2 transition-colors ${
                                       active
-                                        ? isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]'
+                                        ? isDark ? 'bg-[#4bbcbe]/10' : 'bg-[#eafafa]'
                                         : isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
                                     }`}>
                               <span className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 ${
                                 active
-                                  ? 'bg-[#87986a] border-[#87986a] text-white'
+                                  ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white'
                                   : isDark ? 'border-gray-600' : 'border-gray-300'
                               }`}>
                                 {active && '✓'}
@@ -513,12 +513,12 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
                     <button key={v.id} onClick={() => toggleVendor(v.id)}
                             className={`w-full text-left flex items-center gap-3 px-3 py-2 transition-colors ${
                               active
-                                ? isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]'
+                                ? isDark ? 'bg-[#4bbcbe]/10' : 'bg-[#eafafa]'
                                 : isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
                             }`}>
                       <span className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 ${
                         active
-                          ? 'bg-[#87986a] border-[#87986a] text-white'
+                          ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white'
                           : isDark ? 'border-gray-600' : 'border-gray-300'
                       }`}>
                         {active && '✓'}
@@ -587,7 +587,7 @@ export function RFQComposerModal({ isDark, isOpen, onClose, onSent, prefillItems
               Cancel
             </Button>
             <Button onClick={handleSubmit} disabled={!valid}
-                    className="bg-[#87986a] hover:bg-[#6b7a54] text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white disabled:opacity-40 disabled:cursor-not-allowed">
               <Send className="h-3.5 w-3.5 mr-1.5" />
               Send RFQ
             </Button>

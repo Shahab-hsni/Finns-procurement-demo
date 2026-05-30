@@ -80,11 +80,11 @@ export function AgentCTA({
   if (variant === 'inline') {
     return (
       <div className={className}>
-        <p className={`text-[10px] font-semibold mb-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+        <p className={`text-[10px] font-semibold mb-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
           {agentLabel}
           <span className={`ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full align-middle ${
             isAuto
-              ? isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+              ? isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
               : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
           }`}>
             {isAuto ? 'Auto' : 'Insight'}
@@ -94,7 +94,7 @@ export function AgentCTA({
           {reasoning}
         </p>
         {isAuto && (
-          <p className={`text-[9px] mt-1 ${isDark ? 'text-[#a3b085]/80' : 'text-[#6b7a54]/80'}`}>
+          <p className={`text-[9px] mt-1 ${isDark ? 'text-[#82d3d5]/80' : 'text-[#2c9a9c]/80'}`}>
             {autoExecutionNote ?? `${agentLabel} will execute on your approval.`}
           </p>
         )}
@@ -106,20 +106,20 @@ export function AgentCTA({
   return (
     <div className={className}>
       <div className="flex items-center gap-2 mb-2">
-        <Zap className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+        <Zap className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
         <span className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
           {isAuto ? 'Agent reasoning' : 'Agent insight'}
         </span>
         <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
           isAuto
-            ? isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+            ? isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
             : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
         }`}>
           {isAuto ? 'Auto' : 'Manual'}
         </span>
       </div>
-      <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/5 border-[#87986a]/15' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-        <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+      <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/5 border-[#4bbcbe]/15' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
+        <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
           {agentLabel}
         </p>
         <p className={`text-xs leading-relaxed ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
@@ -127,7 +127,7 @@ export function AgentCTA({
         </p>
       </div>
       {isAuto && (
-        <p className={`text-[10px] mt-2 px-1 ${isDark ? 'text-[#a3b085]/80' : 'text-[#6b7a54]/80'}`}>
+        <p className={`text-[10px] mt-2 px-1 ${isDark ? 'text-[#82d3d5]/80' : 'text-[#2c9a9c]/80'}`}>
           {autoExecutionNote ?? `${agentLabel} will execute on your approval.`}
         </p>
       )}

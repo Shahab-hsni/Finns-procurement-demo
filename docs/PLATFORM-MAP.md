@@ -219,7 +219,7 @@ Every entry carries:
 | `actorType` | `'agent' \| 'admin' \| 'system'` | Who took the action. |
 | `actorId` | `'admin' \| 'A-01'..'A-05' \| 'system'` | Discriminator within actorType. |
 | `actorLabel` | string | Display name: 'You' / 'Sourcing Agent' / 'System'. |
-| `kind` | `ActionKind` (closed union) | Canonical action name (e.g. `po-approve`, `sku-adjust`, `rule-create`, `vendor-message`). |
+| `kind` | `ActionKind` (closed union) | Canonical action name (e.g. `po-approve`, `sku-adjust`, `rule-create`, `vendor-message`, `po-dispute-send`, `po-payment-approve`). Full list in `src/lib/actionLog.ts`. |
 | `entity?` | `{ type, id }` | What the action operated on, when applicable. |
 | `summary` | string | One-line for feed display. |
 | `category?` | `FinnsCategory` | For category-filtered views. |
@@ -399,7 +399,7 @@ Sourcing wizard. Center panel morphs entirely through 5 steps. The user picks a 
 | Step 1 — Items | Line items + per-PO autonomy + playbook. Smart-detect autocomplete fills category/unit/venues. Atlas inline banners: **Market Price Trends** (top) + **Suggested Items** (bottom, `[+ Add]` to drop into basket). |
 | Step 2 — Vendors | Two paths: **Path A** approved directory (multi-select) or **Path B** RFQ composer + waiting view. Cross-category banner mints when basket spans ≥2 categories and no single vendor covers all. Multi-vendor selection on Path A triggers the Vendor Assignment card. Multi-award RFQ on Path B awards each quote independently. Atlas inline: **Vendor Intel** (directory summary) + **A-01 · {vendor}** history snippet when one vendor is picked. |
 | Step 3 — Delivery | Target venues + date window + receiving contact. Award context banner mints when arrived via Path B (single or multi-award). Atlas **Logistics Intel** (`A-05`) shows day-of-week + flex assessment, branching to per-vendor mini-summaries on multi-vendor flows. |
-| Step 4 — Review | Summary + per-vendor breakdown for any of the three multi-PO modes. Atlas **Ready to Launch / Review Before Launch** banner. **Authorize gate** blocks the button when items are unassigned or a single-vendor cross-category basket isn't fully covered. |
+| Step 4 — Review | **Atlas · Quantity Check** card (above the summary) — fuzzy-matches basket items to `finnsSKUs`, surfaces per-item qty suggestions with Accept / Dismiss per row and "Accept all ✓". Advisory, non-blocking. Summary + per-vendor breakdown for any of the three multi-PO modes. Atlas **Ready to Launch / Review Before Launch** banner. **Authorize gate** blocks the button when items are unassigned or a single-vendor cross-category basket isn't fully covered. |
 | Step 5 — Done | Confirmation. Copy adapts to single vs multi-PO mode. Routes to Orders. |
 
 **Actions**
@@ -471,7 +471,7 @@ System-wide pause (Activity & Governance → Agents tab) halts the engine global
 | Default | Priority feed + Autonomous Flow feed. Derived from `derivedActionKind(order, effectiveStage)`. |
 | Single Order Journey | Two-column: detail card (primary CTA + tertiary row) + 5-stage DAG with trace modals per stage. |
 | Approval Confirmation modal | Pops on Auto + cap-gate Approve click. One-screen: order summary + quote details + policy posture + agent reasoning. Confirm / Cancel / Switch to Manual. |
-| Stage Task Module | Manual-mode form per stage (Execute / Edit / Plan). Inputs vary per stage. Stage 1 pre-fills from RFQ runtime when `fromRfqId` is set. |
+| Stage Task Module | Manual-mode form per stage (Execute / Edit / Plan). Inputs vary per stage. Stage 1 pre-fills from RFQ runtime when `fromRfqId` is set. **Stage 5** modal widens to `max-w-2xl` and prepends a **3-way match table** (PO Ordered read-only · Received qty input · Invoice qty input · live colour-coded variance per line item). QC outcome auto-derives from line item results; overridable. |
 | Batch Selected | Batch Console — approve / confirm / resolve counts across selected orders. |
 | Journey Complete | Single-order success splash with cost / labor savings. |
 | Batch Complete | Batch finalization splash. |
@@ -499,6 +499,8 @@ System-wide pause (Activity & Governance → Agents tab) halts the engine global
 | Stage module — Save & Mark Complete | Writes to manualStageData + forceCompleteStage. Stage 4 also stamps completedIds (terminal). | — |
 | Draft Sheet — Submit | Creates a new order from the draft. | — |
 | Source Bridge — Send | Appends to the per-PO conversation thread + logs to action log. Panel stays open. | — |
+| Source Bridge — Send Dispute via WhatsApp | Converts A-03's `dispute-draft` to a sent `reply`; logs `po-dispute-send`. Available only when a dispute draft is present. | — |
+| Source Bridge — Waive dispute → Confirm Payment | Opens payment confirmation step. On confirm: optionally sends WhatsApp payment notification, removes draft, logs `po-payment-approve` with mandatory waive reason + due date. | — |
 | Atlas chat send | Sends a message to Atlas (canned response today). | — |
 | Managed by · Agent A-NN | Tertiary link — jumps to that agent's profile in Activity & Governance. | **Activity & Governance** |
 
@@ -536,7 +538,7 @@ Audit Mode:
 | Approval Confirmation modal | Auto + cap-gate sign-off pop-up. Confirm advances Stage 1 → 2; Switch to Manual flips the entity and opens the Stage 1 Task Module instead. |
 | Draft Sheet | New / re-order draft form (recurring, frequency, labor assignment, target venue). |
 | ⌘K Command Palette | Fuzzy search across orders. |
-| Source Bridge | Right-panel takeover — full conversation thread per PO. WhatsApp / Email channels (no Telegram — Bali rule). |
+| Source Bridge | Right-panel takeover — full conversation thread per PO. WhatsApp / Email channels (no Telegram — Bali rule). Auto-opens on Stage 5 QC fail with an A-03 `dispute-draft` message. Footer morphs to dispute CTAs (Send Dispute / Waive dispute) when draft is present, and to the payment confirmation step when waive is selected. |
 
 **Outgoing navigation**
 
@@ -664,7 +666,7 @@ The merged "receipts + HR + policy office" for the AI workforce. Replaces what B
 | Activity Feed (default) | Unified center — event timeline + always-visible KPI cards + undo policy section. |
 | Agent Profile | Selected agent's dossier — current tasks, recent decisions, suspend / resume controls, performance band. |
 | Policy Rules | Active rule list with template-driven creation (Spend Cap / Vendor Trust Floor / Fraud Hold / Delivery SLA). |
-| Disputes Panel | Open + resolved dispute cards with Approve / Reject / Escalate. |
+| Disputes Panel | Dispute cards in two groups — **Open** (pending action) and **Resolved** (approved/credit-requested/escalated). Each open card shows priority, PO ref, reason, raised-by. Actions: **Approve Payment** · **Request Credit Note** (inline form with amount + note) · **Escalate to Director**. Resolved cards show a badge and collapse. Runtime disputes created from `finns-qc-failure` events appear here automatically. `#dispute=PO-XXXX` hash highlights the matching card and switches to this tab. |
 | Post-Approval Harden | Sage callout offering "Harden Policy — Set as Precedent" + "Resume Order". |
 | Precedent Set | "Precedent Set — policy hardened" confirmation bar. |
 | Learning Phase | Banner shown when isWarmingUp (events < 25). |
@@ -692,7 +694,9 @@ The merged "receipts + HR + policy office" for the AI workforce. Replaces what B
 | Policy template select | Picks Spend Cap / Vendor Trust Floor / Fraud Hold / Delivery SLA. | — |
 | Create Rule | Closes the Policy Creator and adds the rule to the active list. | — |
 | Override decision | Override button on a decision row. | — |
-| Approve / Reject / Escalate dispute | Three buttons on an open dispute card. | — |
+| Approve Payment | Dispute card (open). Marks dispute resolved, logs `dispute-approve`. Card moves to Resolved section with "✓ Payment approved" badge. | — |
+| Request Credit Note | Dispute card (open). Expands inline form — credit amount (Rp, required) + note (optional). On submit: logs `dispute-reject` with `meta.creditAmount`, card moves to Resolved with "↩ Credit requested" badge. | — |
+| Escalate to Director | Dispute card (open, text link). Logs `dispute-escalate`, card moves to Resolved with "↑ Escalated" badge. | — |
 | Harden Policy — Set as Precedent | Locks the override in as a standing policy rule. | — |
 | Resume Order (Dispute Panel) | Routes back to Orders for the disputed order. | **Orders** |
 

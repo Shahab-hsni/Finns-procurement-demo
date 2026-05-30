@@ -18,14 +18,14 @@ export function DetailPanel({ page, edges, isDark, onClose, onJumpToPage, onOpen
   const t = {
     surface:    isDark ? 'bg-[#1a1a1a]'    : 'bg-white',
     surfaceAlt: isDark ? 'bg-[#222]'       : 'bg-[#fafaf7]',
-    border:     isDark ? 'border-gray-800' : 'border-[#e5e5e0]',
-    textHead:   isDark ? 'text-white'      : 'text-[#0a0a0a]',
+    border:     isDark ? 'border-gray-800' : 'border-[#dddddd]',
+    textHead:   isDark ? 'text-white'      : 'text-[#222222]',
     textBody:   isDark ? 'text-gray-300'   : 'text-gray-700',
     textMuted:  isDark ? 'text-gray-500'   : 'text-gray-500',
     textDim:    isDark ? 'text-gray-600'   : 'text-gray-400',
-    sageBg:     isDark ? 'bg-[#87986a]/20' : 'bg-[#f4f6f0]',
-    sageText:   isDark ? 'text-[#a3b085]'  : 'text-[#6b7a54]',
-    sageBorder: isDark ? 'border-[#87986a]/40' : 'border-[#87986a]/40',
+    sageBg:     isDark ? 'bg-[#4bbcbe]/20' : 'bg-[#eafafa]',
+    sageText:   isDark ? 'text-[#82d3d5]'  : 'text-[#2c9a9c]',
+    sageBorder: isDark ? 'border-[#4bbcbe]/40' : 'border-[#4bbcbe]/40',
   };
 
   const groupColor =
@@ -54,7 +54,7 @@ export function DetailPanel({ page, edges, isDark, onClose, onJumpToPage, onOpen
           <button
             onClick={onClose}
             className={`shrink-0 p-1.5 rounded-md transition-colors ${
-              isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#f4f6f0] text-gray-500'
+              isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#eafafa] text-gray-500'
             }`}
             title="Close detail"
           >
@@ -215,7 +215,7 @@ export function DetailPanel({ page, edges, isDark, onClose, onJumpToPage, onOpen
         <div className={`shrink-0 px-5 py-3 border-t ${t.border} ${t.surfaceAlt}`}>
           <button
             onClick={() => onOpenLive(page.route)}
-            className={`w-full inline-flex items-center justify-center gap-2 h-9 rounded-lg text-xs font-semibold bg-[#87986a] hover:bg-[#6b7a54] text-white transition-colors`}
+            className={`w-full inline-flex items-center justify-center gap-2 h-9 rounded-lg text-xs font-semibold bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white transition-colors`}
           >
             <ExternalLink className="h-3.5 w-3.5" /> Open the live {page.label} page
           </button>
@@ -236,7 +236,7 @@ function SectionLabel({ icon: Icon, label, t }: { icon: React.ComponentType<{ cl
 
 function EdgeKindDot({ kind }: { kind: 'nav' | 'data' | 'event' }) {
   const color =
-    kind === 'nav'   ? 'bg-[#87986a]' :
+    kind === 'nav'   ? 'bg-[#4bbcbe]' :
     kind === 'data'  ? 'bg-blue-500' :
                        'bg-amber-500';
   const title =

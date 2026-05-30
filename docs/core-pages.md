@@ -112,7 +112,7 @@ Each stage has an interactive Task Module — opened from the journey rail in ag
 | 2 — Quote / Vendor Confirmed | Vendor selected, quote amount, lead time, payment terms, deviation from market. |
 | 3 — PO Approved | Policy checks passed, approval actor, approval notes. |
 | 4 — In Transit | Tracking number, carrier, ETA, custody-of-goods checkpoint notes. |
-| 5 — Delivered & Checked | Received quantity vs ordered, QC outcome (pass/fail), photo/note, venue receiving staff name. |
+| 5 — Delivered & Checked | **3-way match table** (per line item: PO Ordered read-only · Received qty input · Invoice qty input · live variance badge). QC outcome auto-derived from line item results (all match → pass; mixed → conditional; any short → triggers fail/conditional). Overridable. POD file upload. Receiving staff name. Short shipments auto-populate the A-03 dispute draft with per-item variance detail. |
 
 ---
 
@@ -249,15 +249,38 @@ Reactive to center selection. See `RIGHT-PANEL-MAP.md § 6` for the rules. Summa
 
 #### Source Bridge
 
-**Trigger:** Click "Message Supplier" from the center's tertiary action row or the ⋯ card menu.
+**Triggers:**
+- Click "Message Supplier" from the center's tertiary action row or the ⋯ card menu.
+- **Auto-opens** when the Stage 5 Task Module saves with `qc_outcome: 'fail'` — in that case it opens pre-loaded with a `dispute-draft` message from A-03.
 
 | Element | Behavior |
 |---------|----------|
-| Header | "Message {supplier}" + ArrowLeft back button + channel-label subtitle |
-| Channel selector | Segmented WhatsApp (#25D366) / Telegram (#0088cc); active half fills with channel color |
-| Message textarea | Fills all vertical space; auto-grows |
-| Send button | Channel-colored; "Send via WhatsApp" / "Send via Telegram" |
-| Auto-dismiss | Closes automatically when a different order is selected |
+| Header | Lock icon + "Source Bridge" + ArrowLeft back button + `{supplier} · {AM name} · {PO id}` subtitle |
+| Channel selector | Segmented WhatsApp (#25D366) / Email (blue). **No Telegram** — Bali vendor channel rule. |
+| Thread | Scrolling history. `BridgeMessageKind` values: `inbound-quote` · `reply` · `po-sent` (system pill) · `dispatch-confirm` · **`dispute-draft`** (editable amber card, see below). |
+| Compose (normal) | Pinned bottom — textarea + "Send via WhatsApp/Email". Sending appends to thread, panel stays open. "Routed via Finn's Gateway" footer. |
+| Auto-dismiss | Closes when a different order is selected. Thread persists in localStorage. |
+
+**`dispute-draft` bubble** — rendered only when `thread.find(m => m.kind === 'dispute-draft')` is truthy:
+- Amber-bordered editable card attributed to **A-03 · Vendor Comms · Draft**.
+- Contains a pre-written Bahasa Indonesia WhatsApp message with vendor name, PO id, item list, and credit note request.
+- Admin can edit the text inline before sending.
+- The normal compose footer is replaced by two CTAs:
+
+| CTA | Behavior |
+|-----|----------|
+| **Send Dispute via WhatsApp** | Primary green button. Converts draft to a `reply` in the thread, logs `kind: 'po-dispute-send'`. |
+| **Waive dispute — accept as-is** | Secondary text link. Opens the payment confirmation step in the footer. |
+
+**Payment confirmation step** (shown when admin clicks "Waive dispute — accept as-is"):
+
+| Field | Rule |
+|-------|------|
+| Reason for waiving dispute | **Required**. Mandatory textarea. Confirm Payment disabled until non-empty. Written to `meta.waiveReason` in the action log. |
+| Payment due by | **Required**. Date input, defaults to today + 7 days. |
+| Notify supplier via WhatsApp | Toggle (default ON). Live-previews the Bahasa Indonesia payment notification. |
+| **Cancel** | Returns to the dispute draft CTAs without losing the draft. |
+| **Confirm Payment** | Sends the WhatsApp notification (if toggle on), removes the `dispute-draft` from the thread, logs `kind: 'po-payment-approve'` with reason + due date. Closes Source Bridge. |
 
 Owned by **Vendor Comms Agent (A-03)** in narrative.
 
@@ -410,6 +433,9 @@ Compiled list of every mutating action on this page (excludes navigation, filter
 | Repeat Order | ⋯ menu | Opens Draft Sheet in re-order mode. |
 | Track Shipment | ⋯ menu | Stage-gated; selects the order's tracking state. |
 | Message Supplier | ⋯ menu | Opens Source Bridge. |
+| Send Dispute via WhatsApp | Source Bridge (dispute draft active) | Converts A-03 draft to a sent `reply`, logs `po-dispute-send`. |
+| Waive dispute — accept as-is | Source Bridge (dispute draft active) | Opens payment confirmation step in the Source Bridge footer. |
+| Confirm Payment | Source Bridge payment confirmation step | Optionally sends WhatsApp payment notification; logs `po-payment-approve` with mandatory waive reason. |
 | Add to Draft | ⌘K → action | Appends a SKU to the current draft. |
 | Suspend per-order autonomy | (via Activity & Governance) | Out of scope here; documented in § 7. |
 
@@ -501,6 +527,24 @@ The priority feed (left panel "Needs Your Action" card) is **derived from curren
 4. Admin fills the inputs (channel, lead time, quote amount — pre-filled from RFQ runtime when available per Phase 6p), saves → stage advances.
 5. Repeats per stage. Stage 2: PDF + policy ref. Stage 3: carrier + tracking + ETA. Stage 4: POD + QC outcome + receiver.
 6. Optional: Resume Auto at any point. The agent picks up the next un-touched stage.
+
+### QC fail — dispute draft flow
+
+1. Order reaches Stage 5 (Delivered & Checked) — user clicks **Confirm Delivery** → Task Module opens.
+2. User selects `qc_outcome: fail`, fills Receiving Staff, uploads POD → **Review & Authorize Delivery**.
+3. Stage 5 marked complete. `finns-qc-failure` event fires → Suppliers page receives an amber alert.
+4. `seedDisputeDraft()` appends a `dispute-draft` message to the Source Bridge thread for that PO.
+5. Source Bridge **auto-opens** in the right panel.
+6. Admin sees the A-03 drafted Bahasa Indonesia WhatsApp dispute message (editable). Two paths:
+
+**Path A — Send dispute:**
+- Admin edits the draft if needed → **Send Dispute via WhatsApp** → draft converts to a sent `reply` → action logged as `po-dispute-send` → compose returns to normal.
+
+**Path B — Waive dispute:**
+- Admin clicks **Waive dispute — accept as-is** → payment confirmation step opens in the footer.
+- Admin fills mandatory **Reason for waiving** (required — blocks confirm until non-empty) + **Payment due by** date.
+- Optional **Notify supplier via WhatsApp** toggle (default ON) previews the payment notification in Bahasa Indonesia.
+- **Confirm Payment** → sends WhatsApp notification if enabled → removes draft from thread → logs `po-payment-approve` with `waiveReason` + `dueDate` in meta → Source Bridge closes.
 
 ### Confirm Delivery flow (Stage 4 QC)
 
@@ -1248,7 +1292,9 @@ When the basket spans ≥2 categories AND no single vendor in the directory cove
 
 ### Step 4 — Review
 
-**Atlas · Ready to Launch / Review Before Launch** banner at the top — green when every policy check passes, amber when any check is `review` or `warn`. Includes spend-cap headroom (`Cap headroom after this PO: Rp X.XM`) or excess line (`This PO exceeds the cap by Rp Y.YM`).
+**Atlas · Quantity Check** card — renders above the Authorize summary when ≥1 basket item fuzzy-matches a `FinnsSKU` and the ordered qty is ≥20% below `max(burnRate × 3d, par − onHand)`. Per-item rows: item name · "Ordered: X" · "Suggested: Y" · reason chip (e.g. "covers 3d at 4.2 kg/day burn rate") · **Accept** button · **✕** dismiss. **Accept all ✓** in the card header bulk-accepts every pending suggestion, updating item quantities in the basket live. Card collapses to a "All quantities reviewed · Atlas" pill once all rows are handled. Does not block Authorize — advisory only.
+
+**Atlas · Ready to Launch / Review Before Launch** banner — green when every policy check passes, amber when any check is `review` or `warn`. Includes spend-cap headroom (`Cap headroom after this PO: Rp X.XM`) or excess line (`This PO exceeds the cap by Rp Y.YM`).
 
 **Authorize Procurement summary card** — 7 rows:
 - Request name
@@ -2003,7 +2049,7 @@ A segmented control at the top of the left panel switches between 4 tabs:
 | **Activity** (default) | Event feed list, filterable by confidence / type / venue / category |
 | **Agents** | Roster: Atlas (no profile, just card) + A-01…A-05 with status + performance band |
 | **Policy** | Active rule list with template badges + trigger counts |
-| **Disputes** | Open + resolved dispute cards, priority dot |
+| **Disputes** | Two groups: **Open** (pending resolution) and **Resolved** (approved/credit-requested/escalated). Each open card shows dispute ID, PO ref, priority badge, reason, raised-by. Three actions: **Approve Payment** · **Request Credit Note ▼** (inline form) · **Escalate to Director →**. Actions mutate card state immediately — resolved cards show a status badge and move to the Resolved section. Runtime disputes auto-added from `finns-qc-failure` event; tab auto-selected on QC fail. `#dispute=PO-XXXX` hash deep-link highlights the matching card. |
 
 The selected tab reshapes both the left list and the center panel.
 
@@ -2165,7 +2211,9 @@ See § 7.5.
 | Policy template select | Picks the rule template |
 | Create Rule | Adds rule to active list |
 | Override decision | Manual override on a decision row |
-| Approve / Reject / Escalate dispute | Closes the dispute with that resolution |
+| Approve Payment | Closes dispute with payment approved. Logs `dispute-approve`. Card moves to Resolved, "✓ Payment approved" badge. |
+| Request Credit Note | Expands inline form (credit amount Rp + optional note). On submit: logs `dispute-reject` with `meta.creditAmount`. Card moves to Resolved, "↩ Credit requested" badge. |
+| Escalate to Director | Logs `dispute-escalate`, card moves to Resolved, "↑ Escalated" badge. |
 | Harden Policy — Set as Precedent | Locks the override as a permanent rule |
 | Resume Order (Dispute) | Navigates to Orders for the disputed PO |
 

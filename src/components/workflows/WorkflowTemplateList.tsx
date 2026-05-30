@@ -19,7 +19,7 @@ const PLAYBOOK_ICON: Record<PlaybookId, typeof Zap> = {
 };
 
 const PLAYBOOK_BADGE: Record<PlaybookId, { label: string; light: string; dark: string }> = {
-  'WF-STD': { label: 'Default',  light: 'bg-[#f4f6f0] text-[#6b7a54]', dark: 'bg-[#87986a]/15 text-[#a3b085]' },
+  'WF-STD': { label: 'Default',  light: 'bg-[#eafafa] text-[#2c9a9c]', dark: 'bg-[#4bbcbe]/15 text-[#82d3d5]' },
   'WF-RSH': { label: 'Urgent',   light: 'bg-amber-50 text-amber-700',  dark: 'bg-amber-500/15 text-amber-300' },
   'WF-REC': { label: 'Schedule', light: 'bg-blue-50 text-blue-700',    dark: 'bg-blue-500/15 text-blue-300' },
 };
@@ -87,11 +87,11 @@ export function WorkflowTemplateList({ isDark, selectedWorkflow, onSelectWorkflo
                 onClick={() => onSelectWorkflow(p.id)}
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${
                   active
-                    ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                    ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40' : 'bg-[#eafafa] border-[#4bbcbe]/40'
                     : isDark ? 'bg-[#2a2a2a] border-gray-700 hover:border-gray-600' : 'bg-white border-gray-200 hover:border-gray-300'
                 }`}>
                 <div className="flex items-center gap-2 mb-1.5">
-                  <Icon className={`h-3.5 w-3.5 ${active ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textMuted}`} />
+                  <Icon className={`h-3.5 w-3.5 ${active ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : t.textMuted}`} />
                   <span className={`text-xs font-semibold ${t.textPrimary}`}>{p.id} · {p.name}</span>
                   <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-bold ${isDark ? badge.dark : badge.light}`}>
                     {badge.label}
@@ -110,7 +110,7 @@ export function WorkflowTemplateList({ isDark, selectedWorkflow, onSelectWorkflo
                   </div>
                   <div>
                     <p className={`text-[8px] uppercase ${t.textMuted}`}>Savings</p>
-                    <p className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{p.savingsVsBaseline}%</p>
+                    <p className={`text-[10px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{p.savingsVsBaseline}%</p>
                   </div>
                 </div>
               </button>

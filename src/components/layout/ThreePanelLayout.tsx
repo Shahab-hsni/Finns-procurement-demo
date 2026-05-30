@@ -18,7 +18,7 @@ interface ThreePanelLayoutProps {
  * Right panel is a flex column so IntelligencePanel can manage its own scroll internally.
  */
 export function ThreePanelLayout({ left, center, right, isDark }: ThreePanelLayoutProps) {
-  const border = isDark ? 'border-gray-800' : 'border-[#e5e5e0]';
+  const border = isDark ? 'border-gray-800' : 'border-[#dddddd]';
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden">

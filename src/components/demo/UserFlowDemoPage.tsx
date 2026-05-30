@@ -185,14 +185,14 @@ export function UserFlowDemoPage({ theme }: UserFlowDemoPageProps) {
     bg:        isDark ? 'bg-[#1a1a1a]'   : 'bg-white',
     bgAlt:     isDark ? 'bg-[#141414]'   : 'bg-[#fafaf7]',
     surface:   isDark ? 'bg-[#2a2a2a]'   : 'bg-white',
-    border:    isDark ? 'border-gray-800': 'border-[#e5e5e0]',
-    textHead:  isDark ? 'text-white'     : 'text-[#0a0a0a]',
+    border:    isDark ? 'border-gray-800': 'border-[#dddddd]',
+    textHead:  isDark ? 'text-white'     : 'text-[#222222]',
     textBody:  isDark ? 'text-gray-300'  : 'text-gray-700',
     textMuted: isDark ? 'text-gray-500'  : 'text-gray-500',
     textDim:   isDark ? 'text-gray-600'  : 'text-gray-400',
-    sageBg:    isDark ? 'bg-[#87986a]/15': 'bg-[#f4f6f0]',
-    sageText:  isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]',
-    sageBorder:isDark ? 'border-[#87986a]/40' : 'border-[#87986a]/40',
+    sageBg:    isDark ? 'bg-[#4bbcbe]/15': 'bg-[#eafafa]',
+    sageText:  isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]',
+    sageBorder:isDark ? 'border-[#4bbcbe]/40' : 'border-[#4bbcbe]/40',
   };
 
   return (
@@ -277,9 +277,9 @@ function LeftRail({ isDark, t, activeChapter, chapters }: RailProps) {
         <div className={`mt-1 text-sm font-bold ${t.textHead}`}>
           Chapter {activeChapter.number} · {activeChapter.title}
         </div>
-        <div className={`mt-2 h-1 rounded-full ${isDark ? 'bg-gray-800' : 'bg-[#e5e5e0]'}`}>
+        <div className={`mt-2 h-1 rounded-full ${isDark ? 'bg-gray-800' : 'bg-[#dddddd]'}`}>
           <div
-            className="h-1 rounded-full bg-[#87986a] transition-all duration-500"
+            className="h-1 rounded-full bg-[#4bbcbe] transition-all duration-500"
             style={{ width: `${(activeChapter.number / chapters.length) * 100}%` }}
           />
         </div>
@@ -292,7 +292,7 @@ function LeftRail({ isDark, t, activeChapter, chapters }: RailProps) {
         </h3>
         <div className="relative">
           {/* connector line */}
-          <div className={`absolute left-[11px] top-1 bottom-1 w-px ${isDark ? 'bg-gray-800' : 'bg-[#e5e5e0]'}`} />
+          <div className={`absolute left-[11px] top-1 bottom-1 w-px ${isDark ? 'bg-gray-800' : 'bg-[#dddddd]'}`} />
           <ul className="space-y-1.5">
             {DAG_STAGES.map((stage) => {
               const isActive = activeStages.has(stage.id);
@@ -303,18 +303,18 @@ function LeftRail({ isDark, t, activeChapter, chapters }: RailProps) {
                   <div
                     className={`relative z-10 w-[22px] h-[22px] rounded-full border flex items-center justify-center shrink-0 transition-all duration-500 ${
                       isActive
-                        ? 'bg-[#87986a] border-[#87986a] shadow-[0_0_0_3px_rgba(135,152,106,0.2)]'
+                        ? 'bg-[#4bbcbe] border-[#4bbcbe] shadow-[0_0_0_3px_rgba(135,152,106,0.2)]'
                         : isCompleted
-                        ? 'bg-[#87986a]/30 border-[#87986a]/50'
+                        ? 'bg-[#4bbcbe]/30 border-[#4bbcbe]/50'
                         : isDark
                         ? 'bg-[#1a1a1a] border-gray-700'
-                        : 'bg-white border-[#e5e5e0]'
+                        : 'bg-white border-[#dddddd]'
                     }`}
                   >
                     {isActive ? (
                       <Icon className="h-2.5 w-2.5 text-white" />
                     ) : isCompleted ? (
-                      <CheckCircle2 className="h-3 w-3 text-[#87986a]" />
+                      <CheckCircle2 className="h-3 w-3 text-[#4bbcbe]" />
                     ) : (
                       <Circle className={`h-2 w-2 ${t.textDim}`} />
                     )}
@@ -377,7 +377,7 @@ function PageGroup({
             >
               <div
                 className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                  isActive ? 'bg-[#87986a]' : isDark ? 'bg-gray-700' : 'bg-[#e5e5e0]'
+                  isActive ? 'bg-[#4bbcbe]' : isDark ? 'bg-gray-700' : 'bg-[#dddddd]'
                 }`}
               />
               {p.label}
@@ -426,7 +426,7 @@ function Closing({ t, isDark }: { t: Record<string, string>; isDark: boolean }) 
     <footer className="mt-24 mb-12">
       <div className={`p-8 rounded-2xl border ${t.border} ${t.surface}`}>
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-full bg-[#87986a] flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-full bg-[#4bbcbe] flex items-center justify-center shrink-0">
             <CheckCircle2 className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -473,7 +473,7 @@ function ChapterSection({ chapter, isActive, t, isDark, registerRef }: ChapterSe
           className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold ${
             chapter.hitl
               ? 'bg-amber-500 text-white'
-              : 'bg-[#87986a] text-white'
+              : 'bg-[#4bbcbe] text-white'
           }`}
         >
           {chapter.number}
@@ -524,7 +524,7 @@ function PanelFrame({
     <div
       className={`relative rounded-lg border ${className} ${
         highlighted
-          ? `${t.sageBorder} ${isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]/60'} shadow-[0_0_0_3px_rgba(135,152,106,0.15)]`
+          ? `${t.sageBorder} ${isDark ? 'bg-[#4bbcbe]/10' : 'bg-[#eafafa]/60'} shadow-[0_0_0_3px_rgba(135,152,106,0.15)]`
           : `${t.border} ${t.surface}`
       }`}
     >
@@ -547,7 +547,7 @@ function Annotation({ text, t }: { text: string; t: Record<string, string> }) {
 }
 
 function Bar({ w, isDark }: { w: string; isDark: boolean }) {
-  return <div className={`h-1.5 rounded ${isDark ? 'bg-gray-700' : 'bg-[#e5e5e0]'}`} style={{ width: w }} />;
+  return <div className={`h-1.5 rounded ${isDark ? 'bg-gray-700' : 'bg-[#dddddd]'}`} style={{ width: w }} />;
 }
 
 // ── Chapter 1: Detection ───────────────────────────────────
@@ -557,7 +557,7 @@ function DetectionMockup({ t, isDark }: { t: Record<string, string>; isDark: boo
       {/* Workflows left panel */}
       <PanelFrame label="Workflows · Signals" highlighted t={t} isDark={isDark}>
         <div className="space-y-2">
-          <div className={`p-2 rounded border ${t.sageBorder} ${isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]'}`}>
+          <div className={`p-2 rounded border ${t.sageBorder} ${isDark ? 'bg-[#4bbcbe]/10' : 'bg-[#eafafa]'}`}>
             <div className="flex items-center gap-1.5 mb-1">
               <Radio className={`h-3 w-3 ${t.sageText} animate-pulse`} />
               <span className={`text-[10px] font-bold ${t.sageText}`}>Beef · Par-level breach</span>
@@ -584,7 +584,7 @@ function DetectionMockup({ t, isDark }: { t: Record<string, string>; isDark: boo
           <div className={`text-[9px] ${t.textMuted}`}>SEN cohort</div>
           <div className="flex gap-1">
             {[1, 2, 3].map((i) => (
-              <div key={i} className={`flex-1 h-8 rounded ${i <= 2 ? 'bg-[#87986a]/40' : `${isDark ? 'bg-gray-800' : 'bg-[#f4f6f0]'}`} flex items-center justify-center`}>
+              <div key={i} className={`flex-1 h-8 rounded ${i <= 2 ? 'bg-[#4bbcbe]/40' : `${isDark ? 'bg-gray-800' : 'bg-[#eafafa]'}`} flex items-center justify-center`}>
                 <Bot className={`h-3 w-3 ${i <= 2 ? t.sageText : t.textDim}`} />
               </div>
             ))}
@@ -602,7 +602,7 @@ function DetectionMockup({ t, isDark }: { t: Record<string, string>; isDark: boo
           </div>
           <div className="relative h-2 rounded-full bg-amber-500/20 overflow-hidden">
             <div className="absolute inset-y-0 left-0 bg-amber-500 rounded-full" style={{ width: '24%' }} />
-            <div className="absolute top-0 bottom-0 w-px bg-[#6b7a54]" style={{ left: '50%' }} />
+            <div className="absolute top-0 bottom-0 w-px bg-[#2c9a9c]" style={{ left: '50%' }} />
           </div>
           <div className={`text-[8px] ${t.textMuted}`}>Par: 50 kg · below threshold</div>
         </div>
@@ -687,7 +687,7 @@ function ApprovalMockup({ t, isDark }: { t: Record<string, string>; isDark: bool
                 <Bar w="80%" isDark={isDark} />
                 <Bar w="90%" isDark={isDark} />
               </div>
-              <div className="bg-[#87986a] rounded-md py-2 text-center text-[10px] font-bold text-white shadow-[0_0_0_4px_rgba(135,152,106,0.25)]">
+              <div className="bg-[#4bbcbe] rounded-md py-2 text-center text-[10px] font-bold text-white shadow-[0_0_0_4px_rgba(135,152,106,0.25)]">
                 <ThumbsUp className="h-3 w-3 inline mr-1" /> Approve &amp; Execute
               </div>
               <div className="text-center text-[9px] text-gray-400">Decline</div>
@@ -696,7 +696,7 @@ function ApprovalMockup({ t, isDark }: { t: Record<string, string>; isDark: bool
               <div className={`text-[8px] font-bold ${t.textDim}`}>STAGE 1</div>
               {DAG_STAGES.slice(0, 6).map((s) => (
                 <div key={s.id} className="flex items-center gap-1">
-                  <div className={`w-1.5 h-1.5 rounded-full ${s.id === 1 ? 'bg-amber-500 animate-pulse' : isDark ? 'bg-gray-700' : 'bg-[#e5e5e0]'}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full ${s.id === 1 ? 'bg-amber-500 animate-pulse' : isDark ? 'bg-gray-700' : 'bg-[#dddddd]'}`} />
                   <span className={`text-[7px] truncate ${s.id === 1 ? 'text-amber-600 font-bold' : t.textMuted}`}>{s.label}</span>
                 </div>
               ))}
@@ -741,16 +741,16 @@ function ExecutionMockup({ t, isDark }: { t: Record<string, string>; isDark: boo
                 <div
                   className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
                     completed && !current
-                      ? 'bg-[#87986a]/30'
+                      ? 'bg-[#4bbcbe]/30'
                       : current
-                      ? 'bg-[#87986a] shadow-[0_0_0_3px_rgba(135,152,106,0.25)]'
+                      ? 'bg-[#4bbcbe] shadow-[0_0_0_3px_rgba(135,152,106,0.25)]'
                       : isDark
                       ? 'bg-gray-800'
-                      : 'bg-[#f4f6f0]'
+                      : 'bg-[#eafafa]'
                   }`}
                 >
                   {completed && !current ? (
-                    <CheckCircle2 className="h-3 w-3 text-[#87986a]" />
+                    <CheckCircle2 className="h-3 w-3 text-[#4bbcbe]" />
                   ) : (
                     <Icon className={`h-3 w-3 ${current ? 'text-white' : t.textDim}`} />
                   )}
@@ -809,7 +809,7 @@ function TransitMockup({ t, isDark }: { t: Record<string, string>; isDark: boole
               const current = s.id === 11;
               return (
                 <div key={s.id} className="flex items-center gap-1.5">
-                  <div className={`w-1.5 h-1.5 rounded-full ${completed && !current ? 'bg-[#87986a]' : current ? 'bg-amber-500 animate-pulse' : isDark ? 'bg-gray-700' : 'bg-[#e5e5e0]'}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full ${completed && !current ? 'bg-[#4bbcbe]' : current ? 'bg-amber-500 animate-pulse' : isDark ? 'bg-gray-700' : 'bg-[#dddddd]'}`} />
                   <span className={`text-[9px] ${current ? 'text-amber-600 font-bold' : completed ? t.textBody : t.textDim}`}>{s.label}</span>
                 </div>
               );
@@ -853,7 +853,7 @@ function ImpactMockup({ t, isDark }: { t: Record<string, string>; isDark: boolea
   return (
     <div className="space-y-4">
       <div className={`p-4 rounded-lg border ${t.sageBorder} ${t.sageBg} flex items-center gap-3`}>
-        <div className="w-9 h-9 rounded-full bg-[#87986a] flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-full bg-[#4bbcbe] flex items-center justify-center shrink-0">
           <CheckCircle2 className="h-5 w-5 text-white" />
         </div>
         <div>
@@ -867,7 +867,7 @@ function ImpactMockup({ t, isDark }: { t: Record<string, string>; isDark: boolea
           return (
             <PanelFrame key={c.label} label={c.label} highlighted t={t} isDark={isDark}>
               <div className="flex items-start gap-2.5">
-                <div className={`w-7 h-7 rounded-lg ${isDark ? 'bg-[#87986a]/20' : 'bg-[#f4f6f0]'} flex items-center justify-center shrink-0`}>
+                <div className={`w-7 h-7 rounded-lg ${isDark ? 'bg-[#4bbcbe]/20' : 'bg-[#eafafa]'} flex items-center justify-center shrink-0`}>
                   <Icon className={`h-3.5 w-3.5 ${t.sageText}`} />
                 </div>
                 <div className="min-w-0">

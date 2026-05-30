@@ -443,6 +443,73 @@ function pickWorkflow(seed: number, hint?: 'rush' | 'recurring'): string {
   return            'WF-REC';
 }
 
+// ── 3-way match · item parser ────────────────────────────────────
+// Parses the Order's flat `items: string[]` into structured rows for
+// the Stage 5 receiving table. Format examples:
+//   "Yellowfin Tuna sashimi 8kg · ST"
+//   "Butter Anchor 24kg · BC + RC"
+//   "Bintang Beer cases · 90 BC · 54 SP · 36 RC"  ← no simple qty, handled as-is
+interface ParsedItem { name: string; qty: number; unit: string; raw: string }
+function parseOrderItems(items: string[]): ParsedItem[] {
+  return items.map(raw => {
+    const m = raw.match(/^(.*?)\s+(\d+(?:\.\d+)?)\s*(kg|L|pcs|btl|case|sack|units?)\b/i);
+    if (m) return { name: m[1].trim(), qty: parseFloat(m[2]), unit: m[3], raw };
+    // Fallback — couldn't parse a quantity; surface the raw string as name
+    return { name: raw.split('·')[0].trim(), qty: 0, unit: '', raw };
+  });
+}
+
+// ── A-03 Dispute Draft seeder ─────────────────────────────────────
+// Called when the Stage 5 QC Task Module saves with qc_outcome = 'fail'.
+// Seeds a WhatsApp-formatted dispute draft into the Source Bridge thread
+// so A-03's work is visible immediately and the admin only needs to
+// review, edit if needed, and tap Send.
+//
+// Idempotent — won't duplicate if the draft already exists.
+function seedDisputeDraft(order: Order, stageDraft: Record<string, string>): void {
+  const existing = readThread(order.id);
+  if (existing.some(m => m.kind === 'dispute-draft')) return;
+
+  const receiver = stageDraft['receiver'] ?? 'tim penerimaan';
+  // Build item lines — prefer per-item variance data if the 3-way match was filled in.
+  const parsed = parseOrderItems(order.items);
+  const itemLines = parsed
+    .slice(0, 4)
+    .map((it, i) => {
+      const recv = parseFloat(stageDraft[`item_${i}_received_qty`] ?? '') || null;
+      if (recv !== null && it.qty > 0 && recv < it.qty) {
+        return `• ${it.name}: dipesan ${it.qty} ${it.unit}, diterima ${recv} ${it.unit} (kurang ${(it.qty - recv).toFixed(1)} ${it.unit})`;
+      }
+      return `• ${it.name}${it.qty > 0 ? ` ${it.qty} ${it.unit}` : ''}`;
+    })
+    .join('\n');
+
+  const draftText = [
+    `Pak/Ibu,`,
+    ``,
+    `Mohon maaf, kami perlu melaporkan masalah terkait pesanan ${order.id} yang diterima hari ini oleh ${receiver}.`,
+    ``,
+    `Item bermasalah:`,
+    itemLines,
+    ``,
+    `Kondisi tidak memenuhi standar penerimaan kami. Mohon dikirimkan credit note kepada tim Finn's Procurement.`,
+    ``,
+    `Kami terbuka untuk koordinasi lebih lanjut via WhatsApp.`,
+    ``,
+    `Terima kasih,`,
+    `Finn's Procurement`,
+  ].join('\n');
+
+  appendMessage({
+    poId: order.id,
+    author: 'admin',
+    authorLabel: 'A-03 · Vendor Comms',
+    channel: 'whatsapp',
+    kind: 'dispute-draft',
+    text: draftText,
+  });
+}
+
 // ── Finn's seeded live orders ─────────────────────────────────────
 // Numeric `assignedAgent.id` keeps the legacy slot (mapped to A-NN by
 // LEGACY_AGENT_MAP). amount is IDR. dagStage uses the 5-stage range (0-4).
@@ -1052,6 +1119,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const [bridgeTarget, setBridgeTarget] = useState<{
     orderId: string; supplier: string; channel: BridgeChannel; message: string;
   } | null>(null);
+  // Keyed by poId — tracks the admin's inline edits to A-03's dispute
+  // draft before it's sent. Cleared on send or after payment confirmed.
+  const [disputeDraftEdits, setDisputeDraftEdits] = useState<Record<string, string>>({});
+  // Payment confirmation step — shown when admin clicks "Waive dispute — accept as-is".
+  // Active is per-bridge-session; resets when the bridge closes or order changes.
+  const [paymentConfirmActive,  setPaymentConfirmActive]  = useState(false);
+  const [paymentDueDate,        setPaymentDueDate]        = useState('');
+  const [paymentNotifyVendor,   setPaymentNotifyVendor]   = useState(true);
+  // Mandatory reason for waiving the QC dispute — required before Confirm Payment unlocks.
+  const [paymentWaiveReason,    setPaymentWaiveReason]    = useState('');
 
   // ── Audit Mode state ────────────────────────────────────────────────
   // Mirrors the Inventory + Suppliers expansion pattern. Audit Mode
@@ -1454,12 +1531,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           return next;
         });
       }
-      // QC failure → notify SuppliersPage trust panel
+      // QC failure → notify SuppliersPage + seed A-03 dispute draft + open Source Bridge
       if (stageIdx === 4 && stageDraft['qc_outcome'] === 'fail') {
         const order = ORDERS.find(o => o.id === orderId);
         window.dispatchEvent(new CustomEvent('finns-qc-failure', {
           detail: { orderId, supplier: order?.supplier ?? '', stage: 'Quality Check' },
         }));
+        if (order) {
+          seedDisputeDraft(order, stageDraft);
+          setBridgeTarget({ orderId, supplier: order.supplier, channel: 'whatsapp', message: '' });
+        }
       }
     }
     setChatMessages(prev => [...prev, {
@@ -1804,8 +1885,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     return () => document.removeEventListener('mousedown', close);
   }, [menuOpenId]);
 
-  // Close Source Bridge whenever the selected order changes
-  useEffect(() => { setBridgeTarget(null); }, [selectedOrder?.id]);
+  // Close Source Bridge and reset payment confirmation whenever the selected order changes
+  useEffect(() => {
+    setBridgeTarget(null);
+    setPaymentConfirmActive(false);
+  }, [selectedOrder?.id]);
 
   // ── Global select all toggle (Hick's Law: one checkbox) ──
   const allActionIds = actionOrders.map((o) => o.id);
@@ -1988,15 +2072,15 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       ? isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/8' : 'border-red-300/70 text-red-600 hover:bg-red-50/60'
       : order.actionKind === 'confirm-delivery'
       ? isDark ? 'border-blue-500/40 text-blue-400 hover:bg-blue-500/8' : 'border-blue-300/70 text-blue-600 hover:bg-blue-50/60'
-      : isDark ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]';
+      : isDark ? 'border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#eafafa]';
 
     return (
       <div
         onClick={(e) => toggleSelect(order.id, e.ctrlKey || e.metaKey)}
         className={`w-full text-left rounded-xl border cursor-pointer group transition-all duration-[350ms] relative shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${
-          isDone     ? (isDark ? 'bg-[#2a2a2a] border-gray-800 opacity-50' : 'bg-white border-[#e5e5e0] opacity-50') :
-          isSelected ? (isDark ? 'bg-[#87986a]/15 border-[#87986a]/50 ring-1 ring-[#87986a]/30' : 'bg-[#f4f6f0] border-[#87986a]/50 ring-1 ring-[#87986a]/20') :
-                       (isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#e5e5e0] hover:bg-[#f4f6f0]/40')
+          isDone     ? (isDark ? 'bg-[#2a2a2a] border-gray-800 opacity-50' : 'bg-white border-[#dddddd] opacity-50') :
+          isSelected ? (isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/50 ring-1 ring-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#4bbcbe]/50 ring-1 ring-[#4bbcbe]/20') :
+                       (isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#dddddd] hover:bg-[#eafafa]/40')
         }`}
       >
         {/* ── HEADER — status badge ──────────────────────────────── */}
@@ -2014,15 +2098,15 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === order.id ? null : order.id); }}
               className={`flex items-center justify-center w-5 h-5 rounded transition-colors ${
                 menuOpenId === order.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              } ${isDark ? 'hover:bg-gray-700 text-gray-500' : 'hover:bg-[#f4f6f0] text-gray-400'}`}
+              } ${isDark ? 'hover:bg-gray-700 text-gray-500' : 'hover:bg-[#eafafa] text-gray-400'}`}
             >
               <MoreHorizontal className="h-3 w-3" />
             </button>
             {/* Checkbox — needs-action only */}
             {order.group === 'needs-action' && !isDone && (
               <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
-                isSelected ? 'bg-[#87986a] border-[#87986a]'
-                  : isDark ? 'border-gray-700 opacity-0 group-hover:opacity-100' : 'border-[#e5e5e0] opacity-0 group-hover:opacity-100'
+                isSelected ? 'bg-[#4bbcbe] border-[#4bbcbe]'
+                  : isDark ? 'border-gray-700 opacity-0 group-hover:opacity-100' : 'border-[#dddddd] opacity-0 group-hover:opacity-100'
               }`}>
                 {isSelected && <Check className="h-2.5 w-2.5 text-white" />}
               </div>
@@ -2032,7 +2116,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               <div
                 onMouseDown={(e) => e.stopPropagation()}
                 className={`absolute right-0 top-6 z-50 w-44 rounded-xl border shadow-lg overflow-hidden ${
-                  isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0]'
+                  isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#dddddd]'
                 }`}
               >
                 {(() => {
@@ -2049,7 +2133,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     key={label}
                     onClick={(e) => { e.stopPropagation(); action(); }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-[10px] transition-colors ${
-                      isDark ? 'hover:bg-gray-800 text-gray-300' : 'hover:bg-[#f4f6f0] text-gray-700'
+                      isDark ? 'hover:bg-gray-800 text-gray-300' : 'hover:bg-[#eafafa] text-gray-700'
                     }`}
                   >
                     <Icon className="h-3 w-3 shrink-0" />
@@ -2065,7 +2149,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         <div className="px-3 pt-3 pb-3">
           {/* Supplier — vetted shield + name */}
           <div className="flex items-center gap-1 mb-1">
-            <ShieldCheck className={`h-3 w-3 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <ShieldCheck className={`h-3 w-3 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
             <p className={`text-xs font-semibold ${t.textPrimary}`}>{order.supplier}</p>
           </div>
           {/* Description */}
@@ -2082,7 +2166,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         </div>
 
         {/* ── FOOTER — agent attribution + action CTA ────────────── */}
-        <div className={`flex items-center gap-1.5 px-3 py-2 border-t ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+        <div className={`flex items-center gap-1.5 px-3 py-2 border-t ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
           {/* Workforce badge */}
           <span
             title={isManual
@@ -2091,7 +2175,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold border shrink-0 ${
               isManual
                 ? isDark ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-amber-50 border-amber-400/50 text-amber-700'
-                : isDark ? 'bg-[#87986a]/15 border-[#87986a]/30 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/30 text-[#6b7a54]'
+                : isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/30 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/30 text-[#2c9a9c]'
             }`}>
             {isManual ? <User className="h-2.5 w-2.5" /> : <Bot className="h-2.5 w-2.5" />}
             {isManual ? 'User' : `#${String(order.assignedAgent.id).padStart(2, '0')}`}
@@ -2166,10 +2250,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const auditLeftPanel = (
     <div className={`flex flex-col h-full ${!isDark ? 'bg-white' : ''}`}>
       {/* Header: title + count + Minimize2 */}
-      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <History className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <History className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
             <div>
               <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Orders Audit</h2>
               <p className={`text-[10px] ${t.textMuted}`}>
@@ -2200,8 +2284,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               <button key={chip.id} onClick={() => setAuditStatusFilter(chip.id)}
                 className={`px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors ${
                   active
-                    ? isDark ? 'bg-[#87986a]/20 text-[#a3b085] border border-[#87986a]/30' : 'bg-[#f4f6f0] text-[#6b7a54] border border-[#dbe3ce]'
-                    : isDark ? 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700' : 'bg-gray-100 text-gray-500 border border-[#e5e5e0] hover:bg-gray-200'
+                    ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border border-[#4bbcbe]/30' : 'bg-[#eafafa] text-[#2c9a9c] border border-[#c4eef0]'
+                    : isDark ? 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700' : 'bg-gray-100 text-gray-500 border border-[#dddddd] hover:bg-gray-200'
                 }`}>
                 {chip.label} <span className="ml-1 opacity-60">{count}</span>
               </button>
@@ -2211,15 +2295,15 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       </div>
 
       {/* Secondary filter row */}
-      <div className={`px-4 py-2 border-b flex items-center gap-2 flex-wrap ${isDark ? 'border-gray-800 bg-[#181818]' : 'border-[#e5e5e0] bg-[#fafaf7]'}`}>
+      <div className={`px-4 py-2 border-b flex items-center gap-2 flex-wrap ${isDark ? 'border-gray-800 bg-[#181818]' : 'border-[#dddddd] bg-[#fafaf7]'}`}>
         <FilterIcon className={`h-3 w-3 ${t.textMuted}`} />
         {/* Date range presets */}
-        <div className={`flex items-center rounded-md border overflow-hidden ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'}`}>
+        <div className={`flex items-center rounded-md border overflow-hidden ${isDark ? 'border-gray-700' : 'border-[#dddddd]'}`}>
           {DATE_PRESETS.map(p => (
             <button key={p.id} onClick={() => setAuditDateRange(p.id)}
               className={`px-2 py-1 text-[9px] font-medium transition-colors ${
                 auditDateRange === p.id
-                  ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                  ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                   : isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
               }`}>
               {p.label}
@@ -2229,27 +2313,27 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
         {/* Supplier dropdown */}
         <select value={auditSupplierFilter ?? ''} onChange={(e) => setAuditSupplierFilter(e.target.value || null)}
-          className={`text-[10px] h-7 px-2 rounded-md border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300' : 'bg-white border-[#e5e5e0] text-gray-700'}`}>
+          className={`text-[10px] h-7 px-2 rounded-md border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300' : 'bg-white border-[#dddddd] text-gray-700'}`}>
           <option value="">All suppliers</option>
           {auditSupplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
         {/* Stage band */}
         <select value={auditStageFilter} onChange={(e) => setAuditStageFilter(e.target.value as AuditStage)}
-          className={`text-[10px] h-7 px-2 rounded-md border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300' : 'bg-white border-[#e5e5e0] text-gray-700'}`}>
+          className={`text-[10px] h-7 px-2 rounded-md border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300' : 'bg-white border-[#dddddd] text-gray-700'}`}>
           {STAGE_BANDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
 
         {/* Agent dropdown */}
         <select value={auditAgentFilter ?? ''} onChange={(e) => setAuditAgentFilter(e.target.value ? Number(e.target.value) : null)}
-          className={`text-[10px] h-7 px-2 rounded-md border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300' : 'bg-white border-[#e5e5e0] text-gray-700'}`}>
+          className={`text-[10px] h-7 px-2 rounded-md border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300' : 'bg-white border-[#dddddd] text-gray-700'}`}>
           <option value="">All agents</option>
           {auditAgentOptions.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
         </select>
 
         {/* Workflow template dropdown */}
         <select value={auditWorkflowFilter ?? ''} onChange={(e) => setAuditWorkflowFilter(e.target.value || null)}
-          className={`text-[10px] h-7 px-2 rounded-md border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300' : 'bg-white border-[#e5e5e0] text-gray-700'}`}>
+          className={`text-[10px] h-7 px-2 rounded-md border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300' : 'bg-white border-[#dddddd] text-gray-700'}`}>
           <option value="">All workflows</option>
           {workflowTemplates.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
         </select>
@@ -2264,10 +2348,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       </div>
 
       {/* Toolbar: Select All + view toggle + bulk actions */}
-      <div className={`px-4 py-2 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'} flex items-center gap-3`}>
+      <div className={`px-4 py-2 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'} flex items-center gap-3`}>
         <button onClick={toggleAuditSelectAll} className="flex items-center gap-1.5">
           {allAuditSelected
-            ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
             : <Square className={`h-3.5 w-3.5 ${t.textMuted}`} />}
           <span className={`text-[10px] font-medium ${t.textMuted}`}>
             {auditSelected.size > 0 ? `${auditSelected.size} selected` : 'Select All'}
@@ -2275,11 +2359,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         </button>
 
         {/* View toggle */}
-        <div className={`flex items-center rounded-lg border ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'} ml-auto`}>
+        <div className={`flex items-center rounded-lg border ${isDark ? 'border-gray-700' : 'border-[#dddddd]'} ml-auto`}>
           <button onClick={() => setAuditView('table')} title="Table view"
             className={`flex items-center justify-center w-7 h-6 rounded-l-lg transition-colors ${
               auditView === 'table'
-                ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                 : isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
             }`}>
             <List className="h-3.5 w-3.5" />
@@ -2287,7 +2371,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <button onClick={() => setAuditView('grid')} title="Grid view"
             className={`flex items-center justify-center w-7 h-6 rounded-r-lg transition-colors ${
               auditView === 'grid'
-                ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                 : isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
             }`}>
             <LayoutGrid className="h-3.5 w-3.5" />
@@ -2334,13 +2418,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   <tr key={o.id} onClick={() => openFromAudit(o.id)}
                     className={`cursor-pointer border-b transition-colors duration-200 ${
                       liveSelected
-                        ? isDark ? 'bg-[#87986a]/10 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#87986a]/20'
-                        : isDark ? 'border-gray-800/50 hover:bg-gray-800/50' : 'border-gray-100 hover:bg-[#f4f6f0]'
+                        ? isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#4bbcbe]/20'
+                        : isDark ? 'border-gray-800/50 hover:bg-gray-800/50' : 'border-gray-100 hover:bg-[#eafafa]'
                     }`}>
                     <td className="py-2 px-3">
                       <button onClick={(e) => { e.stopPropagation(); toggleAuditRow(o.id); }}>
                         {isChecked
-                          ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                          ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                           : <Square className={`h-3.5 w-3.5 ${t.textMuted}`} />}
                       </button>
                     </td>
@@ -2399,13 +2483,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               return (
                 <div key={o.id} onClick={() => openFromAudit(o.id)}
                   className={`p-3 rounded-xl border cursor-pointer transition-colors ${
-                    isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#e5e5e0] hover:bg-[#f4f6f0]/40'
+                    isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#dddddd] hover:bg-[#eafafa]/40'
                   }`}>
                   <div className="flex items-start justify-between mb-2">
                     <span className={`text-[11px] font-mono font-semibold ${t.textPrimary}`}>{o.id}</span>
                     <button onClick={(e) => { e.stopPropagation(); toggleAuditRow(o.id); }}>
                       {isChecked
-                        ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                        ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                         : <Square className={`h-3.5 w-3.5 ${t.textMuted}`} />}
                     </button>
                   </div>
@@ -2425,7 +2509,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                           ? o.status === 'disputed' ? 'bg-red-500' :
                             o.status === 'cancelled' ? 'bg-gray-400' :
                             o.status === 'completed' ? 'bg-green-500' :
-                            'bg-[#87986a]'
+                            'bg-[#4bbcbe]'
                           : isDark ? 'bg-gray-700' : 'bg-gray-200'
                       }`} />
                     ))}
@@ -2493,9 +2577,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       };
       return (
         <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <div className="flex items-center gap-2 mb-0.5">
-              <Sparkles className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+              <Sparkles className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
               <span className={`text-sm font-semibold ${t.textPrimary}`}>Quick Journey</span>
               <span className={`ml-auto inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
                 isDark ? `${pill.darkBg} ${pill.darkText}` : `${pill.lightBg} ${pill.lightText}`
@@ -2505,7 +2589,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {/* Header card — amount + stage + description */}
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#dddddd]'}`}>
               <div className="flex items-baseline justify-between mb-1">
                 <span className={`text-lg font-bold ${t.textPrimary}`}>{fmtIdrShort(selectedOrder.amount)}</span>
                 <span className={`text-[10px] ${t.textMuted}`}>Stage {selectedOrder.dagStage + 1}/5</span>
@@ -2544,7 +2628,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     // Terminal completed orders → every stage filled sage.
                     const filled = isTerminal ? true : i < eff;
                     const current = !isTerminal && i === eff;
-                    const dotClass = filled ? 'bg-[#87986a]'
+                    const dotClass = filled ? 'bg-[#4bbcbe]'
                                    : current ? 'bg-amber-500 animate-pulse'
                                              : isDark ? 'bg-gray-700' : 'bg-gray-200';
                     const textClass = (filled || current) ? t.textPrimary : t.textMuted;
@@ -2569,7 +2653,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     : isDisputed                ? doDispute
                     : isOnHold                  ? doDispute
                     : doOpenFullWorkspace}
-              className="w-full h-8 text-[11px] bg-[#87986a] hover:bg-[#6b7a54] text-white">
+              className="w-full h-8 text-[11px] bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white">
               {isCompleted || isCancelled
                 ? <RefreshCw className="h-3 w-3 mr-1.5" />
                 : <Maximize2 className="h-3 w-3 mr-1.5" />}
@@ -2598,9 +2682,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     // No order selected — macro insights.
     return (
       <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
-        <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+        <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
           <div className="flex items-center gap-2 mb-0.5">
-            <TrendingUp className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+            <TrendingUp className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
             <span className={`text-sm font-semibold ${t.textPrimary}`}>Operations Insights</span>
           </div>
           <p className={`text-[10px] ${t.textMuted}`}>A-04 · scoped to current filters</p>
@@ -2608,24 +2692,24 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Headline stats */}
           <div className="grid grid-cols-2 gap-2">
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#dddddd]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Processed</p>
               <p className={`text-lg font-bold ${t.textPrimary}`}>{auditInsights.totalCount}</p>
               <p className={`text-[10px] ${t.textMuted}`}>{fmtIdrShort(auditInsights.totalSpend)} spend</p>
             </div>
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#dddddd]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>On-time</p>
               <p className={`text-lg font-bold ${isDark ? 'text-green-400' : 'text-green-700'}`}>{auditInsights.onTimePct}%</p>
               <p className={`text-[10px] ${t.textMuted}`}>{auditInsights.completedCount} completed</p>
             </div>
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#dddddd]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Avg cycle</p>
               <p className={`text-lg font-bold ${t.textPrimary}`}>{auditInsights.avgCycle}h</p>
               <p className={`text-[10px] ${t.textMuted}`}>PO → Delivered</p>
             </div>
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#dddddd]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Savings</p>
-              <p className={`text-lg font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(auditInsights.totalSaved)}</p>
+              <p className={`text-lg font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{fmtIdrShort(auditInsights.totalSaved)}</p>
               <p className={`text-[10px] ${t.textMuted}`}>recovered</p>
             </div>
           </div>
@@ -2634,23 +2718,23 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               much of the filtered set ran through the auto-progress engine
               without admin clicks. */}
           <div className="grid grid-cols-2 gap-2">
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#dddddd]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Labor mix</p>
               <div className="flex items-baseline gap-1 mt-0.5">
-                <span className={`text-lg font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{auditInsights.autoCount}</span>
+                <span className={`text-lg font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{auditInsights.autoCount}</span>
                 <span className={`text-[10px] ${t.textMuted}`}>Auto</span>
                 <span className={`text-[10px] ${t.textMuted}`}>·</span>
                 <span className={`text-lg font-bold ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>{auditInsights.manualCount}</span>
                 <span className={`text-[10px] ${t.textMuted}`}>Manual</span>
               </div>
               <div className={`mt-1.5 flex h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                <div className="bg-[#87986a]" style={{ width: `${auditInsights.totalCount ? (auditInsights.autoCount / auditInsights.totalCount) * 100 : 0}%` }} />
+                <div className="bg-[#4bbcbe]" style={{ width: `${auditInsights.totalCount ? (auditInsights.autoCount / auditInsights.totalCount) * 100 : 0}%` }} />
                 <div className="bg-amber-500" style={{ width: `${auditInsights.totalCount ? (auditInsights.manualCount / auditInsights.totalCount) * 100 : 0}%` }} />
               </div>
             </div>
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#e5e5e0]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#fafaf7] border-[#dddddd]'}`}>
               <p className={`text-[9px] uppercase tracking-wide ${t.textMuted}`}>Auto-cleared</p>
-              <p className={`text-lg font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{auditInsights.autoCleared}</p>
+              <p className={`text-lg font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{auditInsights.autoCleared}</p>
               <p className={`text-[10px] ${t.textMuted}`}>zero admin clicks</p>
             </div>
           </div>
@@ -2669,7 +2753,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                       isDark ? `${pill.darkBg} ${pill.darkText}` : `${pill.lightBg} ${pill.lightText}`
                     }`}>{pill.label}</span>
                     <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}>
-                      <div className="h-full bg-[#87986a]" style={{ width: `${pct}%` }} />
+                      <div className="h-full bg-[#4bbcbe]" style={{ width: `${pct}%` }} />
                     </div>
                     <span className={`text-[10px] w-8 text-right ${t.textMuted}`}>{count}</span>
                   </div>
@@ -2686,7 +2770,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 {auditInsights.topSuppliers.map(s => (
                   <div key={s.name} onClick={() => setAuditSupplierFilter(s.name)}
                     className={`p-2 rounded-lg border cursor-pointer transition-colors ${
-                      isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#e5e5e0] hover:bg-[#f4f6f0]'
+                      isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#dddddd] hover:bg-[#eafafa]'
                     }`}>
                     <div className="flex items-center justify-between">
                       <span className={`text-[11px] font-semibold ${t.textPrimary} truncate`}>{s.name}</span>
@@ -2728,7 +2812,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
   const leftPanel = (
     <div className={`flex flex-col h-full min-h-0 ${!isDark ? 'bg-white' : ''}`}>
       {/* Header + global actions (fixed) */}
-      <div className={`shrink-0 px-4 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={`shrink-0 px-4 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
         <div className="flex items-center justify-between">
           <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Orders</h2>
           <div className="flex items-center gap-2">
@@ -2750,7 +2834,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
         {/* Search trigger */}
         <button onClick={() => setShowCmd(true)}
-          className={`mt-2 w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[10px] transition-colors ${isDark ? 'border-gray-700 bg-[#2a2a2a] text-gray-500 hover:bg-gray-800' : 'border-[#e5e5e0] bg-white text-gray-400 hover:bg-[#f4f6f0]'}`}>
+          className={`mt-2 w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[10px] transition-colors ${isDark ? 'border-gray-700 bg-[#2a2a2a] text-gray-500 hover:bg-gray-800' : 'border-[#dddddd] bg-white text-gray-400 hover:bg-[#eafafa]'}`}>
           <Search className="h-3 w-3" />
           <span>Search orders</span>
           <span className={`ml-auto font-mono text-[9px] px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-500'}`}>⌘K</span>
@@ -2761,7 +2845,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       <div className="flex-1 min-h-0 overflow-y-auto">
 
       {/* ── Needs Your Action (Priority Feed) ── */}
-      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
         {/* Card Header */}
         <div className="flex items-center justify-between mb-4">
           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
@@ -2776,8 +2860,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             </span>
             {actionOrders.length > 0 && (
               <button onClick={toggleGlobalSelect}
-                className={`flex items-center gap-1 text-[9px] font-medium transition-colors ${isDark ? 'text-[#a3b085] hover:text-white' : 'text-[#6b7a54] hover:text-[#4a5a3a]'}`}>
-                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${allSelected ? 'bg-[#87986a] border-[#87986a]' : (isDark ? 'border-gray-600' : 'border-gray-400')}`}>
+                className={`flex items-center gap-1 text-[9px] font-medium transition-colors ${isDark ? 'text-[#82d3d5] hover:text-white' : 'text-[#2c9a9c] hover:text-[#4a5a3a]'}`}>
+                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${allSelected ? 'bg-[#4bbcbe] border-[#4bbcbe]' : (isDark ? 'border-gray-600' : 'border-gray-400')}`}>
                   {allSelected && <Check className="h-2 w-2 text-white" />}
                 </div>
                 {allSelected ? 'Deselect' : 'Select all'}
@@ -2788,7 +2872,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         {/* Card Body */}
         <div className="space-y-2">
           {actionOrders.length === 0 ? (
-            <div className={`flex items-center gap-3 p-3 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-green-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+            <div className={`flex items-center gap-3 p-3 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-green-500/20' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
               <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center shrink-0">
                 <Check className="h-3 w-3 text-white" />
               </div>
@@ -2812,7 +2896,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-500 text-white'}`}>
               {autoOrders.length}
             </span>
-            <Bot className={`h-3 w-3 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <Bot className={`h-3 w-3 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
           </div>
         </div>
         {/* Card Body */}
@@ -2879,7 +2963,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 isInteractive
                   ? 'cursor-pointer ' + (manualMode
                       ? isDark ? 'hover:bg-amber-500/5' : 'hover:bg-amber-50/40'
-                      : isDark ? 'hover:bg-[#87986a]/8' : 'hover:bg-[#f4f6f0]/70')
+                      : isDark ? 'hover:bg-[#4bbcbe]/8' : 'hover:bg-[#eafafa]/70')
                   : ''
               }`}
               onClick={isInteractive ? handleOpen : undefined}
@@ -2893,8 +2977,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     className={`w-5 h-5 rounded-full flex items-center justify-center border-2 shrink-0 transition-colors ${
                       done
                         ? manualMode
-                          ? 'bg-[#87986a] border-[#87986a] hover:bg-amber-500 hover:border-amber-500'
-                          : 'bg-[#87986a] border-[#87986a] hover:ring-2 hover:ring-[#87986a]/40'
+                          ? 'bg-[#4bbcbe] border-[#4bbcbe] hover:bg-amber-500 hover:border-amber-500'
+                          : 'bg-[#4bbcbe] border-[#4bbcbe] hover:ring-2 hover:ring-[#4bbcbe]/40'
                       : current  ? 'bg-amber-500 border-amber-500 hover:bg-amber-600'
                       :            isDark ? 'border-amber-500/40 hover:bg-amber-500/20' : 'border-amber-400/50 hover:bg-amber-100'
                     }`}
@@ -2905,17 +2989,17 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   </button>
                 ) : (
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 shrink-0 ${
-                    done    ? 'bg-[#87986a] border-[#87986a]' :
-                    current ? (isDark ? 'bg-[#87986a]/20 border-[#87986a]' : 'bg-[#f4f6f0] border-[#87986a]') :
-                              (isDark ? 'border-gray-700' : 'border-[#e5e5e0]')
+                    done    ? 'bg-[#4bbcbe] border-[#4bbcbe]' :
+                    current ? (isDark ? 'bg-[#4bbcbe]/20 border-[#4bbcbe]' : 'bg-[#eafafa] border-[#4bbcbe]') :
+                              (isDark ? 'border-gray-700' : 'border-[#dddddd]')
                   }`}>
                     {done ? <Check className="h-2.5 w-2.5 text-white" />
-                          : current ? <div className="w-1.5 h-1.5 rounded-full bg-[#87986a] animate-pulse" />
+                          : current ? <div className="w-1.5 h-1.5 rounded-full bg-[#4bbcbe] animate-pulse" />
                           : null}
                   </div>
                 )}
                 {i < DAG_STAGES.length - 1 && (
-                  <div className={`w-0.5 min-h-[16px] ${isExpanded ? 'min-h-[48px]' : ''} ${done ? 'bg-[#87986a]' : (isDark ? 'bg-gray-700' : 'bg-gray-300')}`} />
+                  <div className={`w-0.5 min-h-[16px] ${isExpanded ? 'min-h-[48px]' : ''} ${done ? 'bg-[#4bbcbe]' : (isDark ? 'bg-gray-700' : 'bg-gray-300')}`} />
                 )}
               </div>
 
@@ -2923,7 +3007,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               <div className="flex-1 min-w-0 pb-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-xs ${
-                    done    ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') :
+                    done    ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') :
                     current ? `font-semibold ${t.textPrimary}` :
                               t.textMuted
                   }`}>{s.label}</span>
@@ -2951,7 +3035,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                           ? 'bg-amber-500 text-white hover:bg-amber-600'
                         : manualMode
                           ? isDark ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                        : isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e8eddf]'
+                        : isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5]'
                       }`}
                     >
                       <ActionIcon className="h-2.5 w-2.5" /> {actionVerb}
@@ -2986,7 +3070,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 )}
                 {/* Expanded agent sub-step (only when not in interactive mode) */}
                 {hasSubStep && isExpanded && !isInteractive && (
-                  <div className={`mt-1 px-2 py-1.5 rounded-md text-[10px] ${isDark ? 'bg-[#87986a]/10 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+                  <div className={`mt-1 px-2 py-1.5 rounded-md text-[10px] ${isDark ? 'bg-[#4bbcbe]/10 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>
                     {s.agentStep}
                   </div>
                 )}
@@ -3003,7 +3087,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     const orderMode = getMode(order.id);
     const agentActive = orderMode === 'auto';
     return (
-      <div className={`inline-flex items-stretch rounded-full border ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
+      <div className={`inline-flex items-stretch rounded-full border ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-[#dddddd] bg-[#eafafa]'}`}>
         <button
           onClick={() => setMode(order.id, 'auto')}
           title={agentActive
@@ -3011,7 +3095,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             : `Resume ${agentLabel(order.assignedAgent)}`}
           className={`flex items-center gap-1.5 pl-2.5 pr-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
             agentActive
-              ? 'bg-[#87986a] text-white shadow-sm'
+              ? 'bg-[#4bbcbe] text-white shadow-sm'
               : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'
           }`}
         >
@@ -3052,16 +3136,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <p className={`text-sm ${t.textMuted} mt-1`}>{journeyOrder.supplier} · {journeyOrder.humanAction}</p>
           {journeyOrder.saving && (
             <div className="flex gap-4 mt-8">
-              <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                 <span className="text-xl font-bold text-green-400">{fmtIdrShort(journeyOrder.saving.cost)}</span>
                 <p className={`text-[10px] mt-1 ${t.textMuted}`}>Cost saved</p>
               </div>
-              <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                 <span className={`text-xl font-bold ${t.textPrimary}`}>{journeyOrder.saving.time}</span>
                 <p className={`text-[10px] mt-1 ${t.textMuted}`}>Labor saved</p>
               </div>
-              <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
-                <span className={`text-xl font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>12</span>
+              <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+                <span className={`text-xl font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>12</span>
                 <p className={`text-[10px] mt-1 ${t.textMuted}`}>DAG stages completed</p>
               </div>
             </div>
@@ -3081,16 +3165,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           </div>
           <h2 className={`text-lg font-bold ${t.textPrimary}`}>Batch Finalized — {batchSummary.total} Orders</h2>
           <div className="flex gap-4 mt-8">
-            <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+            <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
               <span className="text-xl font-bold text-green-400">{fmtIdrShort(batchSummary.savings)}</span>
               <p className={`text-[10px] mt-1 ${t.textMuted}`}>Total saved</p>
             </div>
-            <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+            <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
               <span className={`text-xl font-bold ${t.textPrimary}`}>{batchSummary.hours}h</span>
               <p className={`text-[10px] mt-1 ${t.textMuted}`}>Labor saved</p>
             </div>
-            <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
-              <span className={`text-xl font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{batchSummary.total}</span>
+            <div className={`p-5 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <span className={`text-xl font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{batchSummary.total}</span>
               <p className={`text-[10px] mt-1 ${t.textMuted}`}>Orders processed</p>
             </div>
           </div>
@@ -3114,7 +3198,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <div className={`flex items-start justify-between gap-3 p-3 rounded-xl border ${
             isManual
               ? isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50/70 border-amber-400/40'
-              : isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
+              : isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
           }`}>
             <div className="min-w-0">
               {/* Row 1 — identity */}
@@ -3130,10 +3214,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   : sb.tone === 'amber'
                     ? isDark ? 'bg-amber-500/15 text-amber-300 border-amber-500/40' : 'bg-amber-50 text-amber-700 border-amber-300/60'
                   : sb.tone === 'sage'
-                    ? isDark ? 'bg-[#87986a]/15 text-[#a3b085] border-[#87986a]/40' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#87986a]/40'
+                    ? isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] border-[#4bbcbe]/40' : 'bg-[#eafafa] text-[#2c9a9c] border-[#4bbcbe]/40'
                   : sb.tone === 'blue'
                     ? isDark ? 'bg-blue-500/15 text-blue-300 border-blue-500/40' : 'bg-blue-50 text-blue-700 border-blue-300/60'
-                    : isDark ? 'bg-[#2a2a2a] text-gray-300 border-gray-700' : 'bg-[#f4f6f0] text-gray-600 border-[#e5e5e0]';
+                    : isDark ? 'bg-[#2a2a2a] text-gray-300 border-gray-700' : 'bg-[#eafafa] text-gray-600 border-[#dddddd]';
                   return (
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${cls}`}>
                       {sb.pulse && (
@@ -3151,7 +3235,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 <span
                   title="AI is locked to the vetted internal directory · Walled Garden"
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
-                    isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                    isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
                   }`}>
                   <ShieldCheck className="h-2.5 w-2.5" />
                   {selectedOrder.supplier}
@@ -3189,15 +3273,15 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   }}
                   title={`Carbon-copy ${selectedOrder.id} into a new request — lands on Step 4 (Review) for one-click authorize`}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm border ${
-                    isDark ? 'bg-[#1f2a1f] border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/15'
-                          : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e8eddf]'
+                    isDark ? 'bg-[#1d3535] border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/15'
+                          : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#d6f4f5]'
                   }`}>
                   <RefreshCw className="h-3.5 w-3.5" /> Re-order
                 </button>
               )}
               <LaborSwitch order={selectedOrder} />
               <button onClick={() => setSelectedIds(new Set())}
-                className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#f4f6f0]'}`}>
+                className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#eafafa]'}`}>
                 ← All
               </button>
             </div>
@@ -3205,7 +3289,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
           {/* Manual driver banner */}
           {isManual && (
-            <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-amber-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-amber-500/20' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-full bg-amber-500 flex items-center justify-center shrink-0 mt-0.5">
                   <Hand className="h-3.5 w-3.5 text-white" />
@@ -3219,7 +3303,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   </p>
                   <button
                     onClick={() => setMode(selectedOrder.id, 'auto')}
-                    className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-[#6b7a54] hover:text-[#4a5a3a] transition-colors"
+                    className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-[#2c9a9c] hover:text-[#4a5a3a] transition-colors"
                   >
                     <PlayCircle className="h-3 w-3" /> Resume Auto →
                   </button>
@@ -3252,7 +3336,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 <h4 className={`text-[10px] font-semibold mb-2 ${t.sectionLabel}`}>ITEMS</h4>
                 <div className="space-y-1.5">
                   {selectedOrder.items.map((item, i) => (
-                    <div key={i} className={`px-4 py-2.5 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f4f6f0]'}`}>
+                    <div key={i} className={`px-4 py-2.5 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#eafafa]'}`}>
                       <span className={`text-sm ${t.textPrimary}`}>{item}</span>
                     </div>
                   ))}
@@ -3284,9 +3368,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 // Terminal closed-out
                 if (completedIds.has(selectedOrder.id)) {
                   return (
-                    <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#87986a]/10 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                    <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                       <div className="flex items-center gap-2.5">
-                        <CircleCheck className={`h-5 w-5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                        <CircleCheck className={`h-5 w-5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                         <div>
                           <p className={`text-xs font-bold ${t.textPrimary}`}>Closed out</p>
                           <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
@@ -3301,7 +3385,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 // Resolve-issue
                 if (live === 'resolve-issue') {
                   return (
-                    <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-red-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+                    <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-red-500/20' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                       <div className="flex items-start gap-3 mb-4">
                         <div className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5">
                           <AlertTriangle className="h-3.5 w-3.5 text-white" />
@@ -3310,7 +3394,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                           <p className={`text-xs font-semibold ${t.textPrimary}`}>Delivery couldn't be completed</p>
                           <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>{selectedOrder.failureReason}</p>
                           {selectedOrder.negotiating && (
-                            <p className={`text-[10px] mt-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{selectedOrder.agentAgent} is handling this. Second attempt at 10:00 AM.</p>
+                            <p className={`text-[10px] mt-1 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{selectedOrder.agentAgent} is handling this. Second attempt at 10:00 AM.</p>
                           )}
                         </div>
                       </div>
@@ -3327,7 +3411,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   return (
                     <div className="space-y-2">
                       <button onClick={() => executeAction(selectedOrder.id)}
-                        className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold bg-[#87986a] hover:bg-[#6b7a54] text-white transition-colors">
+                        className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white transition-colors">
                         <ThumbsUp className="h-4 w-4" /> Approve &amp; Execute
                       </button>
                       <div className="flex justify-center">
@@ -3393,9 +3477,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 // just a status that says the agent has it.
                 const isAdvancing = actionTakenIds.has(selectedOrder.id) || stageNow < 4;
                 return (
-                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                     <div className="flex items-center gap-2.5">
-                      <Bot className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                      <Bot className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                       <div className="min-w-0 flex-1">
                         <p className={`text-xs font-bold ${t.textPrimary}`}>
                           {selectedOrder.agentAgent} · Auto
@@ -3417,12 +3501,12 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   outlined sage chips so they don't look like ghost text.
                   View reasoning is now available on the live journey too
                   (was previously audit-mode-only). */}
-              <div className={`flex items-center justify-center gap-2 pt-3 mt-1 border-t flex-wrap ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+              <div className={`flex items-center justify-center gap-2 pt-3 mt-1 border-t flex-wrap ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
                 {stage >= 3 && (
                   <button
                     title="Track this shipment"
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${
-                      isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'
+                      isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-700 hover:bg-[#eafafa]'
                     }`}>
                     <MapPin className="h-3 w-3" /> Track
                   </button>
@@ -3431,7 +3515,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   onClick={() => setBridgeTarget({ orderId: selectedOrder.id, supplier: selectedOrder.supplier, channel: 'whatsapp', message: '' })}
                   title="Open the Source Bridge thread with this supplier"
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${
-                    isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'
+                    isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-700 hover:bg-[#eafafa]'
                   }`}>
                   <MessageCircle className="h-3 w-3" /> Message supplier
                 </button>
@@ -3439,7 +3523,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   onClick={() => setReasoningForId(selectedOrder.id)}
                   title="See the full reasoning chain — agent narrative, per-stage logic, action log."
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${
-                    isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'
+                    isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-700 hover:bg-[#eafafa]'
                   }`}>
                   <History className="h-3 w-3" /> View reasoning
                 </button>
@@ -3448,7 +3532,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     onClick={() => openDraftSheet({ kind: 'reorder', sourceOrderId: selectedOrder.id })}
                     title="Carbon-copy this PO into a new request"
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold transition-colors ${
-                      isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e6ecda]'
+                      isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#d6f4f5]'
                     }`}>
                     <RefreshCw className="h-3 w-3" /> Repeat order
                   </button>
@@ -3460,13 +3544,13 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             {stage >= 3 && (
               <div className={`${t.cardPanel} space-y-3`}>
                 <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Live Tracking</h3>
-                <div className={`h-20 rounded-xl border flex items-center justify-center ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-[#f4f6f0] border-[#e5e5e0]'}`}>
+                <div className={`h-20 rounded-xl border flex items-center justify-center ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-[#eafafa] border-[#dddddd]'}`}>
                   <div className="flex items-center gap-3">
                     <div className="space-y-1.5">
                       <div className={`h-2 w-24 rounded-full animate-pulse ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`} />
                       <div className={`h-2 w-16 rounded-full animate-pulse ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`} />
                     </div>
-                    <MapPin className={`h-5 w-5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'} animate-bounce`} />
+                    <MapPin className={`h-5 w-5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'} animate-bounce`} />
                   </div>
                 </div>
               </div>
@@ -3511,7 +3595,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               <p className={`text-xs ${t.textMuted}`}>{batchSummary.total} orders · ${batchSummary.value.toLocaleString()} total</p>
             </div>
             <button onClick={() => setSelectedIds(new Set())}
-              className={`text-[10px] px-2.5 py-1 rounded-md ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#f4f6f0]'}`}>
+              className={`text-[10px] px-2.5 py-1 rounded-md ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#eafafa]'}`}>
               Exit batch
             </button>
           </div>
@@ -3519,7 +3603,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           {/* Chunked summary cards */}
           <div className="grid grid-cols-3 gap-3">
             {batchSummary.approve > 0 && (
-              <div className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${isDark ? 'bg-[#2a2a2a] border-green-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <div className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${isDark ? 'bg-[#2a2a2a] border-green-500/20' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                 <div className="w-7 h-7 rounded-full bg-green-500 flex items-center justify-center">
                   <ThumbsUp className="h-3.5 w-3.5 text-white" />
                 </div>
@@ -3528,7 +3612,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               </div>
             )}
             {batchSummary.confirm > 0 && (
-              <div className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${isDark ? 'bg-[#2a2a2a] border-blue-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <div className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${isDark ? 'bg-[#2a2a2a] border-blue-500/20' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                 <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center">
                   <CircleCheck className="h-3.5 w-3.5 text-white" />
                 </div>
@@ -3537,7 +3621,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               </div>
             )}
             {batchSummary.resolve > 0 && (
-              <div className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${isDark ? 'bg-[#2a2a2a] border-red-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <div className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${isDark ? 'bg-[#2a2a2a] border-red-500/20' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                 <div className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center">
                   <AlertTriangle className="h-3.5 w-3.5 text-white" />
                 </div>
@@ -3554,7 +3638,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               {batchOrders.map((order) => {
                 const meta = order.actionKind ? ACTION_META[order.actionKind] : null;
                 return (
-                  <div key={order.id} className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+                  <div key={order.id} className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                     <div className="flex items-center gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
@@ -3627,7 +3711,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 }
                 onNavigate?.('request');
               }}
-              className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] active:scale-[0.98] transition-all shadow-sm"
+              className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] active:scale-[0.98] transition-all shadow-sm"
             >
               <Plus className="h-3.5 w-3.5" />
               New Order
@@ -3643,10 +3727,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               </div>
               <div className="space-y-2">
                 {scheduledEntries.map(entry => (
-                  <div key={entry.id} className={`flex items-center gap-3 p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+                  <div key={entry.id} className={`flex items-center gap-3 p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                       entry.cadence === 'one-off'
-                        ? isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                        ? isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                         : isDark ? 'bg-blue-500/15 text-blue-300' : 'bg-blue-50 text-blue-700'
                     }`}>
                       {entry.cadence === 'one-off' ? <FileUp className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
@@ -3690,7 +3774,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               { label: 'Savings This Week', value: fmtIdrShort(ORDERS.reduce((s, o) => s + (o.saving?.cost ?? 0), 0)), accent: true, sub: 'agent-driven' },
               { label: 'Agent-Managed', value: `${autoOrders.length}`, accent: false, sub: `of ${ORDERS.length} orders` },
             ].map(({ label, value, accent, sub }) => (
-              <div key={label} className={`p-4 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <div key={label} className={`p-4 rounded-xl border text-center ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                 <span className={`text-lg font-bold ${accent ? 'text-green-400' : t.textPrimary}`}>{value}</span>
                 <p className={`text-[10px] mt-1 font-medium ${t.textPrimary}`}>{label}</p>
                 <p className={`text-[9px] mt-0.5 ${t.textMuted}`}>{sub}</p>
@@ -3699,16 +3783,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           </div>
 
           {/* Labor Mix — Human-led vs Agent-led active orders */}
-          <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+          <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <Activity className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                <Activity className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                 <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Labor Mix</h3>
                 <span className={`text-[10px] ${t.textMuted}`}>· {activeOrders.length} active orders</span>
               </div>
               <div className="flex items-center gap-3 text-[10px]">
                 <span className="inline-flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-sm bg-[#87986a]" />
+                  <span className="w-2 h-2 rounded-sm bg-[#4bbcbe]" />
                   <span className={t.textMuted}>Agent-led</span>
                   <span className={`font-bold ${t.textPrimary}`}>{agentLed} ({agentLedPct}%)</span>
                 </span>
@@ -3721,7 +3805,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             </div>
             {/* Mix bar */}
             <div className={`flex h-2 rounded-full overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
-              <div className="bg-[#87986a] h-full transition-all" style={{ width: `${agentLedPct}%` }} />
+              <div className="bg-[#4bbcbe] h-full transition-all" style={{ width: `${agentLedPct}%` }} />
               <div className="bg-amber-500 h-full transition-all" style={{ width: `${humanLedPct}%` }} />
             </div>
             {humanLed > 0 && (
@@ -3740,11 +3824,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 return (
                   <button key={order.id} onClick={() => toggleSelect(order.id, false)}
                     className={`w-full text-left p-4 rounded-xl border transition-all duration-200 ${
-                      isImminent ? (isDark ? 'bg-[#2a2a2a] border-green-500/30 hover:bg-green-500/5' : 'bg-white border-green-400/50 hover:bg-[#f4f6f0]')
-                                 : (isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#e5e5e0] hover:bg-[#f4f6f0]')
+                      isImminent ? (isDark ? 'bg-[#2a2a2a] border-green-500/30 hover:bg-green-500/5' : 'bg-white border-green-400/50 hover:bg-[#eafafa]')
+                                 : (isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#dddddd] hover:bg-[#eafafa]')
                     }`}>
                     <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]'}`}>
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isDark ? 'bg-[#4bbcbe]/10' : 'bg-[#eafafa]'}`}>
                         <Truck className={`h-4 w-4 ${isImminent ? 'text-green-500' : (isDark ? 'text-blue-400' : 'text-blue-600')}`} />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -3881,18 +3965,23 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       : isDark ? 'text-blue-300'  : 'text-blue-700';
     const thread = bridgeThread;
     const acctMgrName = bridgeQuoteContext?.runtime.quoteFrom?.split(' ·')[0] ?? bridgeTarget.supplier;
+    // Detect a pending dispute draft in the thread.
+    const disputeDraft = thread.find(m => m.kind === 'dispute-draft');
+    const draftText = disputeDraft
+      ? (disputeDraftEdits[bridgeTarget.orderId] ?? disputeDraft.text)
+      : '';
     return (
     <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
       {/* Header */}
-      <div className={`shrink-0 p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={`shrink-0 p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
         <div className="flex items-center gap-2 mb-0.5">
           <button
             onClick={() => setBridgeTarget(null)}
-            className={`flex items-center justify-center w-5 h-5 rounded transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-500' : 'hover:bg-[#f4f6f0] text-gray-400'}`}
+            className={`flex items-center justify-center w-5 h-5 rounded transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-500' : 'hover:bg-[#eafafa] text-gray-400'}`}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
           </button>
-          <Lock className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+          <Lock className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
           <span className={`text-sm font-semibold ${t.textPrimary}`}>Source Bridge</span>
         </div>
         <p className={`text-xs ${t.textMuted} pl-7`}>
@@ -3901,25 +3990,25 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       </div>
 
       {/* Channel selector — WhatsApp / Email (Bali rule: no Telegram). */}
-      <div className={`shrink-0 px-4 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-        <div className={`flex rounded-lg border overflow-hidden ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'}`}>
+      <div className={`shrink-0 px-4 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
+        <div className={`flex rounded-lg border overflow-hidden ${isDark ? 'border-gray-700' : 'border-[#dddddd]'}`}>
           <button
             onClick={() => setBridgeTarget(b => b ? { ...b, channel: 'whatsapp' } : b)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold transition-colors ${
               channel === 'whatsapp'
                 ? 'bg-[#25D366] text-white'
-                : isDark ? 'bg-[#2a2a2a] text-gray-400 hover:bg-gray-800' : 'bg-white text-gray-500 hover:bg-[#f4f6f0]'
+                : isDark ? 'bg-[#2a2a2a] text-gray-400 hover:bg-gray-800' : 'bg-white text-gray-500 hover:bg-[#eafafa]'
             }`}
           >
             <MessageCircle className="h-3 w-3" /> WhatsApp
           </button>
-          <div className={`w-px shrink-0 ${isDark ? 'bg-gray-700' : 'bg-[#e5e5e0]'}`} />
+          <div className={`w-px shrink-0 ${isDark ? 'bg-gray-700' : 'bg-[#dddddd]'}`} />
           <button
             onClick={() => setBridgeTarget(b => b ? { ...b, channel: 'email' } : b)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold transition-colors ${
               channel === 'email'
                 ? 'bg-blue-600 text-white'
-                : isDark ? 'bg-[#2a2a2a] text-gray-400 hover:bg-gray-800' : 'bg-white text-gray-500 hover:bg-[#f4f6f0]'
+                : isDark ? 'bg-[#2a2a2a] text-gray-400 hover:bg-gray-800' : 'bg-white text-gray-500 hover:bg-[#eafafa]'
             }`}
           >
             <Send className="h-3 w-3" /> Email
@@ -3939,27 +4028,68 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           const fromAdmin = msg.author === 'admin';
           const msgChannelLabel = msg.channel === 'whatsapp' ? 'WhatsApp' : 'Email';
           const initials = msg.authorLabel.split(' ').slice(0, 2).map(s => s[0]).join('').toUpperCase();
-          const isInbound = msg.kind === 'inbound-quote';
-          const isSystem  = msg.kind === 'po-sent';
+          const isInbound    = msg.kind === 'inbound-quote';
+          const isSystem     = msg.kind === 'po-sent';
+          const isDraftMsg   = msg.kind === 'dispute-draft';
           const timeLabel = new Date(msg.sentAt).toLocaleString('en-US', {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
           });
+
           if (isSystem) {
             return (
               <div key={msg.id} className="flex justify-center">
                 <div className={`px-2.5 py-1 rounded-full text-[9px] font-semibold ${
-                  isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                  isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                 }`}>
                   {msg.text} · {timeLabel}
                 </div>
               </div>
             );
           }
+
+          // Dispute draft — editable card attributed to A-03
+          if (isDraftMsg) {
+            return (
+              <div key={msg.id} className={`rounded-xl border p-3 space-y-2 ${
+                isDark ? 'bg-amber-500/8 border-amber-500/20' : 'bg-amber-50 border-amber-200/70'
+              }`}>
+                {/* A-03 attribution header */}
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
+                    isDark ? 'bg-amber-500/20' : 'bg-amber-100'
+                  }`}>
+                    <Bot className="h-3 w-3 text-amber-600" />
+                  </div>
+                  <span className={`text-[9px] font-bold uppercase tracking-wide ${
+                    isDark ? 'text-amber-400' : 'text-amber-700'
+                  }`}>
+                    A-03 · Vendor Comms · Draft
+                  </span>
+                  <span className={`ml-auto text-[9px] ${t.textMuted}`}>Edit before sending</span>
+                </div>
+                {/* Editable draft body */}
+                <textarea
+                  value={draftText}
+                  onChange={e => setDisputeDraftEdits(prev => ({
+                    ...prev,
+                    [bridgeTarget!.orderId]: e.target.value,
+                  }))}
+                  rows={9}
+                  className={`w-full rounded-lg px-3 py-2 text-[11px] leading-relaxed border resize-none outline-none font-mono ${
+                    isDark
+                      ? 'bg-[#2a2a2a] border-gray-700 text-gray-100 focus:border-amber-500/50'
+                      : 'bg-white border-[#dddddd] text-gray-800 focus:border-amber-400/60'
+                  }`}
+                />
+              </div>
+            );
+          }
+
           return (
             <div key={msg.id} className={`flex items-start gap-2 ${fromAdmin ? 'flex-row-reverse' : ''}`}>
               <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold ${
                 fromAdmin
-                  ? isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                  ? isDark ? 'bg-[#4bbcbe]/30 text-[#82d3d5]' : 'bg-[#4bbcbe]/20 text-[#2c9a9c]'
                   : isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-700'
               }`}>
                 {fromAdmin ? 'You' : initials}
@@ -3967,12 +4097,12 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               <div className={`flex-1 min-w-0 ${fromAdmin ? 'flex flex-col items-end' : ''}`}>
                 <div className={`max-w-[88%] p-2.5 rounded-lg text-[11px] leading-relaxed ${
                   fromAdmin
-                    ? 'rounded-tr-sm ' + (isDark ? 'bg-[#87986a]/20 text-gray-100' : 'bg-[#f4f6f0] text-gray-800')
+                    ? 'rounded-tr-sm ' + (isDark ? 'bg-[#4bbcbe]/20 text-gray-100' : 'bg-[#eafafa] text-gray-800')
                     : 'rounded-tl-sm ' + (isDark ? 'bg-[#2a2a2a] text-gray-200' : 'bg-gray-100 text-gray-800')
                 }`}>
                   {isInbound && (
                     <div className={`text-[9px] font-bold uppercase tracking-wide mb-1 ${
-                      isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                      isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                     }`}>
                       Quote · proof of source
                     </div>
@@ -3988,57 +4118,254 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         })}
       </div>
 
-      {/* Compose — pinned bottom. Sending appends to the thread; the
-          panel stays open so the user can continue the conversation. */}
-      <div className={`shrink-0 p-3 border-t space-y-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-        <textarea
-          value={bridgeTarget.message}
-          onChange={(e) => setBridgeTarget(b => b ? { ...b, message: e.target.value } : b)}
-          placeholder={`Message ${bridgeTarget.supplier} via ${channelLabel}…`}
-          rows={2}
-          className={`w-full rounded-xl px-3 py-2 text-xs outline-none border resize-none leading-relaxed ${
-            isDark
-              ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#87986a]/50'
-              : 'bg-white border-[#e5e5e0] placeholder:text-gray-400 focus:border-[#87986a]/50'
-          }`}
-        />
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f4f6f0]'}`}>
-          <Lock className={`h-2.5 w-2.5 shrink-0 ${channelText}`} />
-          <p className={`text-[9px] ${t.textMuted}`}>
-            Routed via Finn's Gateway → {channelLabel} · encrypted
-          </p>
-        </div>
-        <button
-          onClick={() => {
-            const text = bridgeTarget.message.trim();
-            if (!text) return;
-            // Append to thread store + log action. Panel stays open.
-            appendMessage({
-              poId: bridgeTarget.orderId,
-              author: 'admin',
-              authorLabel: 'You',
-              channel,
-              kind: 'reply',
-              text,
-            });
-            logUserAction({
-              kind: 'po-message-supplier',
-              entity: { type: 'po', id: bridgeTarget.orderId },
-              summary: `Messaged ${bridgeTarget.supplier} re: ${bridgeTarget.orderId} via ${channelLabel} · ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`,
-              details: text,
-              meta: { channel, supplier: bridgeTarget.supplier },
-            });
-            setBridgeTarget(b => b ? { ...b, message: '' } : b);
-            toast.success(`Sent via ${channelLabel}`, {
-              description: `${acctMgrName} · ${bridgeTarget.supplier}`,
-            });
-          }}
-          disabled={!bridgeTarget.message.trim()}
-          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-white ${channelColor} ${channelHover}`}
-        >
-          <Send className="h-3.5 w-3.5" />
-          Send via {channelLabel}
-        </button>
+      {/* Footer — payment confirm step → dispute CTAs → normal compose */}
+      <div className={`shrink-0 p-3 border-t space-y-2 ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
+        {paymentConfirmActive ? (() => {
+          const formattedDue = paymentDueDate
+            ? new Date(paymentDueDate + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+            : '—';
+          const previewMsg = `Untuk ${bridgeTarget.orderId} — pembayaran akan kami proses sebelum ${formattedDue}. Terima kasih atas pengertiannya.\nFinn's Procurement`;
+          return (
+            <div className="space-y-2">
+              <div className={`rounded-xl border p-3 space-y-3 ${
+                isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
+              }`}>
+                {/* Title */}
+                <div className="flex items-center gap-1.5">
+                  <CircleCheck className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+                  <span className={`text-xs font-semibold ${t.textPrimary}`}>Confirm Payment</span>
+                  <span className={`ml-auto text-[10px] font-mono ${t.textMuted}`}>{bridgeTarget.orderId}</span>
+                </div>
+                {/* Due date */}
+                <div>
+                  <label className={`text-[11px] font-semibold block mb-1.5 ${t.textPrimary}`}>
+                    Payment due by
+                  </label>
+                  <input
+                    type="date"
+                    value={paymentDueDate}
+                    onChange={e => setPaymentDueDate(e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs border outline-none transition-colors ${
+                      isDark
+                        ? 'bg-[#2a2a2a] border-gray-700 text-white focus:border-[#4bbcbe]/60'
+                        : 'bg-white border-[#dddddd] text-gray-800 focus:border-[#4bbcbe]/60'
+                    }`}
+                  />
+                </div>
+                {/* Mandatory waive reason */}
+                <div>
+                  <label className={`text-[11px] font-semibold block mb-1.5 ${t.textPrimary}`}>
+                    Reason for waiving dispute <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={paymentWaiveReason}
+                    onChange={e => setPaymentWaiveReason(e.target.value)}
+                    placeholder="e.g. Packaging damage only — product quality intact. Agreed with vendor verbally."
+                    className={`w-full rounded-lg px-3 py-2 text-xs border outline-none resize-none leading-relaxed transition-colors ${
+                      isDark
+                        ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-600 focus:border-amber-500/50'
+                        : 'bg-white border-[#dddddd] placeholder:text-gray-400 focus:border-amber-400/60'
+                    }`}
+                  />
+                  {!paymentWaiveReason.trim() && (
+                    <p className={`text-[9px] mt-1 ${isDark ? 'text-amber-400/70' : 'text-amber-600/80'}`}>
+                      Required — this is logged to the audit trail.
+                    </p>
+                  )}
+                </div>
+                {/* Notify toggle */}
+                <div className="flex items-center justify-between">
+                  <span className={`text-[11px] font-semibold ${t.textPrimary}`}>
+                    Notify supplier via WhatsApp
+                  </span>
+                  <button
+                    onClick={() => setPaymentNotifyVendor(v => !v)}
+                    className={`w-8 h-4 rounded-full transition-colors relative shrink-0 ${
+                      paymentNotifyVendor ? 'bg-[#25D366]' : isDark ? 'bg-gray-700' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${
+                      paymentNotifyVendor ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+                {/* WhatsApp message preview */}
+                {paymentNotifyVendor && (
+                  <div className={`rounded-lg px-3 py-2 space-y-1 ${
+                    isDark ? 'bg-[#2a2a2a] border border-gray-800' : 'bg-white border border-[#dddddd]'
+                  }`}>
+                    <span className={`text-[9px] font-bold uppercase tracking-wide ${
+                      isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
+                    }`}>Preview</span>
+                    <p className={`text-[10px] leading-relaxed whitespace-pre-line ${t.textMuted}`}>
+                      {previewMsg}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {/* Actions */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPaymentConfirmActive(false)}
+                  className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    isDark ? 'text-gray-400 hover:bg-gray-800 hover:text-gray-200' : 'text-gray-500 hover:bg-[#eafafa]'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!paymentDueDate || !paymentWaiveReason.trim()}
+                  onClick={() => {
+                    if (paymentNotifyVendor) {
+                      appendMessage({
+                        poId: bridgeTarget.orderId,
+                        author: 'admin',
+                        authorLabel: 'You',
+                        channel: 'whatsapp',
+                        kind: 'reply',
+                        text: previewMsg,
+                      });
+                    }
+                    // Remove the dispute draft
+                    const updatedThread = readThread(bridgeTarget.orderId).filter(m => m.kind !== 'dispute-draft');
+                    setThread(bridgeTarget.orderId, updatedThread);
+                    setDisputeDraftEdits(prev => {
+                      const next = { ...prev };
+                      delete next[bridgeTarget.orderId];
+                      return next;
+                    });
+                    logUserAction({
+                      kind: 'po-payment-approve',
+                      entity: { type: 'po', id: bridgeTarget.orderId },
+                      summary: `Dispute waived · payment approved for ${bridgeTarget.orderId} · due ${formattedDue}${paymentNotifyVendor ? ' · supplier notified via WhatsApp' : ''}`,
+                      details: paymentWaiveReason.trim(),
+                      meta: { supplier: bridgeTarget.supplier, dueDate: paymentDueDate, notified: paymentNotifyVendor, waiveReason: paymentWaiveReason.trim() },
+                    });
+                    toast.success('Dispute waived · payment approved', {
+                      description: `${bridgeTarget.supplier} · due ${formattedDue}${paymentNotifyVendor ? ' · notified via WhatsApp' : ''}`,
+                    });
+                    setPaymentConfirmActive(false);
+                    setBridgeTarget(null);
+                  }}
+                  className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all text-white bg-[#4bbcbe] hover:bg-[#2c9a9c] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Confirm Payment
+                </button>
+              </div>
+            </div>
+          );
+        })() : disputeDraft ? (
+          <>
+            {/* Routing note */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#eafafa]'}`}>
+              <Lock className={`h-2.5 w-2.5 shrink-0 ${channelText}`} />
+              <p className={`text-[9px] ${t.textMuted}`}>
+                Routed via Finn's Gateway → WhatsApp · encrypted
+              </p>
+            </div>
+            {/* Primary: send the dispute */}
+            <button
+              onClick={() => {
+                const textToSend = draftText.trim();
+                if (!textToSend) return;
+                // Replace the draft message with a sent reply in the thread.
+                const updatedThread = readThread(bridgeTarget.orderId).map(m =>
+                  m.kind === 'dispute-draft'
+                    ? { ...m, kind: 'reply' as const, text: textToSend, authorLabel: 'You' }
+                    : m
+                );
+                setThread(bridgeTarget.orderId, updatedThread);
+                // Clear the draft edit buffer.
+                setDisputeDraftEdits(prev => {
+                  const next = { ...prev };
+                  delete next[bridgeTarget.orderId];
+                  return next;
+                });
+                logUserAction({
+                  kind: 'po-dispute-send',
+                  entity: { type: 'po', id: bridgeTarget.orderId },
+                  summary: `Sent dispute to ${bridgeTarget.supplier} re: ${bridgeTarget.orderId} via WhatsApp`,
+                  details: textToSend,
+                  meta: { channel: 'whatsapp', supplier: bridgeTarget.supplier },
+                });
+                toast.success('Dispute sent via WhatsApp', {
+                  description: `${bridgeTarget.supplier} · ${bridgeTarget.orderId} · credit note requested`,
+                });
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-all text-white bg-[#25D366] hover:bg-[#1ea952]"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Send Dispute via WhatsApp
+            </button>
+            {/* Secondary: opens the waive-dispute confirmation step */}
+            <button
+              onClick={() => {
+                const d = new Date();
+                d.setDate(d.getDate() + 7);
+                setPaymentDueDate(d.toISOString().slice(0, 10));
+                setPaymentNotifyVendor(true);
+                setPaymentWaiveReason('');
+                setPaymentConfirmActive(true);
+              }}
+              className={`w-full text-center text-[11px] transition-colors ${
+                isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              Waive dispute — accept as-is
+            </button>
+          </>
+        ) : (
+          <>
+            <textarea
+              value={bridgeTarget.message}
+              onChange={(e) => setBridgeTarget(b => b ? { ...b, message: e.target.value } : b)}
+              placeholder={`Message ${bridgeTarget.supplier} via ${channelLabel}…`}
+              rows={2}
+              className={`w-full rounded-xl px-3 py-2 text-xs outline-none border resize-none leading-relaxed ${
+                isDark
+                  ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#4bbcbe]/50'
+                  : 'bg-white border-[#dddddd] placeholder:text-gray-400 focus:border-[#4bbcbe]/50'
+              }`}
+            />
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#eafafa]'}`}>
+              <Lock className={`h-2.5 w-2.5 shrink-0 ${channelText}`} />
+              <p className={`text-[9px] ${t.textMuted}`}>
+                Routed via Finn's Gateway → {channelLabel} · encrypted
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                const text = bridgeTarget.message.trim();
+                if (!text) return;
+                appendMessage({
+                  poId: bridgeTarget.orderId,
+                  author: 'admin',
+                  authorLabel: 'You',
+                  channel,
+                  kind: 'reply',
+                  text,
+                });
+                logUserAction({
+                  kind: 'po-message-supplier',
+                  entity: { type: 'po', id: bridgeTarget.orderId },
+                  summary: `Messaged ${bridgeTarget.supplier} re: ${bridgeTarget.orderId} via ${channelLabel} · ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`,
+                  details: text,
+                  meta: { channel, supplier: bridgeTarget.supplier },
+                });
+                setBridgeTarget(b => b ? { ...b, message: '' } : b);
+                toast.success(`Sent via ${channelLabel}`, {
+                  description: `${acctMgrName} · ${bridgeTarget.supplier}`,
+                });
+              }}
+              disabled={!bridgeTarget.message.trim()}
+              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-white ${channelColor} ${channelHover}`}
+            >
+              <Send className="h-3.5 w-3.5" />
+              Send via {channelLabel}
+            </button>
+          </>
+        )}
       </div>
     </div>
     );
@@ -4046,9 +4373,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
   const rightPanel = bridgeTarget ? bridgePanel : (
     <div className={`flex flex-col h-full ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
-      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
         <div className="flex items-center gap-2 mb-0.5">
-          <Sparkles className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+          <Sparkles className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
           <span className={`text-sm font-semibold ${t.textPrimary}`}>Atlas</span>
           <div className="ml-auto w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
         </div>
@@ -4069,11 +4396,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           && getMode(selectedOrder.id) === 'auto'
           && openStage.stageIdx < effectiveStage(selectedOrder)
           && !isBatch && (
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/10 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
               <div className="flex items-center gap-1.5 mb-1.5">
-                <Lock className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
-                <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                <Lock className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+                <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                   Immutable Record · Stage {openStage.stageIdx + 1}
                 </span>
               </div>
@@ -4103,9 +4430,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           const focusModule = TASK_MODULES[focusIdx];
           const focusDag = DAG_STAGES[focusIdx];
           return (
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             {/* Standby header */}
-            <div className={`p-3 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-amber-500/20' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+            <div className={`p-3 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-amber-500/20' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
               <div className="flex items-start gap-2.5">
                 <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center shrink-0 mt-0.5">
                   <PauseCircle className="h-3 w-3 text-white" />
@@ -4117,7 +4444,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   </p>
                   <button
                     onClick={() => setMode(order.id, 'auto')}
-                    className={`mt-2 inline-flex items-center gap-1 text-[10px] font-semibold transition-colors ${isDark ? 'text-[#a3b085] hover:text-white' : 'text-[#6b7a54] hover:text-[#4a5a3a]'}`}
+                    className={`mt-2 inline-flex items-center gap-1 text-[10px] font-semibold transition-colors ${isDark ? 'text-[#82d3d5] hover:text-white' : 'text-[#2c9a9c] hover:text-[#4a5a3a]'}`}
                   >
                     <PlayCircle className="h-2.5 w-2.5" /> Resume Auto →
                   </button>
@@ -4126,10 +4453,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             </div>
 
             {/* Copilot stage-aware hint — explicit "I noticed you're handling Stage X" */}
-            <div className={`mt-3 p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+            <div className={`mt-3 p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
               <div className="flex items-center gap-1.5 mb-1.5">
-                <Lightbulb className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
-                <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                <Lightbulb className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+                <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                   Copilot Suggestion
                 </span>
               </div>
@@ -4148,7 +4475,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
             {/* Touched-stages audit trail */}
             {touched.length > 0 && (
-              <div className={`mt-3 p-3 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f4f6f0]'}`}>
+              <div className={`mt-3 p-3 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#eafafa]'}`}>
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <User className={`h-3 w-3 ${t.textMuted}`} />
                   <span className={`text-[9px] font-semibold uppercase tracking-wide ${t.textMuted}`}>
@@ -4175,7 +4502,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
         {/* ── Digital Twin Peek (new supplier) ── */}
         {selectedOrder?.isNewSupplier && selectedOrder.digitalTwin && !isBatch && (
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <div className="flex items-center gap-2 mb-2">
               <Gauge className={`h-3.5 w-3.5 ${isDark ? 'text-purple-400' : 'text-purple-600'}`} />
               <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>DIGITAL TWIN SIMULATION</span>
@@ -4207,10 +4534,10 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               })
             : null;
           const channelTone = runtime.quoteChannel === 'whatsapp'
-            ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
+            ? isDark ? 'text-[#82d3d5]' : 'text-[#25D366]'
             : isDark ? 'text-blue-300' : 'text-blue-700';
           return (
-            <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+            <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
               <div className="flex items-center gap-2 mb-2">
                 <MessageCircle className={`h-3.5 w-3.5 ${channelTone}`} />
                 <span className={`text-[10px] font-semibold uppercase tracking-wide ${channelTone}`}>
@@ -4242,7 +4569,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           <AgentCTA
             isDark={isDark}
             forceMode={getMode(selectedOrder.id)}
-            className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}
+            className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}
             agentLabel={selectedOrder.agentAgent}
             reasoning={selectedOrder.agentReasoning}
             autoExecutionNote={
@@ -4255,7 +4582,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
         {/* ── Single: Manual notes (Phase 4l) ── */}
         {selectedOrder && !isBatch && (
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <ManualNotes
               isDark={isDark}
               type="po"
@@ -4267,7 +4594,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
         {/* ── Single: Embedded Finance ── */}
         {selectedOrder?.financeInsight && !isBatch && (
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <div className="flex items-center gap-2 mb-2">
               <DollarSign className={`h-3.5 w-3.5 ${isDark ? 'text-green-400' : 'text-green-600'}`} />
               <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>EMBEDDED FINANCE</span>
@@ -4284,9 +4611,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
         {/* ── Batch: Macro Intelligence (Rule of Three) ── */}
         {isBatch && (
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <div className="flex items-center gap-2 mb-3">
-              <ShieldCheck className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+              <ShieldCheck className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
               <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>BATCH LOGIC SUMMARY</span>
             </div>
 
@@ -4314,7 +4641,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   color: batchSummary.resolve > 0 ? (isDark ? 'text-amber-400' : 'text-amber-600') : (isDark ? 'text-green-400' : 'text-green-600'),
                 },
               ].map(({ icon: Icon, title, text, color }) => (
-                <div key={title} className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+                <div key={title} className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon className={`h-3.5 w-3.5 ${color}`} />
                     <span className={`text-[10px] font-semibold ${t.textPrimary}`}>{title}</span>
@@ -4328,9 +4655,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
         {/* Batch ROI */}
         {isBatch && (
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <div className="flex items-center gap-2 mb-3">
-              <Activity className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+              <Activity className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
               <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>BATCH ROI ESTIMATE</span>
             </div>
             <div className="space-y-1.5">
@@ -4349,7 +4676,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
         )}
 
         {/* Context questions — always 3 */}
-        <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+        <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
           <h3 className={`text-[10px] font-semibold mb-2 ${t.sectionLabel}`}>
             {isBatch ? 'BATCH INSIGHTS' : selectedOrder ? `INSIGHTS FOR ${selectedOrder.id}` : 'ASK ATLAS'}
           </h3>
@@ -4357,7 +4684,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             {contextQuestions.map((q, i) => (
               <button key={i}
                 onClick={() => { setChatMessages((prev) => [...prev, { from: 'user', text: q }]); setTimeout(() => setChatMessages((prev) => [...prev, { from: 'atlas', text: "Analyzing now — recommendation coming shortly." }]), 800); }}
-                className={`w-full text-left text-[10px] px-2.5 py-2 rounded-lg border transition-colors ${isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800 text-gray-300' : 'bg-white border-[#e5e5e0] hover:bg-[#f4f6f0] text-gray-700'}`}>
+                className={`w-full text-left text-[10px] px-2.5 py-2 rounded-lg border transition-colors ${isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800 text-gray-300' : 'bg-white border-[#dddddd] hover:bg-[#eafafa] text-gray-700'}`}>
                 {q}
               </button>
             ))}
@@ -4370,18 +4697,18 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             msg.from === 'user' ? (
               <div key={i} className="flex justify-end">
                 <div className={`max-w-[82%] px-3 py-2 rounded-2xl rounded-tr-sm text-[11px] leading-relaxed ${
-                  isDark ? 'bg-[#87986a] text-white' : 'bg-[#6b7a54] text-white'
+                  isDark ? 'bg-[#4bbcbe] text-white' : 'bg-[#2c9a9c] text-white'
                 }`}>{msg.text}</div>
               </div>
             ) : (
               <div key={i} className="flex items-start gap-2">
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                  isDark ? 'bg-[#87986a]/20' : 'bg-[#f4f6f0]'
+                  isDark ? 'bg-[#4bbcbe]/20' : 'bg-[#eafafa]'
                 }`}>
-                  <Sparkles className={`h-2.5 w-2.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                  <Sparkles className={`h-2.5 w-2.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                 </div>
                 <div className={`max-w-[82%] px-3 py-2 rounded-2xl rounded-tl-sm text-[11px] leading-relaxed border ${
-                  isDark ? 'bg-[#2a2a2a] border-gray-800 text-gray-300' : 'bg-[#f4f6f0] border-[#e5e5e0] text-gray-700'
+                  isDark ? 'bg-[#2a2a2a] border-gray-800 text-gray-300' : 'bg-[#eafafa] border-[#dddddd] text-gray-700'
                 }`}>{msg.text}</div>
               </div>
             )
@@ -4390,11 +4717,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       </div>
 
       {/* Chat input — pinned bottom */}
-      <div className={`shrink-0 px-3 pb-3 pt-2 border-t ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={`shrink-0 px-3 pb-3 pt-2 border-t ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
         <div className={`flex items-end gap-2 rounded-xl border px-3 py-2 transition-colors ${
           isDark
-            ? 'bg-[#2a2a2a] border-gray-700 focus-within:border-[#87986a]/50'
-            : 'bg-white border-[#e5e5e0] focus-within:border-[#87986a]/60'
+            ? 'bg-[#2a2a2a] border-gray-700 focus-within:border-[#4bbcbe]/50'
+            : 'bg-white border-[#dddddd] focus-within:border-[#4bbcbe]/60'
         }`}>
           <textarea
             value={chatInput}
@@ -4412,8 +4739,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             disabled={!chatInput.trim()}
             className={`flex items-center justify-center w-7 h-7 rounded-lg shrink-0 transition-all ${
               chatInput.trim()
-                ? 'bg-[#87986a] hover:bg-[#6b7a54] text-white'
-                : isDark ? 'bg-gray-800 text-gray-600' : 'bg-[#f4f6f0] text-gray-400'
+                ? 'bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white'
+                : isDark ? 'bg-gray-800 text-gray-600' : 'bg-[#eafafa] text-gray-400'
             }`}
           >
             <Send className="h-3 w-3" />
@@ -4464,20 +4791,20 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={closeStageModule}>
         <div
           onClick={(e) => e.stopPropagation()}
-          className={`w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
+          className={`w-full ${stageIdx === 4 ? 'max-w-2xl' : 'max-w-lg'} rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
             reviewMode
-              ? isDark ? 'bg-[#1a1a1a] border-[#87986a]/40' : 'bg-white border-[#87986a]/40'
+              ? isDark ? 'bg-[#1a1a1a] border-[#4bbcbe]/40' : 'bg-white border-[#4bbcbe]/40'
               : isDark ? 'bg-[#1a1a1a] border-amber-500/40' : 'bg-white border-amber-400/50'
           }`}
         >
           {/* Header — Manual Task (amber) vs Review Mode (sage) */}
           <div className={`px-5 py-4 border-b flex items-start gap-3 ${
             reviewMode
-              ? isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'
-              : isDark ? 'border-gray-800 bg-amber-500/8' : 'border-[#e5e5e0] bg-amber-50/60'
+              ? isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'
+              : isDark ? 'border-gray-800 bg-amber-500/8' : 'border-[#dddddd] bg-amber-50/60'
           }`}>
             <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-white font-bold text-sm ${
-              reviewMode ? 'bg-[#87986a]' : 'bg-amber-500'
+              reviewMode ? 'bg-[#4bbcbe]' : 'bg-amber-500'
             }`}>
               {reviewMode ? <Check className="h-4 w-4" /> : stageIdx + 1}
             </div>
@@ -4485,7 +4812,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-[10px] font-bold uppercase tracking-wide ${
                   reviewMode
-                    ? isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                    ? isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                     : isDark ? 'text-amber-300' : 'text-amber-700'
                 }`}>
                   {reviewMode ? 'History & Trace Record' : `${status} · Manual Task`}
@@ -4496,7 +4823,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
                     attribution.kind === 'admin'
                       ? isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
-                      : isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                      : isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                   }`}>
                     {attribution.kind === 'admin' ? <User className="h-2.5 w-2.5" /> : <Bot className="h-2.5 w-2.5" />}
                     {attribution.label}
@@ -4514,7 +4841,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               </p>
             </div>
             <button onClick={closeStageModule}
-              className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#f4f6f0] text-gray-500'}`}>
+              className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#eafafa] text-gray-500'}`}>
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -4525,11 +4852,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           {reviewMode ? (
             <>
               {/* Atlas Audit Summary (the "Logic" line of the Paper Trail) */}
-              <div className={`px-5 py-3 border-b ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
+              <div className={`px-5 py-3 border-b ${isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'}`}>
                 <div className="flex items-start gap-2">
-                  <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                  <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                   <div className="min-w-0">
-                    <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                    <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                       Atlas · Audit Summary (Logic)
                     </div>
                     <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>{auditSummary}</p>
@@ -4539,8 +4866,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
               {/* Read-only banner — only in Agent Active mode */}
               {!orderManualMode && (
-                <div className={`px-5 py-2.5 border-b flex items-center gap-2 ${isDark ? 'border-gray-800 bg-[#1f2a1f]' : 'border-[#e5e5e0] bg-[#f0f4e8]'}`}>
-                  <Lock className={`h-3 w-3 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                <div className={`px-5 py-2.5 border-b flex items-center gap-2 ${isDark ? 'border-gray-800 bg-[#1d3535]' : 'border-[#dddddd] bg-[#eafafa]'}`}>
+                  <Lock className={`h-3 w-3 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                   <span className={`text-[10px] font-semibold ${t.textPrimary}`}>Immutable record.</span>
                   <span className={`text-[10px] ${t.textMuted}`}>
                     Switch to Manual Takeover to correct any data point.
@@ -4550,7 +4877,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
               {/* Paper Trail — Trigger / Proof / Verified at */}
               {synth && (
-                <div className={`px-5 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+                <div className={`px-5 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
                   <div className={`text-[9px] font-bold uppercase tracking-wide mb-2 ${t.textMuted}`}>Paper Trail</div>
                   <div className="space-y-1.5 text-[10px]">
                     <div className="flex items-start gap-2">
@@ -4561,7 +4888,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                       </div>
                     </div>
                     <div className="flex items-start gap-2">
-                      <ShieldCheck className={`h-3 w-3 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                      <ShieldCheck className={`h-3 w-3 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                       <div className="min-w-0">
                         <span className={`font-semibold ${t.textPrimary}`}>Proof:</span>{' '}
                         <span className={t.textSecondary}>{synth.proof}</span>
@@ -4581,16 +4908,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           ) : (
           <div className={`px-5 py-3 border-b transition-colors ${
             delegated
-              ? isDark ? 'border-gray-800 bg-green-500/10' : 'border-[#e5e5e0] bg-green-50'
-              : isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'
+              ? isDark ? 'border-gray-800 bg-green-500/10' : 'border-[#dddddd] bg-green-50'
+              : isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'
           }`}>
             <div className="flex items-start gap-2">
               {delegated
                 ? <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-green-500" />
-                : <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />}
+                : <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />}
               <div className="min-w-0 flex-1">
                 <div className={`text-[9px] font-bold uppercase tracking-wide ${
-                  delegated ? 'text-green-500' : isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                  delegated ? 'text-green-500' : isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                 }`}>
                   {delegated ? 'Atlas · Sub-task Active' : 'Atlas · Copilot Hint'}
                 </div>
@@ -4619,8 +4946,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                         : `Fill ${missingDepLabels.join(' & ')} first to enable delegation`}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
                         delegationReady
-                          ? isDark ? 'bg-[#87986a]/30 border border-[#87986a]/50 text-[#a3b085] hover:bg-[#87986a]/40' : 'bg-[#87986a]/15 border border-[#87986a]/40 text-[#6b7a54] hover:bg-[#87986a]/25'
-                          : isDark ? 'bg-gray-800 border border-gray-700 text-gray-600 cursor-not-allowed opacity-60' : 'bg-[#f4f6f0] border border-[#e5e5e0] text-gray-400 cursor-not-allowed opacity-60'
+                          ? isDark ? 'bg-[#4bbcbe]/30 border border-[#4bbcbe]/50 text-[#82d3d5] hover:bg-[#4bbcbe]/40' : 'bg-[#4bbcbe]/15 border border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#4bbcbe]/25'
+                          : isDark ? 'bg-gray-800 border border-gray-700 text-gray-600 cursor-not-allowed opacity-60' : 'bg-[#eafafa] border border-[#dddddd] text-gray-400 cursor-not-allowed opacity-60'
                       }`}
                     >
                       <Zap className="h-3 w-3" /> {mod.delegationLabel}
@@ -4646,11 +4973,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             const runtime = runtimePOById.get(order.id);
             if (!runtime?.fromRfqId) return null;
             return (
-              <div className={`px-5 py-3 border-b ${isDark ? 'bg-[#87986a]/8 border-gray-800' : 'bg-[#f4f6f0] border-[#e5e5e0]'}`}>
+              <div className={`px-5 py-3 border-b ${isDark ? 'bg-[#4bbcbe]/8 border-gray-800' : 'bg-[#eafafa] border-[#dddddd]'}`}>
                 <div className="flex items-start gap-2">
-                  <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                  <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                   <div className="min-w-0">
-                    <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                    <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                       Pre-filled from {runtime.fromRfqId}
                     </div>
                     <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>
@@ -4659,6 +4986,140 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     </p>
                   </div>
                 </div>
+              </div>
+            );
+          })()}
+
+          {/* ═══ 3-Way Match table — Stage 5 Execute mode only ══════
+              Compares PO (ordered) vs received vs invoiced per line item.
+              Variances colour-code live: green = match, red = short/over/price gap. */}
+          {stageIdx === 4 && !reviewMode && (() => {
+            const parsed = parseOrderItems(order.items);
+            if (parsed.length === 0) return null;
+            return (
+              <div className={`border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
+                {/* Section header */}
+                <div className={`px-5 py-3 flex items-center gap-2 ${isDark ? 'bg-[#4bbcbe]/5' : 'bg-[#eafafa]'}`}>
+                  <ShieldCheck className={`h-3.5 w-3.5 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+                  <span className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
+                    3-Way Match · PO vs Received vs Invoice
+                  </span>
+                </div>
+                {/* Column headers */}
+                <div className={`px-5 py-2 grid grid-cols-[1fr_88px_88px_88px] gap-2 border-b ${
+                  isDark ? 'border-gray-800' : 'border-[#dddddd]'
+                }`}>
+                  {['Item', 'PO Ordered', 'Received', 'Invoice Qty'].map(h => (
+                    <span key={h} className={`text-[9px] font-semibold uppercase tracking-wide ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{h}</span>
+                  ))}
+                </div>
+                {/* Per-item rows */}
+                <div className="px-5 divide-y divide-gray-100 dark:divide-gray-800">
+                  {parsed.map((item, i) => {
+                    const recvKey = `item_${i}_received_qty`;
+                    const invKey  = `item_${i}_invoice_qty`;
+                    const received = parseFloat(stageDraft[recvKey] ?? '') || null;
+                    const invoiced = parseFloat(stageDraft[invKey]  ?? '') || null;
+                    // Variance flags
+                    const qtyShort  = received !== null && item.qty > 0 && received < item.qty;
+                    const qtyExcess = received !== null && item.qty > 0 && received > item.qty;
+                    const qtyMatch  = received !== null && item.qty > 0 && received === item.qty;
+                    const invMiss   = invoiced !== null && item.qty > 0 && invoiced !== item.qty;
+                    const rowColor = qtyShort || invMiss
+                      ? isDark ? 'bg-red-500/5'   : 'bg-red-50/60'
+                      : qtyExcess
+                      ? isDark ? 'bg-amber-500/5' : 'bg-amber-50/60'
+                      : qtyMatch
+                      ? isDark ? 'bg-green-500/5' : 'bg-green-50/40'
+                      : '';
+                    return (
+                      <div key={i} className={`py-2.5 grid grid-cols-[1fr_88px_88px_88px] gap-2 items-center rounded-sm ${rowColor}`}>
+                        {/* Item name */}
+                        <div className="min-w-0">
+                          <p className={`text-xs font-medium truncate ${isDark ? 'text-white' : 'text-[#222222]'}`}>{item.name}</p>
+                          {/* Variance badge */}
+                          {qtyShort  && <span className="text-[9px] font-semibold text-red-600">▼ short {(item.qty - (received ?? 0)).toFixed(1)}{item.unit}</span>}
+                          {qtyExcess && <span className="text-[9px] font-semibold text-amber-600">▲ excess {((received ?? 0) - item.qty).toFixed(1)}{item.unit}</span>}
+                          {qtyMatch  && <span className="text-[9px] font-semibold text-green-600">✓ match</span>}
+                          {invMiss   && <span className="ml-2 text-[9px] font-semibold text-red-600">invoice gap</span>}
+                        </div>
+                        {/* PO Ordered (read-only) */}
+                        <div className={`text-xs font-semibold text-right ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {item.qty > 0 ? `${item.qty} ${item.unit}` : '—'}
+                        </div>
+                        {/* Received qty input */}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={stageDraft[recvKey] ?? ''}
+                          onChange={e => {
+                            set(recvKey, e.target.value);
+                            // Auto-derive qc_outcome from all row results
+                            const allRows = parsed.map((it, j) => {
+                              const rv = j === i ? parseFloat(e.target.value) : parseFloat(stageDraft[`item_${j}_received_qty`] ?? '') || null;
+                              return rv !== null && it.qty > 0 ? rv >= it.qty : true;
+                            });
+                            if (allRows.every(Boolean)) set('qc_outcome', 'pass');
+                            else if (allRows.some(Boolean)) set('qc_outcome', 'conditional');
+                            else set('qc_outcome', 'fail');
+                          }}
+                          placeholder={item.qty > 0 ? String(item.qty) : '0'}
+                          className={`w-full rounded-lg px-2 py-1.5 text-xs text-right border outline-none transition-colors ${
+                            qtyShort
+                              ? isDark ? 'bg-red-900/20 border-red-500/40 text-red-300' : 'bg-red-50 border-red-300 text-red-700'
+                              : qtyMatch
+                              ? isDark ? 'bg-green-900/20 border-green-500/40 text-green-300' : 'bg-green-50 border-green-300 text-green-700'
+                              : isDark ? 'bg-[#2a2a2a] border-gray-700 text-white focus:border-amber-500/50'
+                                       : 'bg-white border-[#dddddd] text-gray-800 focus:border-amber-400/60'
+                          }`}
+                        />
+                        {/* Invoice qty input */}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={stageDraft[invKey] ?? ''}
+                          onChange={e => set(invKey, e.target.value)}
+                          placeholder="—"
+                          className={`w-full rounded-lg px-2 py-1.5 text-xs text-right border outline-none transition-colors ${
+                            invMiss
+                              ? isDark ? 'bg-red-900/20 border-red-500/40 text-red-300' : 'bg-red-50 border-red-300 text-red-700'
+                              : isDark ? 'bg-[#2a2a2a] border-gray-700 text-white focus:border-[#4bbcbe]/50'
+                                       : 'bg-white border-[#dddddd] text-gray-800 focus:border-[#4bbcbe]/60'
+                          }`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Variance summary row */}
+                {(() => {
+                  const parsed2 = parsed;
+                  const shorts  = parsed2.filter((it, i) => {
+                    const rv = parseFloat(stageDraft[`item_${i}_received_qty`] ?? '') || null;
+                    return rv !== null && it.qty > 0 && rv < it.qty;
+                  });
+                  const matches = parsed2.filter((it, i) => {
+                    const rv = parseFloat(stageDraft[`item_${i}_received_qty`] ?? '') || null;
+                    return rv !== null && it.qty > 0 && rv === it.qty;
+                  });
+                  const filled = parsed2.filter((_, i) => stageDraft[`item_${i}_received_qty`]?.trim());
+                  if (filled.length === 0) return null;
+                  return (
+                    <div className={`py-2.5 flex items-center gap-3 text-[10px] border-t ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
+                      {matches.length > 0 && (
+                        <span className="text-green-600 font-semibold">{matches.length} matched</span>
+                      )}
+                      {shorts.length > 0 && (
+                        <span className="text-red-600 font-semibold">{shorts.length} short shipment{shorts.length > 1 ? 's' : ''}</span>
+                      )}
+                      {shorts.length > 0 && (
+                        <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>· dispute draft will auto-generate on save</span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}
@@ -4687,7 +5148,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded text-[8px] font-bold ${
                       fieldAttr.kind === 'admin'
                         ? isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
-                        : isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                        : isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                     }`}
                       title={fieldAttr.label}>
                       {fieldAttr.kind === 'admin' ? <User className="h-2 w-2" /> : <Bot className="h-2 w-2" />}
@@ -4742,9 +5203,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 : 'border-gray-700 focus:border-amber-500/50';
               const errorBorderLight = hasError
                 ? 'border-red-500/60 ring-1 ring-red-500/20 focus:border-red-500'
-                : 'border-[#e5e5e0] focus:border-amber-500/50';
+                : 'border-[#dddddd] focus:border-amber-500/50';
               const helpLine = hasError && input.fortressLookup ? (
-                <p className={`mt-1 text-[10px] ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                <p className={`mt-1 text-[10px] ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                   <Sparkles className="inline h-2.5 w-2.5 mr-0.5" />
                   Atlas can pull this from the internal directory ({input.fortressLookup}).
                 </p>
@@ -4765,8 +5226,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                         href="#"
                         title={`View / download ${displayValue}`}
                         className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors ${
-                          isDark ? 'bg-[#87986a]/10 border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/20'
-                                : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e8eddf]'
+                          isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/20'
+                                : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#d6f4f5]'
                         }`}
                       >
                         <FileUp className="h-3.5 w-3.5 shrink-0" />
@@ -4774,7 +5235,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                         <ExternalLink className="h-2.5 w-2.5 ml-1 opacity-70" />
                       </a>
                     ) : (
-                      <div className={`px-3 py-2 rounded-lg text-xs ${isDark ? 'bg-[#2a2a2a] text-white' : 'bg-[#f4f6f0] text-gray-900'}`}>
+                      <div className={`px-3 py-2 rounded-lg text-xs ${isDark ? 'bg-[#2a2a2a] text-white' : 'bg-[#eafafa] text-gray-900'}`}>
                         {displayValue}
                       </div>
                     )}
@@ -4829,7 +5290,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                             className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-colors ${
                               active
                                 ? 'bg-amber-500 border-amber-500 text-white'
-                                : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-400 hover:border-gray-600' : 'bg-white border-[#e5e5e0] text-gray-600 hover:border-[#87986a]/30'
+                                : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-400 hover:border-gray-600' : 'bg-white border-[#dddddd] text-gray-600 hover:border-[#4bbcbe]/30'
                             }`}
                           >
                             {opt}
@@ -4850,7 +5311,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                       ? isDark ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-amber-50 border-amber-400/50 text-amber-800'
                       : hasError
                         ? isDark ? 'bg-red-500/5 border-red-500/60 text-red-300 ring-1 ring-red-500/30' : 'bg-red-50/50 border-red-500/60 text-red-700 ring-1 ring-red-500/20'
-                        : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-400 hover:border-gray-600' : 'bg-white border-[#e5e5e0] text-gray-600 hover:border-[#87986a]/30'
+                        : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-400 hover:border-gray-600' : 'bg-white border-[#dddddd] text-gray-600 hover:border-[#4bbcbe]/30'
                   }`}>
                     <FileUp className="h-3.5 w-3.5 shrink-0" />
                     <span className="truncate">{val || `Click to upload (${input.accept ?? 'any'})`}</span>
@@ -4864,17 +5325,17 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           </div>
 
           {/* Footer actions — Review vs Input. */}
-          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             {reviewMode ? (
               anyEditing ? (
                 <>
                   <button onClick={closeStageModule}
-                    className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#f4f6f0]'}`}>
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#eafafa]'}`}>
                     Cancel
                   </button>
                   <span className={`text-[10px] ${t.textMuted}`}>{editingFields.size} field{editingFields.size === 1 ? '' : 's'} being edited</span>
                   <button onClick={() => saveStageModule(false)}
-                    className="ml-auto px-3 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                    className="ml-auto px-3 py-2 rounded-lg text-xs font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors inline-flex items-center gap-1.5 shadow-sm"
                   >
                     <Check className="h-3 w-3" /> Save Edits
                   </button>
@@ -4899,14 +5360,14 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                         onNavigate?.('request');
                       }}
                       className={`px-3 py-2 rounded-lg text-xs font-semibold border inline-flex items-center gap-1.5 transition-colors ${
-                        isDark ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                        isDark ? 'border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#eafafa]'
                       }`}
                     >
                       <RefreshCw className="h-3 w-3" /> Re-order This PO
                     </button>
                   )}
                   <button onClick={closeStageModule}
-                    className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors inline-flex items-center gap-1.5 shadow-sm">
+                    className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors inline-flex items-center gap-1.5 shadow-sm">
                     <Check className="h-3 w-3" /> Done
                   </button>
                 </>
@@ -4914,17 +5375,17 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             ) : (
               <>
                 <button onClick={closeStageModule}
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#f4f6f0]'}`}>
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#eafafa]'}`}>
                   Cancel
                 </button>
                 <button onClick={() => saveStageModule(false)}
-                  className={`ml-auto px-3 py-2 rounded-lg text-xs font-semibold border ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'}`}>
+                  className={`ml-auto px-3 py-2 rounded-lg text-xs font-semibold border ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-700 hover:bg-[#eafafa]'}`}>
                   Save Draft
                 </button>
                 <button onClick={() => saveStageModule(true)}
                   className={`px-3 py-2 rounded-lg text-xs font-bold text-white transition-colors inline-flex items-center gap-1.5 shadow-sm ${
                     requiresHumanAuthorization(stageIdx) && status === 'Execute'
-                      ? 'bg-[#87986a] hover:bg-[#6b7a54]'  // sage = HITL judgment
+                      ? 'bg-[#4bbcbe] hover:bg-[#2c9a9c]'  // sage = HITL judgment
                       : 'bg-amber-500 hover:bg-amber-600'
                   }`}
                 >
@@ -4959,14 +5420,14 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={closeDraftSheet}>
         <div onClick={e => e.stopPropagation()}
-          className={`w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDark ? 'bg-[#1a1a1a] border-[#87986a]/40' : 'bg-white border-[#87986a]/40'}`}>
+          className={`w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDark ? 'bg-[#1a1a1a] border-[#4bbcbe]/40' : 'bg-white border-[#4bbcbe]/40'}`}>
           {/* Header */}
-          <div className={`px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
-            <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-[#87986a] text-white">
+          <div className={`px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'}`}>
+            <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-[#4bbcbe] text-white">
               {isReorder ? <RefreshCw className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             </div>
             <div className="min-w-0 flex-1">
-              <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+              <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                 {isReorder ? `Re-order · From ${sourceOrder?.id ?? ''}` : 'New Order · Manual Discovery Portal'}
               </div>
               <h3 className={`text-sm font-bold mt-0.5 ${t.textPrimary}`}>
@@ -4978,7 +5439,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   : 'Within your approved directory · pick a vetted vendor and assign labor.'}
               </p>
             </div>
-            <button onClick={closeDraftSheet} className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#f4f6f0] text-gray-500'}`}>
+            <button onClick={closeDraftSheet} className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#eafafa] text-gray-500'}`}>
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -4995,8 +5456,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     <button key={s} onClick={() => setDraft(d => ({ ...d, supplier: s }))}
                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-colors ${
                         active
-                          ? 'bg-[#87986a] border-[#87986a] text-white'
-                          : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300 hover:border-gray-600' : 'bg-white border-[#e5e5e0] text-gray-700 hover:border-[#87986a]/30'
+                          ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white'
+                          : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300 hover:border-gray-600' : 'bg-white border-[#dddddd] text-gray-700 hover:border-[#4bbcbe]/30'
                       }`}
                     >
                       <ShieldCheck className="h-2.5 w-2.5" />
@@ -5010,7 +5471,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             {/* Items */}
             <div>
               <label className={`block text-[11px] font-semibold mb-1.5 ${t.textPrimary}`}>
-                Items {itemCount > 0 && <span className={`ml-1 text-[9px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>· {itemCount}</span>}
+                Items {itemCount > 0 && <span className={`ml-1 text-[9px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>· {itemCount}</span>}
               </label>
               <textarea
                 value={draft.items}
@@ -5018,20 +5479,20 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 placeholder={"One per line, e.g.\nLamb Rack 20kg\nChicken Breast 50kg"}
                 rows={4}
                 className={`w-full rounded-lg px-3 py-2 text-xs outline-none border resize-none ${
-                  isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#87986a]/50'
-                        : 'bg-white border-[#e5e5e0] placeholder:text-gray-400 focus:border-[#87986a]/50'
+                  isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#4bbcbe]/50'
+                        : 'bg-white border-[#dddddd] placeholder:text-gray-400 focus:border-[#4bbcbe]/50'
                 }`}
               />
             </div>
 
             {/* Recurring */}
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#f4f6f0] border-[#e5e5e0]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#eafafa] border-[#dddddd]'}`}>
               <label className="flex items-start gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={draft.recurring}
                   onChange={e => setDraft(d => ({ ...d, recurring: e.target.checked }))}
-                  className="mt-0.5 accent-[#87986a]"
+                  className="mt-0.5 accent-[#4bbcbe]"
                 />
                 <div className="min-w-0">
                   <div className={`text-[11px] font-semibold ${t.textPrimary} flex items-center gap-1.5`}>
@@ -5049,8 +5510,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     <button key={f} onClick={() => setDraft(d => ({ ...d, frequency: f }))}
                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-colors ${
                         draft.frequency === f
-                          ? 'bg-[#87986a] border-[#87986a] text-white'
-                          : isDark ? 'bg-[#1a1a1a] border-gray-700 text-gray-300' : 'bg-white border-[#e5e5e0] text-gray-700'
+                          ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white'
+                          : isDark ? 'bg-[#1a1a1a] border-gray-700 text-gray-300' : 'bg-white border-[#dddddd] text-gray-700'
                       }`}
                     >
                       <Calendar className="h-2.5 w-2.5" /> {f[0].toUpperCase() + f.slice(1)}
@@ -5067,11 +5528,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 <button onClick={() => setDraft(d => ({ ...d, assignment: 'auto' }))}
                   className={`p-3 rounded-lg border text-left transition-colors ${
                     draft.assignment === 'auto'
-                      ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/50 ring-1 ring-[#87986a]/30' : 'bg-[#f4f6f0] border-[#87986a]/50 ring-1 ring-[#87986a]/30'
-                      : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:border-gray-700' : 'bg-white border-[#e5e5e0] hover:border-[#87986a]/30'
+                      ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/50 ring-1 ring-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#4bbcbe]/50 ring-1 ring-[#4bbcbe]/30'
+                      : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:border-gray-700' : 'bg-white border-[#dddddd] hover:border-[#4bbcbe]/30'
                   }`}>
                   <div className="flex items-center gap-1.5">
-                    <Bot className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                    <Bot className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                     <span className={`text-[11px] font-bold ${t.textPrimary}`}>Assign to Agent</span>
                   </div>
                   <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>Autonomous execution from PO Approval onward.</p>
@@ -5080,7 +5541,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   className={`p-3 rounded-lg border text-left transition-colors ${
                     draft.assignment === 'manual'
                       ? 'bg-amber-500/10 border-amber-500/50 ring-1 ring-amber-500/30'
-                      : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:border-gray-700' : 'bg-white border-[#e5e5e0] hover:border-[#87986a]/30'
+                      : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:border-gray-700' : 'bg-white border-[#dddddd] hover:border-[#4bbcbe]/30'
                   }`}>
                   <div className="flex items-center gap-1.5">
                     <Hand className="h-3.5 w-3.5 text-amber-500" />
@@ -5096,8 +5557,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                     <button key={a.id} onClick={() => setDraft(d => ({ ...d, agentId: a.id }))}
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border transition-colors ${
                         draft.agentId === a.id
-                          ? 'bg-[#87986a] border-[#87986a] text-white'
-                          : isDark ? 'bg-[#1a1a1a] border-gray-700 text-gray-400' : 'bg-white border-[#e5e5e0] text-gray-600'
+                          ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white'
+                          : isDark ? 'bg-[#1a1a1a] border-gray-700 text-gray-400' : 'bg-white border-[#dddddd] text-gray-600'
                       }`}>
                       <Bot className="h-2.5 w-2.5" /> #{String(a.id).padStart(2, '0')} · {a.role}
                     </button>
@@ -5107,8 +5568,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
             </div>
 
             {/* HITL gate hint */}
-            <div className={`p-3 rounded-lg border flex items-start gap-2 ${isDark ? 'bg-[#1f2a1f] border-[#87986a]/30' : 'bg-[#f0f4e8] border-[#87986a]/30'}`}>
-              <ShieldCheck className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <div className={`p-3 rounded-lg border flex items-start gap-2 ${isDark ? 'bg-[#1d3535] border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#4bbcbe]/30'}`}>
+              <ShieldCheck className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
               <p className={`text-[10px] leading-relaxed ${t.textPrimary}`}>
                 Stage 1 (Request) and Stage 5 (Delivered &amp; Checked) always require <strong>your</strong> Review &amp; Authorize — even when an agent is driving.
               </p>
@@ -5116,16 +5577,16 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
           </div>
 
           {/* Footer */}
-          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <button onClick={closeDraftSheet}
-              className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#f4f6f0]'}`}>
+              className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#eafafa]'}`}>
               Cancel
             </button>
             <button onClick={submitDraft} disabled={!canSubmit}
               className={`ml-auto px-4 py-2 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-sm ${
                 canSubmit
-                  ? 'bg-[#87986a] text-white hover:bg-[#6b7a54]'
-                  : isDark ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-[#f4f6f0] text-gray-400 cursor-not-allowed'
+                  ? 'bg-[#4bbcbe] text-white hover:bg-[#2c9a9c]'
+                  : isDark ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-[#eafafa] text-gray-400 cursor-not-allowed'
               }`}>
               {draft.recurring ? <Calendar className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
               {draft.recurring ? `Schedule ${draft.frequency} PO` : (isReorder ? 'Create Re-order Draft' : 'Create PO Draft')}
@@ -5138,7 +5599,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
 
 
   // Theme tokens for the audit-aware panel shell
-  const panelBorder = isDark ? 'border-gray-800' : 'border-[#e5e5e0]';
+  const panelBorder = isDark ? 'border-gray-800' : 'border-[#dddddd]';
   const panelBg     = isDark ? 'bg-[#1a1a1a]'    : 'bg-white';
 
   return (
@@ -5191,21 +5652,21 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                style={{ background: 'rgba(0,0,0,0.55)' }}
                onClick={() => setApprovalForId(null)}>
             <div onClick={(e) => e.stopPropagation()}
-                 className={`w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${isDark ? 'bg-[#1a1a1a] border-[#87986a]/40' : 'bg-white border-[#87986a]/40'}`}>
+                 className={`w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${isDark ? 'bg-[#1a1a1a] border-[#4bbcbe]/40' : 'bg-white border-[#4bbcbe]/40'}`}>
               {/* Header */}
-              <div className={`px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
-                <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-[#87986a] text-white">
+              <div className={`px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'}`}>
+                <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-[#4bbcbe] text-white">
                   <ShieldCheck className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                  <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                     Sign off · Stage 1 → 2 (PO Approved)
                   </div>
                   <h3 className={`text-sm font-bold mt-0.5 ${t.textPrimary}`}>{order.id} · {order.supplier}</h3>
                   <p className={`text-[11px] mt-0.5 ${t.textMuted}`}>{fmtIdrShort(order.amount)} · {order.eta}</p>
                 </div>
                 <button onClick={() => setApprovalForId(null)}
-                  className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#f4f6f0] text-gray-500'}`}>
+                  className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#eafafa] text-gray-500'}`}>
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -5213,7 +5674,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               {/* Body — quote details + policy preview */}
               <div className="p-5 space-y-4">
                 {/* Quote summary */}
-                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0]'}`}>
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd]'}`}>
                   <div className={`text-[9px] font-bold uppercase tracking-wide mb-2 ${t.textMuted}`}>
                     Quote · received {channel ? `via ${channel}` : ''}
                   </div>
@@ -5252,11 +5713,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                 </div>
 
                 {/* Atlas reasoning snippet */}
-                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                   <div className="flex items-start gap-2">
-                    <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                    <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                     <div className="min-w-0">
-                      <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                      <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                         {order.agentAgent}
                       </div>
                       <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>{order.agentReasoning}</p>
@@ -5266,9 +5727,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               </div>
 
               {/* Footer — Confirm / Switch to Manual / Cancel */}
-              <div className={`px-5 py-3 border-t flex items-center gap-2 flex-wrap ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+              <div className={`px-5 py-3 border-t flex items-center gap-2 flex-wrap ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
                 <button onClick={() => setApprovalForId(null)}
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#f4f6f0]'}`}>
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-[#eafafa]'}`}>
                   Cancel
                 </button>
                 <button onClick={() => {
@@ -5277,14 +5738,14 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   openStageModule(order.id, 1);
                 }}
                   title="Switch to Manual Takeover — fill the Stage 1 form yourself (upload PO PDF, log policy ref)"
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold border ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-[#f4f6f0]'}`}>
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold border ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-700 hover:bg-[#eafafa]'}`}>
                   Switch to Manual
                 </button>
                 <button onClick={() => {
                   setApprovalForId(null);
                   executeAction(order.id);
                 }}
-                  className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors inline-flex items-center gap-1.5 shadow-sm">
+                  className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors inline-flex items-center gap-1.5 shadow-sm">
                   <Check className="h-3.5 w-3.5" /> Confirm Approval
                 </button>
               </div>
@@ -5328,14 +5789,14 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                style={{ background: 'rgba(0,0,0,0.55)' }}
                onClick={() => setReasoningForId(null)}>
             <div onClick={(e) => e.stopPropagation()}
-                 className={`w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDark ? 'bg-[#1a1a1a] border-[#87986a]/40' : 'bg-white border-[#87986a]/40'}`}>
+                 className={`w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDark ? 'bg-[#1a1a1a] border-[#4bbcbe]/40' : 'bg-white border-[#4bbcbe]/40'}`}>
               {/* Header */}
-              <div className={`shrink-0 px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
-                <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-[#87986a] text-white">
+              <div className={`shrink-0 px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'}`}>
+                <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-[#4bbcbe] text-white">
                   <History className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                  <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                     Reasoning Chain
                   </div>
                   <h3 className={`text-sm font-bold mt-0.5 ${t.textPrimary}`}>{order.id} · {order.supplier}</h3>
@@ -5344,7 +5805,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                   </p>
                 </div>
                 <button onClick={() => setReasoningForId(null)}
-                  className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#f4f6f0] text-gray-500'}`}>
+                  className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-[#eafafa] text-gray-500'}`}>
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -5352,11 +5813,11 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               {/* Body */}
               <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
                 {/* Top-level agent reasoning */}
-                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                   <div className="flex items-start gap-2">
-                    <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                    <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                     <div className="min-w-0">
-                      <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                      <div className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                         {order.agentAgent} · narrative
                       </div>
                       <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>{order.agentReasoning}</p>
@@ -5378,7 +5839,7 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
                       return (
                         <div key={i} className={`p-2.5 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>
                               Stage {i + 1}
                             </span>
                             <span className={`text-[11px] font-semibold ${t.textPrimary}`}>{stage.label}</span>
@@ -5418,9 +5879,9 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               </div>
 
               {/* Footer */}
-              <div className={`shrink-0 px-5 py-3 border-t flex items-center justify-end ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+              <div className={`shrink-0 px-5 py-3 border-t flex items-center justify-end ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
                 <button onClick={() => setReasoningForId(null)}
-                  className="px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors">
                   Close
                 </button>
               </div>
@@ -5435,8 +5896,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
       {/* ⌘K Command Palette */}
       {showCmd && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowCmd(false)}>
-          <div className={`w-full max-w-md rounded-xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-[#e5e5e0]'}`} onClick={(e) => e.stopPropagation()}>
-            <div className={`flex items-center gap-3 p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`w-full max-w-md rounded-xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-[#dddddd]'}`} onClick={(e) => e.stopPropagation()}>
+            <div className={`flex items-center gap-3 p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
               <Search className={`h-4 w-4 shrink-0 ${t.textMuted}`} />
               <input autoFocus value={cmdQuery} onChange={(e) => setCmdQuery(e.target.value)}
                 placeholder="Search orders by ID or supplier..."
@@ -5447,8 +5908,8 @@ export function NewOrdersPage({ theme, onNavigate }: OrdersPageProps) {
               {cmdFiltered.map((order) => (
                 <button key={order.id}
                   onClick={() => { toggleSelect(order.id, false); setShowCmd(false); setCmdQuery(''); }}
-                  className={`w-full text-left flex items-center gap-3 p-2.5 rounded-lg transition-colors ${isDark ? 'hover:bg-gray-800' : 'hover:bg-[#f4f6f0]'}`}>
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f4f6f0]'}`}>
+                  className={`w-full text-left flex items-center gap-3 p-2.5 rounded-lg transition-colors ${isDark ? 'hover:bg-gray-800' : 'hover:bg-[#eafafa]'}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#eafafa]'}`}>
                     {order.actionKind === 'resolve-issue' ? <AlertTriangle className="h-3.5 w-3.5 text-red-400" /> :
                      order.dagStage === 4                 ? <CircleCheck className="h-3.5 w-3.5 text-green-400" /> :
                      order.dagStage === 3                 ? <Truck className={`h-3.5 w-3.5 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} /> :

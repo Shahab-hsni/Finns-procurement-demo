@@ -105,6 +105,8 @@ These rules apply to **every** right panel in the platform. If you propose a des
 | 3 | **Venue Lane Preferences** | Per-venue receiving window reminder ("BC kitchen 06:00–10:00, ST evening only") |
 | 4 | **Audit Summary** | 6-row mini-summary (items, subtotal, playbook, vendor, venues, recurring) |
 | 4 | **Policy preview** | Per-rule pass/review/warn card list — same checks A-04 will run at Stage 3. The Step 4 Authorize gate (center) reads from this. |
+
+> **Note — Atlas Quantity Check is in the CENTER, not the right panel.** The per-item qty suggestion card (fuzzy SKU match → burn rate / par gap recommendations) renders inline in the center column of Step 4, above the Authorize summary. This follows Pillar 3 (Proximity of Action) — the suggestion lives at the exact decision point. See `core-pages.md § 4.3 Step 4` for the full spec.
 | 5 | **Hand-off complete** | One-line confirmation + playbook agent + Stage 2 reminder |
 
 ### Inline Atlas insights (center column, for cross-reference)
@@ -177,19 +179,42 @@ Placeholder adapts to current step (`Ask Atlas about {step label}…`). Currentl
 
 #### Source Bridge
 
-**Trigger:** Click "Message Supplier" from the center panel's tertiary action row (or the ⋯ card menu).
+**Trigger:** Click "Message Supplier" from the center panel's tertiary action row (or the ⋯ card menu). Also **auto-opens** when Stage 5 QC outcome is saved as `fail` — in that case it opens pre-loaded with a dispute draft.
 
-A **full conversation thread per PO** (Phase 6p), backed by `lib/sourceBridgeStore.ts`. The panel structure:
+A **full conversation thread per PO**, backed by `lib/sourceBridgeStore.ts`. The panel structure:
 
 | Element | Behavior |
 |---------|----------|
 | Header | Lock icon + *"Source Bridge"* + ArrowLeft back button. Subtitle: `{supplier} · {AM name} · {PO id}`. |
-| Channel selector | Segmented WhatsApp (`#25D366`) / **Email** (blue). **Telegram removed** — Bali vendor channel rule says WhatsApp (primary) / email (formal). |
-| Thread | Scrolling history seeded on first open from the RFQ runtime + the order's effective stage. Includes: inbound quote bubble, PO-sent system notice, vendor's dispatch confirmation when stage ≥ 3, any prior admin replies. |
-| Compose | Pinned bottom — textarea + Send button. Sending **appends to the thread** and the panel stays open (no auto-close). Encryption footer reads "Routed via Finn's Gateway". |
-| Auto-dismiss | Closes when a different order is selected. The thread state persists in localStorage. |
+| Channel selector | Segmented WhatsApp (`#25D366`) / **Email** (blue). **Telegram removed** — Bali vendor channel rule: WhatsApp primary, email formal. |
+| Thread | Scrolling history seeded on first open. Message kinds: `inbound-quote` · `reply` · `po-sent` (system pill) · `dispatch-confirm` · `dispute-draft` (see below). |
+| Compose (normal) | Pinned bottom — textarea + "Send via WhatsApp/Email" button. Sending appends to the thread; panel stays open. Encryption footer reads "Routed via Finn's Gateway". |
+| Auto-dismiss | Closes when a different order is selected. Thread persists in localStorage. |
 
 Owned by **Vendor Comms Agent (A-03)** in narrative. Normal AI content is hidden until the bridge is dismissed.
+
+##### Dispute draft state (QC fail path)
+
+When the Stage 5 Task Module saves with `qc_outcome: 'fail'`, `seedDisputeDraft()` appends a `dispute-draft` message to the thread and the Source Bridge auto-opens. The footer replaces the normal compose area with two CTAs:
+
+| Element | Behavior |
+|---------|----------|
+| `dispute-draft` bubble | Amber-bordered editable card attributed to **A-03 · Vendor Comms · Draft**. Contains a pre-written Bahasa Indonesia WhatsApp message (vendor name, PO id, affected items, credit note request). Admin can edit inline before sending. |
+| **Send Dispute via WhatsApp** | Primary green CTA. Converts the draft to a `reply` message in the thread, logs `kind: 'po-dispute-send'`. |
+| **Waive dispute — accept as-is** | Secondary text link. Opens the payment confirmation step (see below). |
+
+##### Payment confirmation step (waive-dispute path)
+
+Replaces the footer when admin clicks "Waive dispute — accept as-is":
+
+| Element | Behavior |
+|---------|----------|
+| **Reason for waiving dispute** *(required)* | Mandatory textarea. Confirm Payment is disabled until non-empty. Stored in `meta.waiveReason` on the action log entry. |
+| **Payment due by** *(required)* | Date input, defaults to today + 7 days. Confirm Payment also disabled until set. |
+| **Notify supplier via WhatsApp** | Toggle (default ON). Shows a live preview of the Bahasa Indonesia payment notification message. |
+| Preview | `"Untuk PO-XXXX — pembayaran akan kami proses sebelum {date}. Terima kasih atas pengertiannya. Finn's Procurement"` |
+| **Cancel** | Returns to the dispute draft CTAs. |
+| **Confirm Payment** | Sends the WhatsApp notification if toggle is on, removes the dispute draft from the thread, logs `kind: 'po-payment-approve'` with reason + due date in meta. Closes Source Bridge. |
 
 #### Audit Mode — Operations Insights
 
@@ -366,6 +391,8 @@ Sage-tinted card showing:
 
 #### Mode D — Disputes tab
 
+> **Action placement note:** The three dispute resolution actions (**Approve Payment**, **Request Credit Note**, **Escalate to Director**) live on the dispute cards in the **left panel**, not the right panel. They mutate dispute state and therefore belong in the center/left per Rule 1 (AI-exclusive surface). The right panel is read-only intelligence only.
+
 ##### When no dispute selected
 
 - *"Open disputes appear in the center. Click any card to see the agent's full reasoning chain and compare against similar past disputes."*
@@ -377,6 +404,12 @@ Sage-tinted card showing:
 - **Similar Past Disputes** card — 3 past resolutions with same template (e.g. spend-cap breach, vendor below trust floor)
 - **Atlas Recommendation**: *"Of 3 similar disputes, 2 were approved + hardened. Aligning with that pattern keeps Sourcing Agent's autonomy band stable."*
 - Atlas chat (pinned bottom)
+
+##### Runtime dispute creation
+
+Disputes can be created dynamically (not just from seeded `finnsDisputes` mock data):
+- **`finns-qc-failure` event** — fires when Orders Stage 5 QC fails. A&G listens for this, auto-creates a dispute card, and switches the left panel to the Disputes tab.
+- **`#dispute=PO-XXXX` hash** — deep-link from Orders "Resolve in A&G" button. Switches to Disputes tab and highlights the matching card with an amber ring for 2.4s.
 
 ### Always-on Atlas chat (pinned bottom)
 

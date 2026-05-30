@@ -80,10 +80,10 @@ export function GlobalFooter({ isDark, isProcessing = false, onOpenFlowDemo, isD
             title="Open the scrollytelling user-flow demo (not part of production)"
             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors ${
               isDemoActive
-                ? isDark ? 'bg-[#87986a]/20 border-[#87986a]/40 text-[#a3b085]'
-                         : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                ? isDark ? 'bg-[#4bbcbe]/20 border-[#4bbcbe]/40 text-[#82d3d5]'
+                         : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
                 : isDark ? 'border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600'
-                         : 'border-[#e5e5e0] text-gray-400 hover:text-gray-600 hover:border-gray-300'
+                         : 'border-[#dddddd] text-gray-400 hover:text-gray-600 hover:border-gray-300'
             }`}
           >
             <Sparkles className="h-2.5 w-2.5" /> System Map

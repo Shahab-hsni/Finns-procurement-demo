@@ -4,7 +4,7 @@ import {
   DollarSign, TrendingDown, Lock, Leaf, Bot, Eye, ChevronRight,
   CheckCircle, Sparkles, FileText, Package, ShieldCheck, ArrowLeft,
   User, AlertTriangle, Beef, Fish, Apple, Milk, Wine, Archive,
-  Zap, Send, MessageCircle, BarChart2, Settings, X
+  Zap, Send, MessageCircle, BarChart2, Settings, X, Download
 } from 'lucide-react';
 import {
   XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart,
@@ -414,6 +414,39 @@ export function SpendingPage({ theme }: SpendingPageProps) {
     setAddSavingOpen(false);
   }, [selected, savingDraft]);
 
+  // Export the visible ledger as a CSV suitable for Xero / accounting import.
+  // Columns: Date · Invoice Ref · Supplier · Category · Description · Savings (IDR) · Actor
+  const handleExportCSV = useCallback(() => {
+    const categoryLabel = selected ? selected.name : 'All Categories';
+    const header = ['Date', 'Invoice Ref', 'Supplier', 'Category', 'Description', 'Savings (IDR)', 'Actor'];
+    const rows = visibleLedger.map(e => [
+      e.date,
+      e.invoiceRef,
+      e.supplier,
+      CATEGORIES.find(c => c.id === e.categoryId)?.name ?? e.categoryId,
+      // Wrap description in quotes to handle commas
+      `"${e.action.replace(/"/g, '""')}"`,
+      String(e.saving),
+      e.actorLabel,
+    ]);
+    const csv = [header.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `finns-spending-${categoryLabel.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    logUserAction({
+      kind: 'savings-lock',
+      summary: `Exported ${visibleLedger.length} ledger entries · ${categoryLabel}`,
+      meta: { rows: visibleLedger.length, category: categoryLabel },
+    });
+    toast.success(`Exported ${visibleLedger.length} entries`, {
+      description: `${categoryLabel} · ${rcfg.dateRange}`,
+    });
+  }, [visibleLedger, selected, rcfg.dateRange]);
+
   const handleAtlasSubmit = useCallback(() => {
     const q = atlasInput.trim();
     if (!q) return;
@@ -479,11 +512,11 @@ export function SpendingPage({ theme }: SpendingPageProps) {
       <div className={t.section}>
         <div className={`p-3 rounded-lg border ${
           surplusCapital > 0
-            ? isDark ? 'bg-[#87986a]/10 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+            ? isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
             : isDark ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-200'
         }`}>
           <span className={`text-[10px] ${t.textMuted}`}>Surplus Capital Available</span>
-          <div className={`text-lg font-bold mt-0.5 ${surplusCapital > 0 ? 'text-[#87986a]' : 'text-red-400'}`}>
+          <div className={`text-lg font-bold mt-0.5 ${surplusCapital > 0 ? 'text-[#4bbcbe]' : 'text-red-400'}`}>
             ${Math.abs(surplusCapital).toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </div>
           <span className={`text-[10px] ${t.textMuted}`}>
@@ -495,9 +528,9 @@ export function SpendingPage({ theme }: SpendingPageProps) {
       {/* First-run CTA — prompt budget setup if never customized */}
       {CATEGORIES.every(c => categoryBudgets[c.id] === String(c.budget)) && (
         <div className={`mx-3 mb-2 p-3 rounded-lg border ${
-          isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+          isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
         }`}>
-          <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+          <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
             Set your category budgets
           </p>
           <p className={`text-[9px] leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -505,7 +538,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
           </p>
           <button
             onClick={() => setBudgetSetupOpen(true)}
-            className="mt-2 w-full py-1 rounded text-[10px] font-semibold bg-[#87986a] hover:bg-[#6b7a54] text-white transition-colors"
+            className="mt-2 w-full py-1 rounded text-[10px] font-semibold bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white transition-colors"
           >
             Configure Budgets →
           </button>
@@ -526,7 +559,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                 onClick={() => handleSelectCat(cat.id)}
                 className={`w-full text-left p-3 rounded-lg border transition-all group ${
                   isSelected
-                    ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 ring-1 ring-[#87986a]/20' : 'bg-[#f4f6f0] border-[#87986a]/40 ring-1 ring-[#87996a]/20'
+                    ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 ring-1 ring-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#4bbcbe]/40 ring-1 ring-[#87996a]/20'
                     : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:border-gray-700' : 'bg-gray-50 border-gray-200 hover:border-gray-300'
                 }`}
               >
@@ -545,7 +578,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                       {cat.driftStatus === 'over' ? '▲' : cat.driftStatus === 'under' ? '▼' : '●'}
                       {' '}{cat.drift > 0 ? '+' : ''}{cat.drift}%
                     </span>
-                    {isLocked && <Lock className="h-3 w-3 text-[#87986a] shrink-0" />}
+                    {isLocked && <Lock className="h-3 w-3 text-[#4bbcbe] shrink-0" />}
                   </div>
                 </div>
                 {/* Spend bar */}
@@ -585,7 +618,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
             </div>
             <div className={`text-base font-semibold mt-2 ${t.textSecondary}`}>Capital Unlocked</div>
             <div className="flex justify-center gap-2 mt-3 capital-sparkles">
-              {[...Array(5)].map((_, i) => <Sparkles key={i} className="h-5 w-5 text-[#a3b085]" />)}
+              {[...Array(5)].map((_, i) => <Sparkles key={i} className="h-5 w-5 text-[#82d3d5]" />)}
             </div>
           </div>
         </div>
@@ -603,7 +636,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
               <>
                 <button
                   onClick={handleBackToAll}
-                  className={`flex items-center gap-1 text-xs transition-colors ${t.textMuted} hover:text-[#87986a]`}
+                  className={`flex items-center gap-1 text-xs transition-colors ${t.textMuted} hover:text-[#4bbcbe]`}
                 >
                   <ArrowLeft className="h-3 w-3 shrink-0" />
                   <span className="hidden sm:inline">All Categories</span>
@@ -627,7 +660,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                 key={r}
                 onClick={() => setTimeRange(r)}
                 className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
-                  timeRange === r ? 'bg-[#87986a] text-white shadow-sm' : isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'
+                  timeRange === r ? 'bg-[#4bbcbe] text-white shadow-sm' : isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 {r}
@@ -648,9 +681,9 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                   {overallDrift > 0 ? '▲' : '▼'} {Math.abs(overallDrift).toFixed(1)}% vs budget
                 </span>
               </div>
-              <div className={`${t.cardPanel} ring-1 ring-[#87986a]/20`}>
+              <div className={`${t.cardPanel} ring-1 ring-[#4bbcbe]/20`}>
                 <span className={`text-[10px] ${t.textMuted}`}>Locked Savings</span>
-                <div className="text-xl font-bold mt-1 text-[#87986a]">
+                <div className="text-xl font-bold mt-1 text-[#4bbcbe]">
                   ${totalLocked.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </div>
                 <span className={`text-[10px] ${t.textMuted}`}>{lockedSavings.size}/{CATEGORIES.length} optimized</span>
@@ -674,8 +707,8 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                     <AreaChart data={globalTrend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                       <defs>
                         <linearGradient id="globalFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#87986a" stopOpacity={0.3} />
-                          <stop offset="100%" stopColor="#87986a" stopOpacity={0} />
+                          <stop offset="0%" stopColor="#4bbcbe" stopOpacity={0.3} />
+                          <stop offset="100%" stopColor="#4bbcbe" stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <XAxis dataKey="month" tick={{ fontSize: 11, fill: isDark ? '#666' : '#999' }} axisLine={false} tickLine={false} />
@@ -683,7 +716,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                       <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
                       <Legend iconType="line" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }}
                         formatter={(val) => <span style={{ color: isDark ? '#aaa' : '#666' }}>{val}</span>} />
-                      <Area type="monotone" dataKey="actual" stroke="#87986a" strokeWidth={2.5} fill="url(#globalFill)" name="Actual Spend" />
+                      <Area type="monotone" dataKey="actual" stroke="#4bbcbe" strokeWidth={2.5} fill="url(#globalFill)" name="Actual Spend" />
                       <Area type="monotone" dataKey="budget" stroke={isDark ? '#475569' : '#cbd5e1'} strokeWidth={1.5} fill="none" strokeDasharray="5 4" name="Budget" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -732,25 +765,25 @@ export function SpendingPage({ theme }: SpendingPageProps) {
               />
 
               <div className="flex justify-between mb-2">
-                <span className={`text-xs font-semibold ${tradeoff < 40 ? 'text-[#87986a]' : t.textMuted}`}>💰 Cost Optimization</span>
+                <span className={`text-xs font-semibold ${tradeoff < 40 ? 'text-[#4bbcbe]' : t.textMuted}`}>💰 Cost Optimization</span>
                 <span className={`text-xs font-semibold ${tradeoff > 60 ? 'text-blue-400' : t.textMuted}`}>🛡 Supply Resilience</span>
               </div>
               <input
                 type="range" min={0} max={100} value={tradeoff}
                 onChange={(e) => setTradeoff(Number(e.target.value))}
                 className="w-full h-2 rounded-full appearance-none cursor-pointer tradeoff-slider"
-                style={{ background: `linear-gradient(to right, #87986a ${tradeoff}%, #60a5fa ${tradeoff}%)` }}
+                style={{ background: `linear-gradient(to right, #4bbcbe ${tradeoff}%, #60a5fa ${tradeoff}%)` }}
               />
 
               {/* Live gauges */}
               <div className="grid grid-cols-2 gap-3 mt-4">
-                <div className={`p-3 rounded-lg ${isDark ? 'bg-[#87986a]/10 border border-[#87986a]/25' : 'bg-[#f4f6f0] border border-[#dbe3ce]'}`}>
+                <div className={`p-3 rounded-lg ${isDark ? 'bg-[#4bbcbe]/10 border border-[#4bbcbe]/25' : 'bg-[#eafafa] border border-[#c4eef0]'}`}>
                   <span className={`text-[10px] ${t.textMuted}`}>Projected Savings</span>
-                  <div className="text-xl font-bold text-[#87986a] mt-0.5 tabular-nums">
+                  <div className="text-xl font-bold text-[#4bbcbe] mt-0.5 tabular-nums">
                     ${td.projectedSavings.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </div>
                   <div className={`h-1 rounded-full mt-2 ${t.progressTrack}`}>
-                    <div className="h-full rounded-full bg-[#87986a] transition-all duration-200"
+                    <div className="h-full rounded-full bg-[#4bbcbe] transition-all duration-200"
                       style={{ width: `${(td.projectedSavings / selected.savingsUnlocked) * 100}%` }} />
                   </div>
                   <span className={`text-[9px] ${t.textMuted}`}>of ${selected.savingsUnlocked.toLocaleString()} potential</span>
@@ -774,7 +807,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                 className={`mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold transition-all ${
                   lockedSavings.has(selected.id)
                     ? isDark ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-[#87986a] text-white hover:bg-[#6b7a54] active:scale-[0.98]'
+                    : 'bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] active:scale-[0.98]'
                 }`}
               >
                 {lockedSavings.has(selected.id)
@@ -798,8 +831,8 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                   <AreaChart data={catTrend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                     <defs>
                       <linearGradient id="catFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#87986a" stopOpacity={0.3} />
-                        <stop offset="100%" stopColor="#87986a" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#4bbcbe" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#4bbcbe" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: isDark ? '#666' : '#999' }} axisLine={false} tickLine={false} />
@@ -807,7 +840,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                     <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
                     <Legend iconType="line" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }}
                       formatter={(val) => <span style={{ color: isDark ? '#aaa' : '#666' }}>{val}</span>} />
-                    <Area type="monotone" dataKey="spend" stroke="#87986a" strokeWidth={2.5} fill="url(#catFill)" name="Actual Spend" />
+                    <Area type="monotone" dataKey="spend" stroke="#4bbcbe" strokeWidth={2.5} fill="url(#catFill)" name="Actual Spend" />
                     <Area type="monotone" dataKey="budget" stroke={isDark ? '#475569' : '#cbd5e1'} strokeWidth={1.5} fill="none" strokeDasharray="5 4" name="Monthly Budget" />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -831,12 +864,22 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                     <User className="h-3 w-3" /> Admin
                   </span>
                   <button
+                    onClick={handleExportCSV}
+                    title="Export visible ledger entries as CSV for Xero / accounting import"
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-semibold transition-colors ${
+                      isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
+                             : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}>
+                    <Download className="h-3 w-3" />
+                    Export CSV
+                  </button>
+                  <button
                     onClick={() => setAddSavingOpen(v => !v)}
                     title="Record a saving achieved manually (e.g. side renegotiation, supplier discount you closed)"
                     className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-semibold transition-colors ${
                       addSavingOpen
-                        ? isDark ? 'bg-[#87986a]/20 border-[#87986a]/50 text-[#a3b085]'
-                                  : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                        ? isDark ? 'bg-[#4bbcbe]/20 border-[#4bbcbe]/50 text-[#82d3d5]'
+                                  : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
                         : isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
                                   : 'border-gray-300 text-gray-700 hover:bg-gray-50'
                     }`}>
@@ -849,7 +892,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
               {/* Manual saving entry form (Phase 4j) */}
               {addSavingOpen && selected && (
                 <div className={`mb-3 p-4 rounded-xl border ${
-                  isDark ? 'bg-[#87986a]/5 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                  isDark ? 'bg-[#4bbcbe]/5 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'
                 }`}>
                   <div className="flex items-center justify-between mb-2">
                     <h4 className={`text-xs font-bold ${t.textPrimary}`}>
@@ -911,7 +954,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                     <button onClick={handleAddManualSaving} disabled={!savingDraftValid}
                       className={`text-[10px] px-3 py-1.5 rounded font-bold transition-colors ${
                         savingDraftValid
-                          ? 'bg-[#87986a] text-white hover:bg-[#6b7a54]'
+                          ? 'bg-[#4bbcbe] text-white hover:bg-[#2c9a9c]'
                           : isDark ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       }`}>
                       Log saving
@@ -1068,7 +1111,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                       <CatIcon className="h-3 w-3 shrink-0" style={{ color: cat.color }} />
                       <span className={`text-[10px] font-medium ${t.textPrimary}`}>{cat.name}</span>
                     </div>
-                    <span className="text-[10px] font-semibold text-[#87986a]">{agentLabel(cat.topAgent.id)}</span>
+                    <span className="text-[10px] font-semibold text-[#4bbcbe]">{agentLabel(cat.topAgent.id)}</span>
                   </div>
                   <p className={`text-[10px] leading-snug ${t.textSecondary}`}>
                     {agentLabel(cat.topAgent.id)} ({cat.topAgent.name}) contributed{' '}
@@ -1126,7 +1169,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
           <div className="space-y-2.5">
             {[
               { label: 'Next month spend', value: 92, forecast: '$47.2K', color: '#10b981' },
-              { label: 'Savings estimate', value: 87, forecast: '$6,200', color: '#87986a' },
+              { label: 'Savings estimate', value: 87, forecast: '$6,200', color: '#4bbcbe' },
               { label: 'Drift detection', value: 95, forecast: selected ? `${selected.name}: ${selected.drift > 0 ? '+' : ''}${selected.drift}%` : 'All cats.', color: '#10b981' },
               { label: 'Stockout probability', value: 78, forecast: selected ? `${selected.stockoutRisk}% base` : 'Avg 8%', color: '#f59e0b' },
             ].map((m) => (
@@ -1156,7 +1199,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                   key={p}
                   onClick={() => handleAtlasPrompt(p)}
                   className={`w-full text-left text-[10px] px-2.5 py-1.5 rounded-lg border transition-colors ${
-                    isDark ? 'border-gray-800 text-gray-400 hover:border-[#87986a]/40 hover:text-[#a3b085] bg-[#2a2a2a]' : 'border-gray-200 text-gray-500 hover:border-[#87986a]/40 hover:text-[#6b7a54] bg-gray-50'
+                    isDark ? 'border-gray-800 text-gray-400 hover:border-[#4bbcbe]/40 hover:text-[#82d3d5] bg-[#2a2a2a]' : 'border-gray-200 text-gray-500 hover:border-[#4bbcbe]/40 hover:text-[#2c9a9c] bg-gray-50'
                   }`}
                 >
                   "{p}"
@@ -1174,14 +1217,14 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                 key={i}
                 className={`text-[10px] p-2.5 rounded-lg leading-relaxed ${
                   msg.role === 'user'
-                    ? isDark ? 'bg-[#87986a]/15 text-[#c6d4ae] self-end' : 'bg-[#f4f6f0] text-[#4a5a36]'
+                    ? isDark ? 'bg-[#4bbcbe]/15 text-[#c6d4ae] self-end' : 'bg-[#eafafa] text-[#4a5a36]'
                     : isDark ? 'bg-[#2a2a2a] text-gray-300' : 'bg-white border border-gray-200 text-gray-700'
                 }`}
               >
                 {msg.role === 'atlas' && (
                   <div className="flex items-center gap-1 mb-1">
-                    <Sparkles className="h-2.5 w-2.5 text-[#87986a]" />
-                    <span className="font-semibold text-[#87986a] text-[9px]">Atlas</span>
+                    <Sparkles className="h-2.5 w-2.5 text-[#4bbcbe]" />
+                    <span className="font-semibold text-[#4bbcbe] text-[9px]">Atlas</span>
                   </div>
                 )}
                 {msg.content}
@@ -1200,7 +1243,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
           </span>
         </div>
         <div className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 ${
-          isDark ? 'bg-[#2a2a2a] border-gray-700 focus-within:border-[#87986a]/50' : 'bg-gray-50 border-gray-200 focus-within:border-[#87986a]/50'
+          isDark ? 'bg-[#2a2a2a] border-gray-700 focus-within:border-[#4bbcbe]/50' : 'bg-gray-50 border-gray-200 focus-within:border-[#4bbcbe]/50'
         }`}>
           <input
             type="text"
@@ -1214,7 +1257,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
             onClick={handleAtlasSubmit}
             disabled={!atlasInput.trim()}
             className={`p-1 rounded transition-colors ${
-              atlasInput.trim() ? 'text-[#87986a] hover:text-[#a3b085]' : t.textMuted
+              atlasInput.trim() ? 'text-[#4bbcbe] hover:text-[#82d3d5]' : t.textMuted
             }`}
           >
             <Send className="h-3 w-3" />
@@ -1248,7 +1291,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
           box-shadow: 0 30px 80px rgba(135,152,106,0.25);
         }
         .capital-amount {
-          background: linear-gradient(135deg, #87986a, #a3b085, #6b7a54);
+          background: linear-gradient(135deg, #4bbcbe, #82d3d5, #2c9a9c);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -1263,7 +1306,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
           -webkit-appearance: none;
           width: 20px; height: 20px;
           border-radius: 50%;
-          background: linear-gradient(135deg, #87986a, #60a5fa);
+          background: linear-gradient(135deg, #4bbcbe, #60a5fa);
           cursor: pointer;
           border: 3px solid ${isDark ? '#1a1a1a' : '#fff'};
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -1272,7 +1315,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
         .tradeoff-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
         .tradeoff-slider::-moz-range-thumb {
           width: 20px; height: 20px; border-radius: 50%;
-          background: linear-gradient(135deg, #87986a, #60a5fa);
+          background: linear-gradient(135deg, #4bbcbe, #60a5fa);
           cursor: pointer; border: 3px solid ${isDark ? '#1a1a1a' : '#fff'};
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
@@ -1312,7 +1355,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
                         onChange={e => setCategoryBudgets(prev => ({ ...prev, [cat.id]: e.target.value }))}
                         className={`w-full pl-5 pr-2 py-1.5 rounded border text-[11px] ${
                           isDark ? 'bg-[#2a2a2a] border-gray-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'
-                        } focus:outline-none focus:border-[#87986a]`}
+                        } focus:outline-none focus:border-[#4bbcbe]`}
                         placeholder={String(cat.budget)}
                         min={0}
                       />
@@ -1332,7 +1375,7 @@ export function SpendingPage({ theme }: SpendingPageProps) {
               </button>
               <button
                 onClick={() => setBudgetSetupOpen(false)}
-                className="flex-1 py-1.5 rounded text-[11px] font-semibold bg-[#87986a] hover:bg-[#6b7a54] text-white transition-colors"
+                className="flex-1 py-1.5 rounded text-[11px] font-semibold bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white transition-colors"
               >
                 Save Budgets
               </button>

@@ -345,7 +345,7 @@ const VENUE_LABEL: Record<VenueTag, string> = { BC: 'BC', RC: 'RC', ST: 'ST', SP
 const VenueChips = ({ venues, isDark }: { venues: VenueTag[]; isDark: boolean }) => (
   <div className="flex items-center gap-0.5 flex-wrap">
     {venues.map(v => (
-      <span key={v} className={`text-[8px] font-bold px-1 py-0.5 rounded ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+      <span key={v} className={`text-[8px] font-bold px-1 py-0.5 rounded ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>
         {VENUE_LABEL[v]}
       </span>
     ))}
@@ -360,9 +360,11 @@ export function OverviewPage({ theme }: OverviewPageProps) {
   const t = themeTokens(isDark);
 
   // PO triage state
-  const [approvedIds, setApprovedIds]     = useState<Set<string>>(new Set());
-  const [quickApproved, setQuickApproved] = useState<Set<string>>(new Set());
-  const [flyOutId, setFlyOutId]           = useState<string | null>(null);
+  const [approvedIds, setApprovedIds]       = useState<Set<string>>(new Set());
+  const [quickApproved, setQuickApproved]   = useState<Set<string>>(new Set());
+  const [pendingQuickIds, setPendingQuickIds] = useState<Set<string>>(new Set()); // system alert: queuing…
+  const [pendingAckIds, setPendingAckIds]     = useState<Set<string>>(new Set()); // PO: submitted, awaiting vendor ack
+  const [flyOutId, setFlyOutId]             = useState<string | null>(null);
   const [selectedPoId, setSelectedPoId]   = useState<string | null>(null);
   const [chatInput, setChatInput]         = useState('');
   const [savingFloat, setSavingFloat]     = useState<string | null>(null);
@@ -449,15 +451,24 @@ export function OverviewPage({ theme }: OverviewPageProps) {
   const handlePoApprove = useCallback((id: string) => {
     const po = CRITICAL_ACTIONS.find(a => a.id === id);
     setFlyOutId(id);
-    if (po?.estimatedSaving) {
-      setSavingFloat(`Saved ${fmtIdrShort(po.estimatedSaving)}`);
-      setTimeout(() => setSavingFloat(null), 2400);
-    }
     setTimeout(() => {
-      setApprovedIds(prev => new Set([...prev, id]));
       setFlyOutId(null);
       setSelectedPoId(null);
-      if (po) setChatMessages(prev => [...prev, { from: 'atlas', text: `${id} submitted. ${fmtIdrShort(po.estimatedSaving)} saving estimated — pending vendor acknowledgement. I'll surface the vendor's ack and confirm the realised saving once the PO is accepted.` }]);
+      // Transition to "Pending vendor ack" — card stays in triage with amber state
+      setPendingAckIds(prev => new Set([...prev, id]));
+      if (po?.estimatedSaving) {
+        setSavingFloat(`Submitted · ${fmtIdrShort(po.estimatedSaving)} saving locked`);
+        setTimeout(() => setSavingFloat(null), 2400);
+      }
+      if (po) setChatMessages(prev => [...prev, {
+        from: 'atlas',
+        text: `${id} submitted to ${po.supplier}. Pending vendor acknowledgement via WhatsApp — typically 2–4h. I'll notify you when they confirm. Saving of ${fmtIdrShort(po.estimatedSaving)} locked at current quote.`,
+      }]);
+      // Auto-resolve after 2s (simulates vendor ack arriving)
+      setTimeout(() => {
+        setPendingAckIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+        setApprovedIds(prev => new Set([...prev, id]));
+      }, 2000);
     }, 380);
   }, []);
 
@@ -469,8 +480,16 @@ export function OverviewPage({ theme }: OverviewPageProps) {
   }, []);
 
   const handleQuickApprove = useCallback((alertId: string, saving: number) => {
-    setQuickApproved(prev => new Set([...prev, alertId]));
-    if (saving > 0) { setSavingFloat(`Saved ${fmtIdrShort(saving)}`); setTimeout(() => setSavingFloat(null), 2400); }
+    // Show "Queuing…" for 1.2s before confirming
+    setPendingQuickIds(prev => new Set([...prev, alertId]));
+    setTimeout(() => {
+      setPendingQuickIds(prev => { const n = new Set(prev); n.delete(alertId); return n; });
+      setQuickApproved(prev => new Set([...prev, alertId]));
+      if (saving > 0) {
+        setSavingFloat(`Saved ${fmtIdrShort(saving)}`);
+        setTimeout(() => setSavingFloat(null), 2400);
+      }
+    }, 1200);
   }, []);
 
   const handleChat = useCallback(() => {
@@ -536,7 +555,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
           isClearing
             ? 'scale-95 opacity-50'
             : isActive
-            ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 ring-1 ring-[#87986a]/20' : 'bg-[#f4f6f0] border-[#87986a]/40 ring-1 ring-[#87986a]/20'
+            ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 ring-1 ring-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#4bbcbe]/40 ring-1 ring-[#4bbcbe]/20'
             : isDark ? `${sm.darkBg} hover:brightness-110` : `${sm.bg} hover:brightness-95`
         }`}
         style={isClearing ? { animation: 'deadlineCleared 850ms ease-out forwards' } : undefined}
@@ -556,7 +575,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 {evt.time && <span className={`text-[9px] ${t.textMuted}`}>{evt.time}</span>}
                 {evt.supplier && <span className={`text-[9px] ${t.textMuted}`}>· {evt.supplier}</span>}
                 {evt.amount != null && (
-                  <span className={`text-[9px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                  <span className={`text-[9px] font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                     {fmtIdrShort(evt.amount)}
                   </span>
                 )}
@@ -570,11 +589,11 @@ export function OverviewPage({ theme }: OverviewPageProps) {
 
         {/* Hover micro-actions */}
         {isHov && !compact && !isClearing && (
-          <div className={`flex items-center gap-1 mt-2 pt-2 border-t ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]/70'}`}
+          <div className={`flex items-center gap-1 mt-2 pt-2 border-t ${isDark ? 'border-gray-700' : 'border-[#dddddd]/70'}`}
             onClick={e => e.stopPropagation()}>
             <button
               onClick={() => handleEventClick(evt)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-[9px] font-medium transition-colors ${isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e8eddf]'}`}>
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[9px] font-medium transition-colors ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5]'}`}>
               <Eye className="h-2.5 w-2.5" /> View Journey
             </button>
             <button
@@ -608,11 +627,11 @@ export function OverviewPage({ theme }: OverviewPageProps) {
       {/* Progress bar */}
       <div className={`px-4 py-3 border-b ${t.border}`}>
         <div className="flex items-center justify-between mb-1.5">
-          <span className={`text-[10px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{clearedTasks}/{totalTasks} Tasks Cleared</span>
+          <span className={`text-[10px] font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{clearedTasks}/{totalTasks} Tasks Cleared</span>
           <span className={`text-[10px] ${t.textMuted}`}>{totalTasks - clearedTasks} remaining</span>
         </div>
         <div className={`h-1.5 rounded-full ${t.progressTrack}`}>
-          <div className="h-1.5 rounded-full bg-[#87986a] transition-all duration-500" style={{ width: `${(clearedTasks / totalTasks) * 100}%` }} />
+          <div className="h-1.5 rounded-full bg-[#4bbcbe] transition-all duration-500" style={{ width: `${(clearedTasks / totalTasks) * 100}%` }} />
         </div>
       </div>
 
@@ -626,21 +645,37 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         <h3 className={`text-[10px] font-semibold mb-2 ${t.sectionLabel}`}>REQUIRES REVIEW</h3>
         <div className="space-y-2">
           {visibleCritical.length === 0 ? (
-            <div className={`flex items-center gap-2 p-2.5 rounded-lg ${isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]'}`}>
+            <div className={`flex items-center gap-2 p-2.5 rounded-lg ${isDark ? 'bg-[#4bbcbe]/10' : 'bg-[#eafafa]'}`}>
               <CheckCircle className="h-3.5 w-3.5 text-green-400" />
               <span className={`text-xs ${t.textPrimary}`}>All reviews complete</span>
             </div>
           ) : visibleCritical.map(item => {
-            const UrgIcon = URGENCY_ICON[item.urgency];
+            const UrgIcon    = URGENCY_ICON[item.urgency];
             const isFlying   = flyOutId === item.id;
             const isSelected = selectedPoId === item.id;
+            const isPendingAck = pendingAckIds.has(item.id);
+            if (isPendingAck) {
+              return (
+                <div key={item.id} className={`p-3 rounded-lg border flex items-center gap-2 ${isDark ? 'bg-amber-500/8 border-amber-500/25' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className="flex gap-0.5 shrink-0">
+                    {[0,150,300].map(d => (
+                      <div key={d} className="w-1 h-1 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                    ))}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[10px] font-semibold ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>{item.id} · {item.supplier}</p>
+                    <p className={`text-[9px] ${isDark ? 'text-amber-400/80' : 'text-amber-700'}`}>Submitted · Pending vendor acknowledgement via WhatsApp</p>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div key={item.id} className={`relative transition-all duration-[380ms] ${isFlying ? 'opacity-0 translate-x-16 scale-95' : ''}`}>
                 <button onClick={() => handlePoSelect(item.id)}
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     isSelected
-                      ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
-                      : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-[#f4f6f0]'
+                      ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40' : 'bg-[#eafafa] border-[#4bbcbe]/40'
+                      : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-[#eafafa]'
                   }`}>
                   <div className="flex items-center justify-between mb-0.5">
                     <div className="flex items-center gap-1.5">
@@ -648,7 +683,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                       <span className={`text-xs font-medium ${t.textPrimary}`}>{item.id}</span>
                       <VenueChips venues={item.venues} isDark={isDark} />
                     </div>
-                    <ChevronRight className={`h-3 w-3 ${isSelected ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textMuted}`} />
+                    <ChevronRight className={`h-3 w-3 ${isSelected ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : t.textMuted}`} />
                   </div>
                   <p className={`text-[10px] leading-snug mt-0.5 ${t.textMuted}`}>{item.why}</p>
                   <div className="flex items-baseline gap-1.5 mt-1.5">
@@ -669,13 +704,29 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         <h3 className={`text-[10px] font-semibold mb-2 ${t.sectionLabel}`}>SYSTEM ALERTS</h3>
         <div className="space-y-1.5">
           {SYSTEM_ALERTS.map(alert => {
-            const Icon  = alert.icon;
-            const isDone = quickApproved.has(alert.id);
+            const Icon       = alert.icon;
+            const isDone     = quickApproved.has(alert.id);
+            const isPending  = pendingQuickIds.has(alert.id);
             return (
-              <div key={alert.id} className={`flex items-center gap-2 p-2 rounded-lg border transition-all ${isDone ? (isDark ? 'bg-green-500/10 border-green-500/20' : 'bg-green-50 border-green-200') : (isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]')}`}>
-                {isDone ? <Check className="h-3.5 w-3.5 shrink-0 text-green-400" /> : <Icon className={`h-3.5 w-3.5 shrink-0 ${alert.severity === 'warning' ? (isDark ? 'text-amber-400' : 'text-amber-600') : (isDark ? 'text-blue-400' : 'text-blue-600')}`} />}
-                <span className={`text-[10px] leading-snug flex-1 ${isDone ? (isDark ? 'text-green-400' : 'text-green-700') : t.textMuted}`}>{isDone ? 'Approved' : alert.label}</span>
-                {alert.canQuickApprove && !isDone && (
+              <div key={alert.id} className={`flex items-center gap-2 p-2 rounded-lg border transition-all ${
+                isDone    ? (isDark ? 'bg-green-500/10 border-green-500/20'  : 'bg-green-50 border-green-200')
+                : isPending ? (isDark ? 'bg-amber-500/8 border-amber-500/25' : 'bg-amber-50 border-amber-200')
+                : (isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]')
+              }`}>
+                {isDone
+                  ? <Check className="h-3.5 w-3.5 shrink-0 text-green-400" />
+                  : isPending
+                    ? <div className="flex gap-0.5 shrink-0">{[0,150,300].map(d => <div key={d} className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: `${d}ms` }} />)}</div>
+                    : <Icon className={`h-3.5 w-3.5 shrink-0 ${alert.severity === 'warning' ? (isDark ? 'text-amber-400' : 'text-amber-600') : (isDark ? 'text-blue-400' : 'text-blue-600')}`} />
+                }
+                <span className={`text-[10px] leading-snug flex-1 ${
+                  isDone    ? (isDark ? 'text-green-400' : 'text-green-700')
+                  : isPending ? (isDark ? 'text-amber-300' : 'text-amber-700')
+                  : t.textMuted
+                }`}>
+                  {isDone ? 'Queued ✓' : isPending ? 'Queuing restock…' : alert.label}
+                </span>
+                {alert.canQuickApprove && !isDone && !isPending && (
                   <button onClick={() => handleQuickApprove(alert.id, alert.saving)}
                     className={`shrink-0 w-5 h-5 rounded flex items-center justify-center ${isDark ? 'bg-green-500/15 hover:bg-green-500/30 text-green-400' : 'bg-green-50 hover:bg-green-100 text-green-700 border border-green-200'}`}>
                     <Check className="h-3 w-3" />
@@ -705,13 +756,13 @@ export function OverviewPage({ theme }: OverviewPageProps) {
       {/* Mode toggle header (hidden when PO workspace or DAG journey open) */}
       {!selectedPO && !selectedEvent && (
         <div className={`px-6 pt-5 pb-4 flex items-center justify-between shrink-0 border-b ${t.border}`}>
-          <div className={`flex items-center rounded-lg border p-0.5 ${isDark ? 'border-gray-700 bg-[#1a1a1a]' : 'border-[#e5e5e0] bg-gray-50'}`}>
+          <div className={`flex items-center rounded-lg border p-0.5 ${isDark ? 'border-gray-700 bg-[#1a1a1a]' : 'border-[#dddddd] bg-gray-50'}`}>
             {([['analytics', BarChart3, 'Performance'] as const, ['calendar', Calendar, 'Logistics Calendar'] as const]).map(([mode, Icon, label]) => (
               <button key={mode}
                 onClick={() => { setCenterMode(mode); setSelectedEvent(null); if (mode === 'calendar') setSelectedPoId(null); }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${
                   centerMode === mode
-                    ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-white text-[#6b7a54] shadow-sm'
+                    ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-white text-[#2c9a9c] shadow-sm'
                     : isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
                 }`}>
                 <Icon className="h-3.5 w-3.5" />{label}
@@ -726,10 +777,10 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                   Daily Savings: {fmtIdrShort(dailySavings)}
                 </span>
               )}
-              <div className={`flex items-center rounded-md border p-0.5 ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'}`}>
+              <div className={`flex items-center rounded-md border p-0.5 ${isDark ? 'border-gray-700' : 'border-[#dddddd]'}`}>
                 {(['month', 'week', 'agenda'] as const).map(v => (
                   <button key={v} onClick={() => setCalView(v)}
-                    className={`px-2.5 py-1 rounded text-[10px] font-medium capitalize transition-colors ${calView === v ? (isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-white text-[#6b7a54] shadow-sm') : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`}>
+                    className={`px-2.5 py-1 rounded text-[10px] font-medium capitalize transition-colors ${calView === v ? (isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-white text-[#2c9a9c] shadow-sm') : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`}>
                     {v}
                   </button>
                 ))}
@@ -747,9 +798,9 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             {METRICS.map(m => {
               const Icon = m.icon;
               return (
-                <div key={m.label} className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+                <div key={m.label} className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                   <div className="flex items-center gap-1.5 mb-1">
-                    <Icon className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                    <Icon className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                     <span className={`text-[10px] ${t.textMuted}`}>{m.label}</span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -780,25 +831,25 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                   <AreaChart data={SPEND_TREND}>
                     <defs>
                       <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%"  stopColor="#87986a" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#87986a" stopOpacity={0}   />
+                        <stop offset="5%"  stopColor="#4bbcbe" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#4bbcbe" stopOpacity={0}   />
                       </linearGradient>
                       <linearGradient id="predGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%"  stopColor="#87986a" stopOpacity={0.12} />
-                        <stop offset="95%" stopColor="#87986a" stopOpacity={0}    />
+                        <stop offset="5%"  stopColor="#4bbcbe" stopOpacity={0.12} />
+                        <stop offset="95%" stopColor="#4bbcbe" stopOpacity={0}    />
                       </linearGradient>
                     </defs>
                     <XAxis dataKey="month" tick={{ fontSize: 10, fill: isDark ? '#777' : '#999' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: isDark ? '#777' : '#999' }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1_000_000).toFixed(0)}jt`} />
-                    <Tooltip contentStyle={{ background: isDark ? '#2a2a2a' : '#fff', border: isDark ? '1px solid #333' : '1px solid #e5e5e0', borderRadius: 8, fontSize: 11, color: isDark ? '#fff' : '#111' }}
+                    <Tooltip contentStyle={{ background: isDark ? '#2a2a2a' : '#fff', border: isDark ? '1px solid #333' : '1px solid #dddddd', borderRadius: 8, fontSize: 11, color: isDark ? '#fff' : '#111' }}
                       formatter={(value: number, name: string) => {
                         if (name === 'predHigh' || name === 'predLow') return [null, null];
                         return [value != null ? fmtIdrShort(value) : '—', name === 'spend' ? 'Actual' : 'Forecast'];
                       }} />
-                    <Area type="monotone" dataKey="predHigh" stroke="none" fill="#87986a" fillOpacity={0.07} legendType="none" />
+                    <Area type="monotone" dataKey="predHigh" stroke="none" fill="#4bbcbe" fillOpacity={0.07} legendType="none" />
                     <Area type="monotone" dataKey="predLow"  stroke="none" fill={isDark ? '#1a1a1a' : '#fff'} fillOpacity={1} legendType="none" />
-                    <Area type="monotone" dataKey="spend"     stroke="#87986a" strokeWidth={2} fill="url(#spendGrad)" dot={false} />
-                    <Area type="monotone" dataKey="predicted" stroke="#87986a" strokeWidth={2} strokeDasharray="6 3" fill="url(#predGrad)" dot={{ fill: '#87986a', r: 3 }} />
+                    <Area type="monotone" dataKey="spend"     stroke="#4bbcbe" strokeWidth={2} fill="url(#spendGrad)" dot={false} />
+                    <Area type="monotone" dataKey="predicted" stroke="#4bbcbe" strokeWidth={2} strokeDasharray="6 3" fill="url(#predGrad)" dot={{ fill: '#4bbcbe', r: 3 }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -824,7 +875,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
 
           {/* MONTH VIEW */}
           {calView === 'month' && (
-            <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+            <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
               <div className={`grid grid-cols-7 border-b ${t.border} ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
                 {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
                   <div key={d} className={`text-center py-2.5 text-[10px] font-semibold ${t.textMuted}`}>{d}</div>
@@ -840,11 +891,11 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                       {date && (
                         <>
                           <div className="flex items-center justify-between mb-1.5">
-                            <span className={`text-[11px] leading-none font-medium ${todayCell ? `w-5 h-5 rounded-full bg-[#87986a] text-white flex items-center justify-center text-[10px] font-bold` : t.textPrimary}`}>
+                            <span className={`text-[11px] leading-none font-medium ${todayCell ? `w-5 h-5 rounded-full bg-[#4bbcbe] text-white flex items-center justify-center text-[10px] font-bold` : t.textPrimary}`}>
                               {date.getDate()}
                             </span>
                             {evts.length > 0 && (
-                              <span className={`text-[9px] font-semibold px-1 py-0.5 rounded ${hasAction ? (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-700') : (isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]')}`}>
+                              <span className={`text-[9px] font-semibold px-1 py-0.5 rounded ${hasAction ? (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-700') : (isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]')}`}>
                                 {evts.length}
                               </span>
                             )}
@@ -879,14 +930,14 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 const todayRow = isToday(date);
                 return (
                   <div key={date.toISOString()}
-                    className={`rounded-xl border p-4 ${todayRow ? (isDark ? 'bg-[#87986a]/5 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]') : (isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]')}`}>
+                    className={`rounded-xl border p-4 ${todayRow ? (isDark ? 'bg-[#4bbcbe]/5 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]') : (isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]')}`}>
                     <div className="flex items-start gap-5">
                       <div className="w-12 shrink-0 text-center pt-0.5">
                         <div className={`text-[10px] font-medium ${t.textMuted}`}>{date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                        <div className={`text-xl font-bold mt-0.5 leading-none ${todayRow ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textPrimary}`}>
+                        <div className={`text-xl font-bold mt-0.5 leading-none ${todayRow ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : t.textPrimary}`}>
                           {date.getDate()}
                         </div>
-                        {todayRow && <div className={`text-[8px] font-bold uppercase mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>Today</div>}
+                        {todayRow && <div className={`text-[8px] font-bold uppercase mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>Today</div>}
                       </div>
                       <div className="flex-1 min-w-0">
                         {evts.length === 0
@@ -914,11 +965,11 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 {[...grouped.entries()].map(([ds, evts]) => (
                   <div key={ds}>
                     <div className="flex items-center gap-3 mb-2">
-                      <span className={`text-xs font-semibold ${ds === TODAY_KEY ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textPrimary}`}>
+                      <span className={`text-xs font-semibold ${ds === TODAY_KEY ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : t.textPrimary}`}>
                         {friendlyDate(ds)}
                       </span>
                       {ds === TODAY_KEY && (
-                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full uppercase ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>Today</span>
+                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full uppercase ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>Today</span>
                       )}
                       <div className={`flex-1 h-px ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
                       <span className={`text-[9px] ${t.textMuted}`}>{evts.length} event{evts.length !== 1 ? 's' : ''}</span>
@@ -957,7 +1008,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 </p>
               </div>
               <button onClick={() => setSelectedEvent(null)}
-                className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-[#f4f6f0]'}`}>
+                className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-[#eafafa]'}`}>
                 &larr; Calendar
               </button>
             </div>
@@ -1020,12 +1071,12 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                     <div key={idx}>
                       <button
                         onClick={() => { if (stage.agentStep) toggleDag(idx); }}
-                        className={`w-full flex items-start gap-3 py-2 px-2 rounded-lg text-left transition-colors ${stage.agentStep ? 'cursor-pointer hover:bg-[#f4f6f0]/60' : 'cursor-default'}`}>
+                        className={`w-full flex items-start gap-3 py-2 px-2 rounded-lg text-left transition-colors ${stage.agentStep ? 'cursor-pointer hover:bg-[#eafafa]/60' : 'cursor-default'}`}>
                         <div className="flex flex-col items-center pt-0.5">
                           <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${
                             isFailed          ? 'bg-red-500 border-red-500'
                             : stageStatus === 'complete' ? (isDark ? 'bg-green-500 border-green-500' : 'bg-green-600 border-green-600')
-                            : stageStatus === 'active'   ? 'bg-[#87986a] border-[#87986a] animate-pulse'
+                            : stageStatus === 'active'   ? 'bg-[#4bbcbe] border-[#4bbcbe] animate-pulse'
                             : isDark ? 'border-gray-600 bg-transparent' : 'border-gray-300 bg-transparent'
                           }`}>
                             {stageStatus === 'complete' && <Check className="h-2 w-2 text-white" />}
@@ -1044,7 +1095,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                               : t.textMuted
                             }`}>{stage.label}</span>
                             {stageStatus === 'active' && (
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>In Progress</span>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>In Progress</span>
                             )}
                             {isFailed && (
                               <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'}`}>Failed</span>
@@ -1070,7 +1121,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
             <AgentCTA
               isDark={isDark}
               variant="inline"
-              className={`p-3.5 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#f4f6f0] border-[#e5e5e0]'}`}
+              className={`p-3.5 rounded-xl border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-[#eafafa] border-[#dddddd]'}`}
               agentLabel={(() => {
                 const id: FinnsAgentId =
                   selectedEvent.type === 'delivery'   ? 'A-05' :
@@ -1101,7 +1152,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                 </div>
               </div>
               <button onClick={() => setSelectedPoId(null)}
-                className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-[#f4f6f0]'}`}>
+                className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-[#eafafa]'}`}>
                 ← Back
               </button>
             </div>
@@ -1148,13 +1199,13 @@ export function OverviewPage({ theme }: OverviewPageProps) {
               <div className={`${t.cardPanel} space-y-2.5`}>
                 {selectedPO.negotiationLog.map((entry, i) => (
                   <div key={i} className="flex items-start gap-3">
-                    <div className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold mt-0.5 ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>{entry.agent}</div>
+                    <div className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold mt-0.5 ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>{entry.agent}</div>
                     <p className={`text-[10px] leading-snug ${t.textPrimary}`}>{entry.text}</p>
                   </div>
                 ))}
                 <div className={`flex items-center gap-2 pt-1 border-t ${t.border}`}>
                   <div className="flex gap-0.5">
-                    {[0, 150, 300].map(d => <div key={d} className="w-1 h-1 rounded-full bg-[#87986a] animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+                    {[0, 150, 300].map(d => <div key={d} className="w-1 h-1 rounded-full bg-[#4bbcbe] animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
                   </div>
                   <span className={`text-[10px] ${t.textMuted}`}>Agents still working on your behalf...</span>
                 </div>
@@ -1200,7 +1251,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
       {/* Header */}
       <div className={`p-4 border-b ${t.border}`}>
         <div className="flex items-center gap-2 mb-0.5">
-          <Sparkles className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+          <Sparkles className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
           <span className={`text-sm font-semibold ${t.textPrimary}`}>Atlas</span>
           <div className="ml-auto w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
         </div>
@@ -1215,7 +1266,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         {centerMode === 'calendar' && !selectedEvent && (
           <div className={`p-4 border-b ${t.border}`}>
             <div className="flex items-center gap-2 mb-3">
-              <Calendar className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+              <Calendar className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
               <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>TEMPORAL ALERTS — NEXT 7 DAYS</span>
             </div>
             <div className="space-y-2">
@@ -1248,13 +1299,13 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         {centerMode === 'calendar' && !selectedEvent && (
           <div className={`p-4 border-b ${t.border}`}>
             <div className="flex items-center gap-2 mb-3">
-              <DollarSign className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+              <DollarSign className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
               <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>SAVINGS IN CALENDAR</span>
             </div>
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/10 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
               <div className="flex items-center justify-between mb-2.5">
                 <span className={`text-[10px] ${t.textMuted}`}>Available potential</span>
-                <span className={`text-base font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(CAL_SAVINGS.total)}</span>
+                <span className={`text-base font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{fmtIdrShort(CAL_SAVINGS.total)}</span>
               </div>
               <div className="space-y-1.5">
                 {CAL_SAVINGS.items.map((item, i) => (
@@ -1262,7 +1313,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                     <span className={`text-[10px] ${t.textSecondary}`}>{item.label}</span>
                     <div className="flex items-center gap-1.5">
                       <span className={`text-[9px] ${t.textMuted}`}>{item.agentId}</span>
-                      <span className={`text-[10px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(item.amount)}</span>
+                      <span className={`text-[10px] font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{fmtIdrShort(item.amount)}</span>
                     </div>
                   </div>
                 ))}
@@ -1277,16 +1328,16 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         {/* Live agent activity */}
         <div className={`p-4 border-b ${t.border}`}>
           <div className="flex items-center gap-2 mb-2">
-            <Activity className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <Activity className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
             <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>LIVE AGENT ACTIVITY</span>
           </div>
-          <div className={`p-2.5 rounded-lg border ${isDark ? 'bg-[#87986a]/5 border-[#87986a]/15' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+          <div className={`p-2.5 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/5 border-[#4bbcbe]/15' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
             <div className="flex items-center gap-2">
               <div className="flex gap-0.5 shrink-0">
-                {[0, 150, 300].map(d => <div key={d} className="w-1 h-1 rounded-full bg-[#87986a] animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+                {[0, 150, 300].map(d => <div key={d} className="w-1 h-1 rounded-full bg-[#4bbcbe] animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
               </div>
               <div>
-                <span className={`text-[10px] font-medium ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{currentPulse.agentId} {currentPulseMeta.role}</span>
+                <span className={`text-[10px] font-medium ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{currentPulse.agentId} {currentPulseMeta.role}</span>
                 <p className={`text-[10px] ${t.textMuted}`}>{currentPulse.text}</p>
               </div>
             </div>
@@ -1306,7 +1357,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
                   const resp = selectedEvent ? selectedEvent.agentReasoning : "I'm analyzing the data now — recommendation incoming.";
                   setTimeout(() => setChatMessages(prev => [...prev, { from: 'atlas', text: resp }]), 800);
                 }}
-                className={`w-full text-left text-[10px] px-2.5 py-2 rounded-lg border transition-colors ${isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800 text-gray-300' : 'bg-white border-[#e5e5e0] hover:bg-[#f4f6f0] text-gray-700'}`}>
+                className={`w-full text-left text-[10px] px-2.5 py-2 rounded-lg border transition-colors ${isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800 text-gray-300' : 'bg-white border-[#dddddd] hover:bg-[#eafafa] text-gray-700'}`}>
                 {q}
               </button>
             ))}
@@ -1316,9 +1367,9 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         {/* Autonomous actions today */}
         <div className={`p-4 border-b ${t.border}`}>
           <div className="flex items-center gap-2 mb-3">
-            <Bot className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <Bot className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
             <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>AUTONOMOUS ACTIONS TODAY</span>
-            <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>{AI_ACTIONS.length}</span>
+            <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>{AI_ACTIONS.length}</span>
           </div>
           <div className="space-y-2.5">
             {AI_ACTIONS.map((action, i) => {
@@ -1346,25 +1397,25 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         {/* Autonomy goal */}
         <div className={`p-4 border-b ${t.border}`}>
           <div className="flex items-center gap-2 mb-3">
-            <Activity className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <Activity className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
             <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>AUTONOMY GOAL</span>
           </div>
           <div className="flex items-center justify-between mb-1.5">
             <span className={`text-xs font-semibold ${t.textPrimary}`}>{AUTONOMY.category} category</span>
-            <span className={`text-[10px] font-medium ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{AUTONOMY.progress}%</span>
+            <span className={`text-[10px] font-medium ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{AUTONOMY.progress}%</span>
           </div>
           <div className={`h-1.5 rounded-full ${t.progressTrack} mb-2`}>
-            <div className="h-1.5 rounded-full bg-[#87986a] transition-all duration-700" style={{ width: `${AUTONOMY.progress}%` }} />
+            <div className="h-1.5 rounded-full bg-[#4bbcbe] transition-all duration-700" style={{ width: `${AUTONOMY.progress}%` }} />
           </div>
           <p className={`text-[10px] leading-snug ${t.textMuted}`}>
-            <span className={`font-semibold ${t.textPrimary}`}>{AUTONOMY.remaining} more approvals</span> until Sourcing Agent (A-01) unlocks higher autonomy for <span className={`font-medium ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{AUTONOMY.category}</span>.
+            <span className={`font-semibold ${t.textPrimary}`}>{AUTONOMY.remaining} more approvals</span> until Sourcing Agent (A-01) unlocks higher autonomy for <span className={`font-medium ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{AUTONOMY.category}</span>.
           </p>
         </div>
 
         {/* ROI */}
         <div className={`p-4 border-b ${t.border}`}>
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <TrendingUp className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
             <span className={`text-[10px] font-semibold ${t.sectionLabel}`}>THIS WEEK'S IMPACT</span>
           </div>
           <div className="space-y-1.5">
@@ -1388,7 +1439,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
         <div className="p-4 space-y-2">
           {chatMessages.map((msg, i) => (
             <div key={i} className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[90%] px-3 py-2 rounded-xl text-[10px] leading-snug ${msg.from === 'user' ? (isDark ? 'bg-[#87986a] text-white' : 'bg-[#6b7a54] text-white') : (isDark ? 'bg-[#2a2a2a] text-gray-300 border border-gray-800' : 'bg-gray-100 text-gray-700')}`}>
+              <div className={`max-w-[90%] px-3 py-2 rounded-xl text-[10px] leading-snug ${msg.from === 'user' ? (isDark ? 'bg-[#4bbcbe] text-white' : 'bg-[#2c9a9c] text-white') : (isDark ? 'bg-[#2a2a2a] text-gray-300 border border-gray-800' : 'bg-gray-100 text-gray-700')}`}>
                 {msg.text}
               </div>
             </div>
@@ -1402,7 +1453,7 @@ export function OverviewPage({ theme }: OverviewPageProps) {
           <Input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleChat()}
             placeholder="Ask Atlas anything..."
             className={`flex-1 h-8 text-xs ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500' : ''}`} />
-          <Button onClick={handleChat} size="sm" className="h-8 w-8 p-0 bg-[#87986a] hover:bg-[#6b7a54] text-white">
+          <Button onClick={handleChat} size="sm" className="h-8 w-8 p-0 bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white">
             <Send className="h-3.5 w-3.5" />
           </Button>
         </div>

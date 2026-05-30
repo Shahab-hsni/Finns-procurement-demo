@@ -69,6 +69,7 @@ export type ActionKind =
   | 'rule-create' | 'rule-toggle' | 'rule-edit' | 'rule-delete'
   | 'event-override' | 'event-rollback' | 'event-edit-data-point'
   | 'dispute-approve' | 'dispute-reject' | 'dispute-escalate' | 'dispute-harden-precedent'
+  | 'po-dispute-send' | 'po-payment-approve'
   | 'agent-suspend' | 'agent-resume'
   | 'ledger-approve' | 'undo-mode-change'
   // Cross-page

@@ -222,7 +222,7 @@ export function RuleComposerModal({
   const textPrimary = isDark ? 'text-white' : 'text-gray-900';
   const textMuted   = isDark ? 'text-gray-400' : 'text-gray-600';
   const inputClass  = `${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400'}`;
-  const chipActive  = isDark ? 'bg-[#87986a]/20 text-[#a3b085] border-[#87986a]/50' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#87986a]/40';
+  const chipActive  = isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border-[#4bbcbe]/50' : 'bg-[#eafafa] text-[#2c9a9c] border-[#4bbcbe]/40';
   const chipIdle    = isDark ? 'bg-[#2a2a2a] text-gray-400 border-gray-700 hover:border-gray-600' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300';
 
   return (
@@ -349,7 +349,7 @@ export function RuleComposerModal({
                   <Label className={`text-[9px] ${textMuted}`}>Composite floor · {draft.config.compositeFloor ?? 0}/100</Label>
                   <input type="range" min={0} max={100} value={draft.config.compositeFloor ?? 70}
                          onChange={e => setDraft(d => ({ ...d, config: { ...d.config, compositeFloor: Number(e.target.value) } }))}
-                         className="w-full mt-2 accent-[#87986a]" />
+                         className="w-full mt-2 accent-[#4bbcbe]" />
                   <p className={`text-[10px] mt-1 ${textMuted}`}>
                     Vendors below this composite score are blocked from new POs.
                   </p>
@@ -368,7 +368,7 @@ export function RuleComposerModal({
                     <input type="checkbox" id="exact-match"
                            checked={!!draft.config.exactAmountMatch}
                            onChange={e => setDraft(d => ({ ...d, config: { ...d.config, exactAmountMatch: e.target.checked } }))}
-                           className="h-4 w-4 accent-[#87986a]" />
+                           className="h-4 w-4 accent-[#4bbcbe]" />
                     <label htmlFor="exact-match" className={`text-[11px] ${textPrimary}`}>
                       Require exact amount match
                     </label>
@@ -398,7 +398,7 @@ export function RuleComposerModal({
             <input type="checkbox" id="active-toggle"
                    checked={draft.active}
                    onChange={e => setDraft(d => ({ ...d, active: e.target.checked }))}
-                   className="h-4 w-4 accent-[#87986a]" />
+                   className="h-4 w-4 accent-[#4bbcbe]" />
             <label htmlFor="active-toggle" className={`text-xs flex-1 ${textPrimary}`}>
               <span className="font-semibold">Active</span>
               <span className={`block text-[10px] ${textMuted}`}>
@@ -426,7 +426,7 @@ export function RuleComposerModal({
               Cancel
             </Button>
             <Button onClick={handleSubmit} disabled={!valid}
-                    className="bg-[#87986a] hover:bg-[#6b7a54] text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white disabled:opacity-40 disabled:cursor-not-allowed">
               {editing ? <><Save className="h-3.5 w-3.5 mr-1.5" /> Save changes</> : <><Plus className="h-3.5 w-3.5 mr-1.5" /> Create rule</>}
             </Button>
           </div>

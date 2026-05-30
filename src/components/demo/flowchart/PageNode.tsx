@@ -27,16 +27,16 @@ function PageNodeImpl({ data }: NodeProps) {
 
   const groupColor =
     group === 'core'
-      ? { bg: isDark ? 'bg-[#87986a]/20' : 'bg-[#f4f6f0]', text: isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]' }
+      ? { bg: isDark ? 'bg-[#4bbcbe]/20' : 'bg-[#eafafa]', text: isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]' }
       : { bg: isDark ? 'bg-amber-500/15' : 'bg-amber-50', text: isDark ? 'text-amber-300' : 'text-amber-700' };
 
   const surface = isDark ? 'bg-[#1f1f1f]' : 'bg-white';
   const border = isFocused
-    ? 'border-[#87986a] shadow-[0_0_0_3px_rgba(135,152,106,0.25)]'
+    ? 'border-[#4bbcbe] shadow-[0_0_0_3px_rgba(135,152,106,0.25)]'
     : isDark
     ? 'border-gray-800'
-    : 'border-[#e5e5e0]';
-  const textHead = isDark ? 'text-white' : 'text-[#0a0a0a]';
+    : 'border-[#dddddd]';
+  const textHead = isDark ? 'text-white' : 'text-[#222222]';
   const textMuted = isDark ? 'text-gray-500' : 'text-gray-500';
   const textDim = isDark ? 'text-gray-600' : 'text-gray-400';
 
@@ -81,7 +81,7 @@ function PageNodeImpl({ data }: NodeProps) {
       </div>
 
       {/* Footer counts */}
-      <div className={`mt-2.5 px-3 py-1.5 flex items-center gap-3 border-t ${isDark ? 'border-gray-800 bg-[#181818]' : 'border-[#e5e5e0] bg-[#fafaf7]'}`}>
+      <div className={`mt-2.5 px-3 py-1.5 flex items-center gap-3 border-t ${isDark ? 'border-gray-800 bg-[#181818]' : 'border-[#dddddd] bg-[#fafaf7]'}`}>
         <FooterStat label="states"  value={stateCount}  textMuted={textMuted} textHead={textHead} />
         <FooterStat label="actions" value={actionCount} textMuted={textMuted} textHead={textHead} />
         <FooterStat label="modals"  value={modalCount}  textMuted={textMuted} textHead={textHead} />

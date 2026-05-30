@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
@@ -12,9 +12,9 @@ import {
 } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
 import { toast } from "sonner";
-import { finnsSuppliers, finnsPlaybooks, finnsVenues, finnsPolicyRules } from "../lib/mockData";
+import { finnsSuppliers, finnsPlaybooks, finnsVenues, finnsPolicyRules, finnsSKUs } from "../lib/mockData";
 import type {
-  VenueTag, FinnsCategory, PlaybookId, FinnsAgentId,
+  VenueTag, FinnsCategory, PlaybookId, FinnsAgentId, FinnsSKU,
 } from "../lib/types";
 import { AgentCTA } from "./AgentCTA";
 import { RFQComposerModal } from "./RFQComposerModal";
@@ -53,11 +53,11 @@ interface LineItem {
 const CATEGORIES: FinnsCategory[] = ['Protein', 'Seafood', 'Produce', 'Dry Goods', 'Dairy', 'Beverages', 'Other'];
 
 const SAGE = {
-  activeBg: (isDark: boolean) => isDark ? 'bg-[#87986a]/10 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/50',
+  activeBg: (isDark: boolean) => isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/40' : 'bg-[#eafafa] border-[#4bbcbe]/50',
   inactiveBg: (isDark: boolean) => isDark ? 'bg-[#2a2a2a] border-gray-700 hover:border-gray-600' : 'bg-white border-gray-200 hover:border-gray-300',
-  primary: (isDark: boolean) => isDark ? 'bg-[#87986a] hover:bg-[#6b7a54] text-white' : 'bg-[#87986a] hover:bg-[#6b7a54] text-white',
-  badge: (isDark: boolean) => isDark ? 'bg-[#87986a]/10 text-[#a3b085] border-[#87986a]/20' : 'bg-[#f4f6f0] text-[#4f5c3e] border-[#87986a]/30',
-  icon: (isDark: boolean) => isDark ? 'text-[#a3b085]' : 'text-[#87986a]',
+  primary: (isDark: boolean) => isDark ? 'bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white' : 'bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white',
+  badge: (isDark: boolean) => isDark ? 'bg-[#4bbcbe]/10 text-[#82d3d5] border-[#4bbcbe]/20' : 'bg-[#eafafa] text-[#4f5c3e] border-[#4bbcbe]/30',
+  icon: (isDark: boolean) => isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]',
 };
 
 const STEP_LABELS = ['Items', 'Vendors', 'Delivery', 'Review', 'Done'];
@@ -78,7 +78,7 @@ const VenueChips = ({ venues, isDark, onToggle }: { venues: VenueTag[]; isDark: 
     return (
       <div className="flex items-center gap-0.5 flex-wrap">
         {venues.map(v => (
-          <span key={v} className={`text-[9px] font-bold px-1 py-0.5 rounded ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+          <span key={v} className={`text-[9px] font-bold px-1 py-0.5 rounded ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>
             {VENUE_LABEL[v]}
           </span>
         ))}
@@ -95,7 +95,7 @@ const VenueChips = ({ venues, isDark, onToggle }: { venues: VenueTag[]; isDark: 
             onClick={() => onToggle(v)}
             className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors ${
               active
-                ? isDark ? 'bg-[#87986a] border-[#87986a] text-white' : 'bg-[#87986a] border-[#87986a] text-white'
+                ? isDark ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white' : 'bg-[#4bbcbe] border-[#4bbcbe] text-white'
                 : isDark ? 'bg-transparent border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-white border-gray-300 text-gray-500 hover:border-gray-400'
             }`}>
             {VENUE_LABEL[v]}
@@ -174,8 +174,27 @@ function VendorNotePanel({
 export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) {
   const isDark = theme === 'dark';
   const [step, setStep] = useState(1);
+  const centerPanelRef = useRef<HTMLDivElement>(null);
+  // Scroll center panel to top on every step transition so the top of the
+  // new step content is always the first thing the user sees.
+  useEffect(() => {
+    centerPanelRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }, [step]);
   const [rfqOpen, setRfqOpen] = useState(false);
   const [rfqTrackerOpen, setRfqTrackerOpen] = useState(false);
+  // Held suppliers — synced from SuppliersPage via localStorage.
+  const [heldVendors, setHeldVendors] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('finns-held-suppliers') ?? '[]') as string[]); }
+    catch { return new Set(); }
+  });
+  useEffect(() => {
+    const handler = () => {
+      try { setHeldVendors(new Set(JSON.parse(localStorage.getItem('finns-held-suppliers') ?? '[]') as string[])); }
+      catch { /* ignore */ }
+    };
+    window.addEventListener('finns-held-suppliers-changed', handler);
+    return () => window.removeEventListener('finns-held-suppliers-changed', handler);
+  }, []);
   const rfqRecords = useRFQs();
   const activeRfqCount = rfqRecords.filter(r =>
     r.status === 'awaiting' || r.status === 'partial' || r.status === 'received'
@@ -533,6 +552,47 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
   }, [step, requestName, items.length]);
 
   const itemsTotalIdr = items.reduce((sum, i) => sum + i.qty * i.unitPriceIdr, 0);
+
+  // ── Atlas Quantity Check (Step 4) ───────────────────────────────
+  // Fuzzy-matches each basket item to a FinnsSKU by keyword overlap,
+  // then computes a suggested quantity from burn rate + par gap.
+  // Only fires on Step 4 entry; reset when the user leaves Step 4.
+  type QtySuggestion = {
+    sku: FinnsSKU;
+    suggestedQty: number;
+    reason: string;
+    accepted: boolean;
+    dismissed: boolean;
+  };
+  const [qtySuggestions, setQtySuggestions] = useState<Record<string, QtySuggestion>>({});
+
+  function matchSKUToItem(item: LineItem): FinnsSKU | null {
+    const words = item.name.toLowerCase().split(/[\s,()/-]+/).filter(w => w.length > 3);
+    return finnsSKUs.find(sku => {
+      const skuLower = sku.name.toLowerCase();
+      return words.some(w => skuLower.includes(w));
+    }) ?? null;
+  }
+
+  useEffect(() => {
+    if (step !== 4) { setQtySuggestions({}); return; }
+    const LEAD_DAYS = 3;
+    const next: Record<string, QtySuggestion> = {};
+    items.forEach(item => {
+      const sku = matchSKUToItem(item);
+      if (!sku) return;
+      const burnCover  = Math.ceil(sku.burnRate * LEAD_DAYS);
+      const parGap     = Math.max(0, sku.par - sku.onHand);
+      const suggested  = Math.max(burnCover, parGap, 1);
+      // Only surface when the suggestion is ≥20% more than ordered.
+      if (suggested / item.qty < 1.2) return;
+      const reason = parGap >= burnCover
+        ? `par gap — ${sku.onHand}/${sku.par} ${sku.uom} in stock`
+        : `covers ${LEAD_DAYS}d at ${sku.burnRate} ${sku.uom}/day burn rate`;
+      next[item.id] = { sku, suggestedQty: suggested, reason, accepted: false, dismissed: false };
+    });
+    setQtySuggestions(next);
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addItem() {
     if (!newItemName.trim()) return;
@@ -1009,7 +1069,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 disabled={num >= step}
                 className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold transition-colors ${
                   done
-                    ? 'bg-[#87986a] text-white cursor-pointer hover:bg-[#6b7a54]'
+                    ? 'bg-[#4bbcbe] text-white cursor-pointer hover:bg-[#2c9a9c]'
                     : active
                       ? 'bg-amber-500 text-white ring-2 ring-amber-500/30 ring-offset-1 ' + (isDark ? 'ring-offset-[#1a1a1a]' : 'ring-offset-white')
                       : isDark ? 'bg-gray-700 text-gray-500' : 'bg-gray-200 text-gray-500'
@@ -1017,13 +1077,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 {done ? <CheckCircle className="h-3 w-3" /> : num}
               </button>
               <span className={`text-[10px] font-semibold truncate ${
-                done ? isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                done ? isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                 : active ? isDark ? 'text-white' : 'text-gray-900'
                 : isDark ? 'text-gray-500' : 'text-gray-500'
               }`}>{label}</span>
               {i < 3 && (
                 <div className={`flex-1 h-0.5 min-w-[6px] rounded-full transition-colors ${
-                  done ? 'bg-[#87986a]' : isDark ? 'bg-gray-700' : 'bg-gray-200'
+                  done ? 'bg-[#4bbcbe]' : isDark ? 'bg-gray-700' : 'bg-gray-200'
                 }`} />
               )}
             </div>
@@ -1156,7 +1216,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
 
           {step === 1 && (
             <>
-              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                 <AgentCTA
                   isDark={isDark}
                   variant="inline"
@@ -1166,7 +1226,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 />
                 <div className={`mt-2 pt-2 border-t flex items-center justify-between ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Spending pulse</span>
-                  <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{fmtIdrShort(itemsTotalIdr)} of Rp 12jt monthly</span>
+                  <span className={`text-[10px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{fmtIdrShort(itemsTotalIdr)} of Rp 12jt monthly</span>
                 </div>
               </div>
 
@@ -1185,10 +1245,10 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         <div key={cat}>
                           <div className="flex items-center justify-between mb-0.5">
                             <span className={`text-[10px] ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{cat}</span>
-                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{count}</span>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{count}</span>
                           </div>
                           <div className={`h-1 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                            <div className="h-1 rounded-full bg-[#87986a]" style={{ width: `${pct}%` }} />
+                            <div className="h-1 rounded-full bg-[#4bbcbe]" style={{ width: `${pct}%` }} />
                           </div>
                         </div>
                       );
@@ -1239,10 +1299,10 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   <div key={k} className="mb-1.5">
                     <div className="flex items-center justify-between mb-0.5">
                       <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{k}</span>
-                      <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{v}%</span>
+                      <span className={`text-[10px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{v}%</span>
                     </div>
                     <div className={`h-1.5 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                      <div className="h-1.5 rounded-full bg-[#87986a]" style={{ width: `${v}%` }} />
+                      <div className="h-1.5 rounded-full bg-[#4bbcbe]" style={{ width: `${v}%` }} />
                     </div>
                   </div>
                 ))}
@@ -1342,7 +1402,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
           )}
 
           {step === 5 && (
-            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+            <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
               <div className="flex items-center gap-1.5 mb-1">
                 <Sparkles className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
                 <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Hand-off Complete</span>
@@ -1359,7 +1419,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
               <div key={i} className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[88%] px-3 py-2 rounded-xl text-[10px] leading-snug ${
                   msg.from === 'user'
-                    ? isDark ? 'bg-[#87986a] text-white' : 'bg-[#6b7a54] text-white'
+                    ? isDark ? 'bg-[#4bbcbe] text-white' : 'bg-[#2c9a9c] text-white'
                     : isDark ? 'bg-[#2a2a2a] text-gray-300 border border-gray-800' : 'bg-gray-100 text-gray-700'
                 }`}>{msg.text}</div>
               </div>
@@ -1383,7 +1443,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
           />
           <Button onClick={sendAtlas} disabled={!atlasInput.trim()}
             size="sm"
-            className={`shrink-0 h-7 w-7 p-0 ${atlasInput.trim() ? 'bg-[#87986a] hover:bg-[#6b7a54] text-white' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'}`}>
+            className={`shrink-0 h-7 w-7 p-0 ${atlasInput.trim() ? 'bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'}`}>
             <ChevronRight className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -1406,7 +1466,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide border ${
-                  isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                  isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
                 }`}>
                   <ShieldCheck className="h-2.5 w-2.5" />
                   Sourcing Portal
@@ -1435,7 +1495,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
           {step < 5 && (
             <div className={`mt-3 p-2.5 rounded-lg border text-[11px] flex items-center gap-2 flex-wrap ${
               poAutonomy === 'auto'
-                ? isDark ? 'bg-[#87986a]/10 border-[#87986a]/30 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#dbe3ce] text-[#6b7a54]'
+                ? isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/30 text-[#82d3d5]' : 'bg-[#eafafa] border-[#c4eef0] text-[#2c9a9c]'
                 : isDark ? 'bg-amber-500/8 border-amber-500/25 text-amber-300/90' : 'bg-amber-50 border-amber-200 text-amber-700'
             }`}>
               <span className="font-bold uppercase tracking-wide text-[9px]">
@@ -1501,7 +1561,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
 
         {/* Step content area */}
         <ScrollArea className="flex-1 min-h-0">
-          <div key={step}
+          <div key={step} ref={centerPanelRef}
             className="px-6 py-6 max-w-3xl mx-auto w-full"
             style={{ animation: 'wizard-slide-in 280ms cubic-bezier(0.34, 1.4, 0.64, 1)' }}>
             <style>{`
@@ -1523,7 +1583,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   if (!trends) return null;
                   return (
                     <div className={`p-3 rounded-lg border mb-4 ${
-                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                      isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
                     }`}>
                       <div className="flex items-start gap-2">
                         <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
@@ -1597,7 +1657,26 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         </div>
                         <div className="flex items-center gap-2 flex-wrap text-[10px]">
                           <span className={`px-1.5 py-0.5 rounded ${SAGE.badge(isDark)}`}>{item.category}</span>
-                          <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>{item.qty} {item.unit}</span>
+                          {/* +/- qty stepper — consumer-grade quantity control */}
+                          <div className={`flex items-center rounded-full border overflow-hidden ${
+                            isDark ? 'border-gray-700' : 'border-[#dddddd]'
+                          }`}>
+                            <button
+                              onClick={() => setItems(prev => prev.map(i => i.id === item.id && i.qty > 1 ? { ...i, qty: i.qty - 1 } : i))}
+                              className={`w-6 h-6 flex items-center justify-center text-sm transition-colors ${
+                                isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-[#eafafa] text-gray-500'
+                              }`}
+                            >−</button>
+                            <span className={`px-2 text-[10px] font-semibold min-w-[36px] text-center ${isDark ? 'text-white' : 'text-[#222222]'}`}>
+                              {item.qty} {item.unit}
+                            </span>
+                            <button
+                              onClick={() => setItems(prev => prev.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i))}
+                              className={`w-6 h-6 flex items-center justify-center text-sm transition-colors ${
+                                isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-[#eafafa] text-gray-500'
+                              }`}
+                            >+</button>
+                          </div>
                           {item.unitPriceIdr > 0 && <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>· {fmtIdrShort(item.unitPriceIdr)}/{item.unit}</span>}
                           <span className={`ml-auto text-[9px] uppercase font-bold ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Venues</span>
                           <VenueChips venues={item.venues} isDark={isDark} onToggle={v => toggleItemVenue(item.id, v)} />
@@ -1644,7 +1723,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         decoupled.) */}
                     {detectedFromName && newItemName.trim().length > 0 && (
                       <div className={`mt-2 inline-flex items-center gap-2 px-2 py-1 rounded-md text-[10px] ${
-                        isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                        isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                       }`}>
                         <Sparkles className="h-3 w-3" />
                         <span className="font-semibold">A-01 detected:</span>
@@ -1666,6 +1745,89 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   </div>
                 </div>
 
+                {/* Quick Pick — browse catalog tiles instead of typing.
+                    Filters as the user types; shows all when name is empty.
+                    Category colour-coded. Clicking a tile adds the SKU to
+                    the basket at the par-gap qty (or 1 as fallback). */}
+                {(() => {
+                  const query = newItemName.trim().toLowerCase();
+                  const matches = finnsSKUs.filter(sku =>
+                    !sku.archived &&
+                    (query.length < 2 || sku.name.toLowerCase().includes(query))
+                  ).slice(0, 12);
+                  if (matches.length === 0) return null;
+                  const CAT_COLORS: Record<string, string> = {
+                    Protein:   '#991b1b', Seafood: '#075985', Produce: '#166534',
+                    'Dry Goods': '#334155', Dairy: '#0e7490', Beverages: '#92400e', Other: '#64748b',
+                  };
+                  return (
+                    <div className={cardClass}>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                          Quick Add from Catalog
+                        </span>
+                        <span className={`text-[9px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
+                          {query.length >= 2 ? `${matches.length} match${matches.length !== 1 ? 'es' : ''}` : `${matches.length} items`}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {matches.map(sku => {
+                          const dot = CAT_COLORS[sku.category] ?? '#64748b';
+                          const gap = Math.max(1, Math.ceil(sku.par - sku.onHand));
+                          const alreadyAdded = items.some(it =>
+                            it.name.toLowerCase().includes(sku.name.split(' ')[0].toLowerCase())
+                          );
+                          return (
+                            <button
+                              key={sku.id}
+                              disabled={alreadyAdded}
+                              onClick={() => {
+                                setItems(prev => [...prev, {
+                                  id: `sku-${sku.id}-${Date.now()}`,
+                                  name: sku.name,
+                                  category: sku.category as FinnsCategory,
+                                  qty: gap,
+                                  unit: sku.uom,
+                                  unitPriceIdr: 0,
+                                  venues: sku.venues as VenueTag[],
+                                }]);
+                                toast.success(`Added ${sku.name}`, {
+                                  description: `${gap} ${sku.uom} · par gap`,
+                                });
+                              }}
+                              className={`text-left p-2.5 rounded-lg border transition-all ${
+                                alreadyAdded
+                                  ? isDark ? 'opacity-40 border-gray-800 cursor-not-allowed' : 'opacity-40 border-gray-200 cursor-not-allowed'
+                                  : isDark
+                                    ? 'border-gray-700 hover:border-[#4bbcbe]/50 hover:bg-[#4bbcbe]/8'
+                                    : 'border-[#dddddd] hover:border-[#4bbcbe]/40 hover:bg-[#eafafa]'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: dot }} />
+                                <span className={`text-[9px] font-semibold uppercase tracking-wide`} style={{ color: dot }}>
+                                  {sku.category}
+                                </span>
+                              </div>
+                              <p className={`text-[11px] font-semibold leading-tight mb-1 ${isDark ? 'text-white' : 'text-[#222222]'}`}>
+                                {sku.name}
+                              </p>
+                              <p className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                {sku.onHand} {sku.uom} in stock · par {sku.par}
+                              </p>
+                              {alreadyAdded && (
+                                <p className={`text-[9px] font-semibold mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
+                                  ✓ added
+                                </p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Atlas · Complementary items — items that frequently
                     co-occur in past Finn's POs of the same category mix.
                     Click [+ Add] to drop one into the basket. Hidden
@@ -1675,7 +1837,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   if (suggestions.length === 0) return null;
                   return (
                     <div className={`p-3 rounded-lg border mb-6 ${
-                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                      isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
                     }`}>
                       <div className="flex items-start gap-2 mb-2">
                         <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
@@ -1693,7 +1855,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       <div className="space-y-1.5">
                         {suggestions.map(s => (
                           <div key={s.name} className={`flex items-center gap-2 p-2 rounded ${
-                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#dbe3ce]'
+                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#c4eef0]'
                           }`}>
                             <div className="min-w-0 flex-1">
                               <p className={`text-[11px] font-semibold ${labelClass}`}>{s.name}</p>
@@ -1704,7 +1866,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                             <button
                               onClick={() => addComplementary(s)}
                               className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded font-bold transition-colors ${
-                                isDark ? 'bg-[#87986a]/20 text-[#a3b085] hover:bg-[#87986a]/30' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e6ecda] border border-[#dbe3ce]'
+                                isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] hover:bg-[#4bbcbe]/30' : 'bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5] border border-[#c4eef0]'
                               }`}>
                               <Plus className="h-3 w-3" /> Add
                             </button>
@@ -1806,7 +1968,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   if (!intel) return null;
                   return (
                     <div className={`p-3 rounded-lg border ${
-                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                      isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
                     }`}>
                       <div className="flex items-start gap-2">
                         <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
@@ -1852,7 +2014,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         }`}>
                           <div className="flex items-center justify-between gap-2">
                             <span className={`text-xs font-semibold ${labelClass}`}>{g.vendorName}</span>
-                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                               {g.items.length} item{g.items.length === 1 ? '' : 's'}
                             </span>
                           </div>
@@ -1865,7 +2027,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => { setSplitMode(true); setStep(3); }}
-                        className="text-[11px] px-3 py-1.5 rounded-lg font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                        className="text-[11px] px-3 py-1.5 rounded-lg font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors">
                         Auto-split into {proposedSplits.length} POs →
                       </button>
                       <button
@@ -1901,7 +2063,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         View all RFQs
                         {activeRfqCount > 0 && (
                           <span className={`ml-0.5 text-[9px] font-bold px-1 py-0 rounded-full ${
-                            isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                            isDark ? 'bg-[#4bbcbe]/30 text-[#82d3d5]' : 'bg-[#4bbcbe]/20 text-[#2c9a9c]'
                           }`}>
                             {activeRfqCount}
                           </span>
@@ -1994,9 +2156,16 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                   )}
                                   {isSuggested && !selected && (
                                     <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-                                      isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                                      isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                                     }`}>
                                       <Sparkles className="h-2.5 w-2.5" /> Match
+                                    </span>
+                                  )}
+                                  {heldVendors.has(v.name) && (
+                                    <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                      isDark ? 'bg-red-500/20 text-red-400' : 'bg-red-50 text-red-700'
+                                    }`}>
+                                      <AlertTriangle className="h-2.5 w-2.5" /> PO Hold
                                     </span>
                                   )}
                                   {/* 6i — coverage chip. Only shows when items span ≥2 categories. */}
@@ -2036,7 +2205,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                   <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{v.region} · {v.type}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{v.metrics.composite}</span>
+                                  <span className={`text-[10px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{v.metrics.composite}</span>
                                   <VenueChips venues={v.venuesServed} isDark={isDark} />
                                 </div>
                               </div>
@@ -2065,13 +2234,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   <div className={`p-4 rounded-xl border ${
                     manualAssignments.unassigned.length > 0
                       ? isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
-                      : isDark ? 'bg-[#87986a]/10 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                      : isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/40' : 'bg-[#eafafa] border-[#4bbcbe]/40'
                   }`}>
                     <div className="flex items-start gap-2 mb-3">
                       <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${
                         manualAssignments.unassigned.length > 0
                           ? isDark ? 'text-amber-300' : 'text-amber-700'
-                          : isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                          : isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                       }`} />
                       <div className="min-w-0">
                         <p className={`text-[11px] font-bold ${labelClass}`}>
@@ -2096,7 +2265,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                               </span>
                               <span className={`text-xs font-semibold ${labelClass}`}>{g.vendor.name}</span>
                             </div>
-                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                               {g.items.length} item{g.items.length === 1 ? '' : 's'}
                             </span>
                           </div>
@@ -2152,7 +2321,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   if (!history) return null;
                   return (
                     <div className={`p-3 rounded-lg border ${
-                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                      isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
                     }`}>
                       <div className="flex items-start gap-2">
                         <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
@@ -2219,7 +2388,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         </span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           isPartiallyAwarded
-                            ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                            ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                             : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
                         }`}>
                           {awardedCount}/{totalItems} items awarded
@@ -2234,7 +2403,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     {/* Coverage progress bar */}
                     {totalItems > 0 && (
                       <div className={`h-1.5 rounded-full overflow-hidden mb-3 ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                        <div className="h-full bg-[#87986a] transition-all duration-300"
+                        <div className="h-full bg-[#4bbcbe] transition-all duration-300"
                              style={{ width: `${Math.round((awardedCount / totalItems) * 100)}%` }} />
                       </div>
                     )}
@@ -2268,14 +2437,14 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         return (
                           <div key={vid} className={`flex items-start gap-2 p-3 rounded-lg border ${
                             isAwarded
-                              ? isDark ? 'bg-[#87986a]/10 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                              ? isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/40' : 'bg-[#eafafa] border-[#4bbcbe]/40'
                               : isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
                           }`}>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className={`text-xs font-semibold ${labelClass}`}>{vendorName}</span>
                                 {isAwarded && (
-                                  <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                                  <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                                     <Award className="h-2.5 w-2.5" /> Awarded · {award!.poId}
                                   </span>
                                 )}
@@ -2288,7 +2457,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
                                     claimable.length === 0
                                       ? isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-500'
-                                      : isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                                      : isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                                   }`}>
                                     {isNoBidForBasket
                                       ? 'No bid'
@@ -2309,7 +2478,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                     <span>·</span>
                                     <span className={`inline-flex items-center gap-0.5 ${
                                       wizardRfq.channel === 'whatsapp'
-                                        ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
+                                        ? isDark ? 'text-[#82d3d5]' : 'text-[#25D366]'
                                         : isDark ? 'text-blue-300' : 'text-blue-700'
                                     }`}>
                                       via {wizardRfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}
@@ -2346,7 +2515,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                                 onClick={() => handleAwardInWizard(quote)}
                                 className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded font-bold transition-colors ${
                                   isLowest
-                                    ? 'bg-[#87986a] text-white hover:bg-[#6b7a54]'
+                                    ? 'bg-[#4bbcbe] text-white hover:bg-[#2c9a9c]'
                                     : isDark
                                       ? 'border border-gray-700 text-gray-300 hover:bg-gray-800'
                                       : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -2411,10 +2580,10 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     apply to ALL drafted POs uniformly. */}
                 {awardedQuotes.length === 1 && awardedQuote && (
                   <div className={`p-3 rounded-lg border ${
-                    isDark ? 'bg-[#87986a]/10 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                    isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'
                   }`}>
                     <div className="flex items-start gap-2">
-                      <Award className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                      <Award className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                       <div className="min-w-0">
                         <p className={`text-[11px] font-semibold ${labelClass}`}>
                           Awarded from {awardedQuote.rfqId} · {awardedQuote.vendorName}
@@ -2428,10 +2597,10 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 )}
                 {awardedQuotes.length > 1 && (
                   <div className={`p-3 rounded-lg border ${
-                    isDark ? 'bg-[#87986a]/10 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                    isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'
                   }`}>
                     <div className="flex items-start gap-2 mb-2">
-                      <Award className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                      <Award className={`h-4 w-4 mt-0.5 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                       <div className="min-w-0 flex-1">
                         <p className={`text-[11px] font-semibold ${labelClass}`}>
                           Awarded from {awardedQuotes[0].rfqId} · {awardedQuotes.length} vendors · {awardedQuotes.length} PO drafts
@@ -2446,7 +2615,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         const aqItems = wizardRfq?.items.filter(it => aq.itemIds.includes(it.id)) ?? [];
                         return (
                           <div key={aq.poId} className={`flex items-start gap-2 p-2 rounded text-[10px] ${
-                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#dbe3ce]'
+                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#c4eef0]'
                           }`}>
                             <span className={`shrink-0 font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
                               {aq.poId}
@@ -2476,7 +2645,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         <button key={v.tag} onClick={() => toggleTargetVenue(v.tag)}
                           className={`text-left p-3 rounded-lg border transition-colors ${active ? SAGE.activeBg(isDark) : SAGE.inactiveBg(isDark)}`}>
                           <div className="flex items-center gap-2">
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${active ? (isDark ? 'bg-[#87986a] text-white' : 'bg-[#87986a] text-white') : SAGE.badge(isDark)}`}>{v.tag}</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${active ? (isDark ? 'bg-[#4bbcbe] text-white' : 'bg-[#4bbcbe] text-white') : SAGE.badge(isDark)}`}>{v.tag}</span>
                             <span className={`text-xs font-semibold ${labelClass}`}>{v.name}</span>
                           </div>
                           <p className={`text-[10px] mt-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{v.description}</p>
@@ -2514,7 +2683,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                     if (!intel) return null;
                     return (
                       <div className={`p-3 rounded-lg border ${
-                        isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                        isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
                       }`}>
                         <div className="flex items-start gap-2">
                           <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
@@ -2564,7 +2733,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   const anyTight = perVendor.some(x => x.intel!.flexAssessment === 'tight');
                   return (
                     <div className={`p-3 rounded-lg border ${
-                      isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                      isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
                     }`}>
                       <div className="flex items-start gap-2 mb-2">
                         <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${SAGE.icon(isDark)}`} />
@@ -2589,7 +2758,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       <div className="space-y-1.5">
                         {perVendor.map(x => (
                           <div key={x.vid} className={`p-2 rounded text-[10px] ${
-                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#dbe3ce]'
+                            isDark ? 'bg-[#1a1a1a]' : 'bg-white border border-[#c4eef0]'
                           }`}>
                             <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                               <span className={`font-semibold ${labelClass}`}>{x.vendor!.name}</span>
@@ -2681,7 +2850,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   return (
                     <div className={`p-3 rounded-lg border ${
                       readiness.policyGreen
-                        ? isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                        ? isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
                         : isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-200'
                     }`}>
                       <div className="flex items-start gap-2">
@@ -2701,6 +2870,131 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                           </p>
                         </div>
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Atlas Quantity Check — fires when ≥1 basket item has a
+                    meaningful gap vs burn rate or par. Accept updates the
+                    qty in the basket live; dismiss hides the row. */}
+                {(() => {
+                  const pending = items.filter(it => {
+                    const s = qtySuggestions[it.id];
+                    return s && !s.accepted && !s.dismissed;
+                  });
+                  const total = Object.keys(qtySuggestions).length;
+                  if (total === 0) return null;
+
+                  if (pending.length === 0) {
+                    return (
+                      <div className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border ${
+                        isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'
+                      }`}>
+                        <CheckCircle className={`h-3.5 w-3.5 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+                        <span className={`text-[11px] font-medium ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
+                          All quantities reviewed · Atlas
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className={`rounded-xl border overflow-hidden ${
+                      isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
+                    }`}>
+                      {/* Header */}
+                      <div className={`px-4 py-3 flex items-center gap-2 border-b ${
+                        isDark ? 'border-gray-800' : 'border-[#dddddd]'
+                      }`}>
+                        <Sparkles className={`h-3.5 w-3.5 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
+                        <div className="flex-1 min-w-0">
+                          <span className={`text-[9px] font-bold uppercase tracking-wide ${
+                            isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
+                          }`}>
+                            Atlas · Quantity Check
+                          </span>
+                          <p className={`text-[10px] mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {pending.length} item{pending.length !== 1 ? 's' : ''} flagged · burn rate + par levels
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const next = { ...qtySuggestions };
+                            setItems(prev => prev.map(it => {
+                              const s = next[it.id];
+                              if (s && !s.dismissed) {
+                                next[it.id] = { ...s, accepted: true };
+                                return { ...it, qty: s.suggestedQty };
+                              }
+                              return it;
+                            }));
+                            setQtySuggestions(next);
+                          }}
+                          className={`text-[10px] font-semibold shrink-0 transition-colors ${
+                            isDark ? 'text-[#82d3d5] hover:text-white' : 'text-[#2c9a9c] hover:text-[#4f5c3e]'
+                          }`}
+                        >
+                          Accept all ✓
+                        </button>
+                      </div>
+                      {/* Per-item rows */}
+                      {items.map(item => {
+                        const s = qtySuggestions[item.id];
+                        if (!s || s.accepted || s.dismissed) return null;
+                        return (
+                          <div key={item.id} className={`px-4 py-3 flex items-start gap-3 border-b last:border-b-0 ${
+                            isDark ? 'border-gray-800/60' : 'border-gray-100'
+                          }`}>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-medium truncate ${isDark ? 'text-white' : 'text-[#222222]'}`}>
+                                {item.name}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <span className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                  Ordered: {item.qty} {item.unit}
+                                </span>
+                                <span className={`text-[9px] ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>→</span>
+                                <span className={`text-[10px] font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
+                                  Suggested: {s.suggestedQty} {item.unit}
+                                </span>
+                              </div>
+                              <span className={`inline-flex items-center mt-1.5 text-[9px] rounded-full px-2 py-0.5 border ${
+                                isDark
+                                  ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/20 text-[#82d3d5]'
+                                  : 'bg-[#eafafa] border-[#c4eef0] text-[#2c9a9c]'
+                              }`}>
+                                {s.reason}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                              <button
+                                onClick={() => {
+                                  setItems(prev => prev.map(i => i.id === item.id ? { ...i, qty: s.suggestedQty } : i));
+                                  setQtySuggestions(prev => ({ ...prev, [item.id]: { ...s, accepted: true } }));
+                                }}
+                                className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                                  isDark
+                                    ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/30 text-[#82d3d5] hover:bg-[#4bbcbe]/25'
+                                    : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#d6f4f5]'
+                                }`}
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={() => setQtySuggestions(prev => ({ ...prev, [item.id]: { ...s, dismissed: true } }))}
+                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
+                                  isDark
+                                    ? 'text-gray-600 hover:text-gray-400 hover:bg-gray-800'
+                                    : 'text-gray-300 hover:text-gray-500 hover:bg-[#eafafa]'
+                                }`}
+                                aria-label="Dismiss suggestion"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })()}
@@ -2732,7 +3026,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <button onClick={() => setSplitMode(true)}
-                          className="text-[11px] px-3 py-1.5 rounded-lg font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                          className="text-[11px] px-3 py-1.5 rounded-lg font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors">
                           Switch to auto-split ({proposedSplits.length} POs)
                         </button>
                         <button onClick={() => setStep(2)}
@@ -2753,13 +3047,13 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                 {!awardedQuote && proposedSplits.length > 1 && (
                   <div className={`p-4 rounded-xl border ${
                     splitMode
-                      ? isDark ? 'bg-[#87986a]/10 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                      ? isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/40' : 'bg-[#eafafa] border-[#4bbcbe]/40'
                       : isDark ? 'bg-amber-500/8 border-amber-500/25' : 'bg-amber-50 border-amber-200'
                   }`}>
                     <div className="flex items-start gap-2 mb-3">
                       <Sparkles className={`h-4 w-4 mt-0.5 shrink-0 ${
                         splitMode
-                          ? isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                          ? isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                           : isDark ? 'text-amber-300' : 'text-amber-700'
                       }`} />
                       <div className="min-w-0">
@@ -2780,7 +3074,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                         }`}>
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <span className={`text-xs font-semibold ${labelClass}`}>{g.vendorName}</span>
-                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                               {g.items.length} item{g.items.length === 1 ? '' : 's'}
                             </span>
                           </div>
@@ -2794,8 +3088,8 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                       <button onClick={() => setSplitMode(true)}
                         className={`text-[11px] px-3 py-1.5 rounded-lg font-bold transition-colors ${
                           splitMode
-                            ? 'bg-[#87986a] text-white'
-                            : isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e6ecda]'
+                            ? 'bg-[#4bbcbe] text-white'
+                            : isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5]'
                         }`}>
                         {splitMode ? '✓ Will split into ' : 'Split into '}{proposedSplits.length} POs
                       </button>
@@ -2956,7 +3250,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
                   )}
                 </div>
 
-                <div className={`p-3 rounded-lg border mb-4 ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                <div className={`p-3 rounded-lg border mb-4 ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                   <div className="flex items-center gap-1.5 mb-1">
                     <ShieldCheck className={`h-3 w-3 ${SAGE.icon(isDark)}`} />
                     <span className={`text-[9px] font-bold uppercase ${SAGE.icon(isDark)}`}>Audit Checklist</span>
@@ -3036,7 +3330,7 @@ export function RequestPanel({ theme = 'dark', onNavigate }: RequestPanelProps) 
             {/* ── STEP 5: Done ─────────────────────────────────────── */}
             {step === 5 && (
               <div className={`${cardClass} text-center py-12`}>
-                <div className={`mx-auto mb-4 w-12 h-12 rounded-full flex items-center justify-center ${isDark ? 'bg-[#87986a]/20' : 'bg-[#f4f6f0]'}`}>
+                <div className={`mx-auto mb-4 w-12 h-12 rounded-full flex items-center justify-center ${isDark ? 'bg-[#4bbcbe]/20' : 'bg-[#eafafa]'}`}>
                   <CheckCircle className={`h-7 w-7 ${SAGE.icon(isDark)}`} />
                 </div>
                 <h2 className={`text-base font-semibold ${labelClass}`}>

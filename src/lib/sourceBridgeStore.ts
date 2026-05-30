@@ -25,7 +25,8 @@ export type BridgeMessageKind =
   | 'reply'            // any subsequent admin or vendor message
   | 'po-sent'          // system-generated "PO sent" announcement
   | 'dispatch-confirm' // vendor's dispatch confirmation
-  | 'delivery-confirm';
+  | 'delivery-confirm'
+  | 'dispute-draft';   // A-03 auto-drafted dispute message — editable before send
 
 export interface BridgeMessage {
   id: string;            // stable id for React keys + persistence

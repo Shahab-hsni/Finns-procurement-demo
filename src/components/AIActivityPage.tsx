@@ -439,7 +439,7 @@ function ActivityAtlasChat({ isDark, t }: { isDark: boolean; t: any }) {
             <div key={i} className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[88%] px-2 py-1 rounded-lg text-[10px] leading-relaxed ${
                 m.from === 'user'
-                  ? isDark ? 'bg-[#87986a]/20 text-[#dbe3ce]' : 'bg-[#87986a]/15 text-[#3d4933]'
+                  ? isDark ? 'bg-[#4bbcbe]/20 text-[#c4eef0]' : 'bg-[#4bbcbe]/15 text-[#3d4933]'
                   : isDark ? 'bg-[#2a2a2a] text-gray-300' : 'bg-gray-100 text-gray-700'
               }`}>{m.text}</div>
             </div>
@@ -459,7 +459,7 @@ function ActivityAtlasChat({ isDark, t }: { isDark: boolean; t: any }) {
         />
         <button onClick={send} disabled={!input.trim()}
           className={`shrink-0 h-7 w-7 rounded-lg flex items-center justify-center transition-colors ${
-            input.trim() ? 'bg-[#87986a] hover:bg-[#6b7a54] text-white' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'
+            input.trim() ? 'bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white' : isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'
           }`}>
           <Send className="h-3 w-3" />
         </button>
@@ -530,7 +530,7 @@ function ActionLogPanel({ isDark, t, autonomyMode, actorFilter, setActorFilter, 
               onClick={() => setActorFilter(chip.id)}
               className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${
                 active
-                  ? isDark ? 'bg-[#87986a]/20 text-[#a3b085] border border-[#87986a]/50' : 'bg-[#f4f6f0] text-[#6b7a54] border border-[#87986a]/40'
+                  ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border border-[#4bbcbe]/50' : 'bg-[#eafafa] text-[#2c9a9c] border border-[#4bbcbe]/40'
                   : isDark ? 'text-gray-500 border border-gray-800 hover:text-gray-300 hover:border-gray-700' : 'text-gray-500 border border-gray-200 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -556,7 +556,7 @@ function ActionLogPanel({ isDark, t, autonomyMode, actorFilter, setActorFilter, 
         <div className={`rounded-xl border divide-y ${isDark ? 'bg-[#1a1a1a] border-gray-800 divide-gray-800' : 'bg-white border-gray-200 divide-gray-100'}`}>
           {entries.map(e => {
             const actorDotColor =
-              e.actorType === 'admin'  ? (isDark ? 'bg-[#a3b085]' : 'bg-[#6b7a54]') :
+              e.actorType === 'admin'  ? (isDark ? 'bg-[#82d3d5]' : 'bg-[#2c9a9c]') :
               e.actorType === 'agent'  ? (isDark ? 'bg-indigo-400' : 'bg-indigo-500') :
                                           (isDark ? 'bg-slate-400' : 'bg-slate-500');
             const outcomeTone =
@@ -667,6 +667,36 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
   const [deletedSeededIds, setDeletedSeededIds] = useState<Set<string>>(new Set());
   const [seededOverrides, setSeededOverrides]   = useState<Record<string, Partial<PolicyRule>>>({});
 
+  // ── Dispute lifecycle ─────────────────────────────────────────────
+  const [disputes, setDisputes] = useState<FinnsDispute[]>([...finnsDisputes]);
+  type DisputeResolution = { action: 'approved' | 'credit-requested' | 'escalated'; note?: string; creditAmount?: string; at: string };
+  const [disputeResolutions, setDisputeResolutions] = useState<Record<string, DisputeResolution>>({});
+  const [creditDrafts, setCreditDrafts] = useState<Record<string, { amount: string; note: string }>>({});
+  const [highlightedDisputePo, setHighlightedDisputePo] = useState<string | null>(null);
+
+  // Create a dispute dynamically when a QC failure fires from Orders.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { orderId, supplier } = (e as CustomEvent<{ orderId: string; supplier: string }>).detail ?? {};
+      if (!orderId) return;
+      setDisputes(prev => {
+        if (prev.some(d => d.refPoId === orderId)) return prev;
+        return [{
+          id: `DSP-${Date.now().toString().slice(-3)}`,
+          raisedBy: 'QC Receiving · Orders',
+          refEventId: `evt-qc-${orderId}`,
+          refPoId: orderId,
+          reason: `Quality check failed on delivery from ${supplier}. Receiving team flagged issues — review vendor and resolve via credit note or payment approval.`,
+          priority: 'high' as const,
+          status: 'open' as const,
+        }, ...prev];
+      });
+      setLeftTab('disputes');
+    };
+    window.addEventListener('finns-qc-failure', handler);
+    return () => window.removeEventListener('finns-qc-failure', handler);
+  }, []);
+
   // Composite rule list — custom-on-top, then seeded with any overrides
   // (toggles / edits) applied, minus any seeded ids the user has deleted.
   const visiblePolicyRules: PolicyRule[] = useMemo(() => {
@@ -705,6 +735,17 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
       const raw = window.location.hash.replace(/^#/, '');
       if (!raw) return;
       const params = new URLSearchParams(raw);
+
+      // #dispute=PO-XXXX — deep-link from Orders "Resolve in A&G"
+      const disputePo = params.get('dispute');
+      if (disputePo) {
+        setLeftTab('disputes');
+        setHighlightedDisputePo(disputePo);
+        setTimeout(() => setHighlightedDisputePo(null), 2400);
+        window.location.hash = '';
+        return;
+      }
+
       const evtId = params.get('evt');
       if (!evtId) return;
       if (EVENTS.some(e => e.id === evtId)) {
@@ -943,7 +984,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
             onChange={e => setConfidenceGuardrail(Number(e.target.value))}
             className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
             style={{
-              background: `linear-gradient(to right, ${isDark ? '#a3b085' : '#87986a'} ${((confidenceGuardrail - 50) / 49) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} 0%)`,
+              background: `linear-gradient(to right, ${isDark ? '#82d3d5' : '#4bbcbe'} ${((confidenceGuardrail - 50) / 49) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} 0%)`,
             }} />
           <div className="flex justify-between mt-0.5">
             <span className={`text-[9px] ${t.textMuted}`}>50%</span>
@@ -975,7 +1016,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                 onClick={() => setConfFilter(b.id)}
                 className={`w-full flex items-center justify-between p-2 rounded-lg text-xs transition-colors ${
                   active
-                    ? isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                    ? isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                     : isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-50'
                 }`}
               >
@@ -1010,7 +1051,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                 onClick={() => setTypeFilter(et.id)}
                 className={`w-full flex items-center justify-between p-2 rounded-lg text-xs transition-colors ${
                   typeFilter === et.id
-                    ? isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                    ? isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                     : isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-50'
                 }`}
               >
@@ -1026,7 +1067,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-center justify-between mb-3">
           <h3 className={`text-xs ${t.sectionLabel}`}>AUTONOMY THROTTLE</h3>
-          <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+          <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>
             Global L{globalAutonomy}
           </span>
         </div>
@@ -1102,10 +1143,10 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
         <div className={t.cardBorder}>
           <div className="flex items-center justify-between mb-2">
             <span className={`text-xs font-medium ${t.textPrimary}`}>Level {globalAutonomy}</span>
-            <span className={`text-[10px] ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{AUTONOMY_LABELS[globalAutonomy]}</span>
+            <span className={`text-[10px] ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{AUTONOMY_LABELS[globalAutonomy]}</span>
           </div>
           <div className={`h-2 rounded-full ${t.progressTrack}`}>
-            <div className="h-2 rounded-full bg-[#87986a]" style={{ width: `${(globalAutonomy / 5) * 100}%` }} />
+            <div className="h-2 rounded-full bg-[#4bbcbe]" style={{ width: `${(globalAutonomy / 5) * 100}%` }} />
           </div>
           <p className={`text-[10px] mt-2 ${t.textMuted}`}>
             72% progress to Level {Math.min(globalAutonomy + 1, 5) as AutonomyLevel}: {AUTONOMY_LABELS[Math.min(globalAutonomy + 1, 5) as AutonomyLevel]}
@@ -1146,7 +1187,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
             <button onClick={handlePauseToggle}
               className={`shrink-0 text-[10px] font-bold px-2.5 py-1 rounded border transition-colors ${
                 agentsPaused
-                  ? 'bg-[#87986a] border-[#87986a] text-white hover:bg-[#6b7a54]'
+                  ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white hover:bg-[#2c9a9c]'
                   : isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/10' : 'border-red-300/70 text-red-600 hover:bg-red-50'
               }`}>
               {agentsPaused ? <><PlayCircle className="h-3 w-3 inline -mt-0.5 mr-0.5" /> Resume all</> : <><PauseCircle className="h-3 w-3 inline -mt-0.5 mr-0.5" /> Pause all</>}
@@ -1175,7 +1216,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
             <button onClick={handlePauseToggle}
               className={`shrink-0 text-[10px] font-bold px-2.5 py-1 rounded border transition-colors ${
                 agentsPaused
-                  ? 'bg-[#87986a] border-[#87986a] text-white hover:bg-[#6b7a54]'
+                  ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white hover:bg-[#2c9a9c]'
                   : isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/10' : 'border-red-300/70 text-red-600 hover:bg-red-50'
               }`}>
               {agentsPaused ? <><PlayCircle className="h-3 w-3 inline -mt-0.5 mr-0.5" /> Resume all</> : <><PauseCircle className="h-3 w-3 inline -mt-0.5 mr-0.5" /> Pause all</>}
@@ -1201,7 +1242,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>
                       {a.id}
                     </span>
                     <span className={`text-[11px] font-semibold ${t.textPrimary}`}>{a.name}</span>
@@ -1224,7 +1265,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                   })}
                   className={`shrink-0 text-[9px] font-bold px-2 py-1 rounded border transition-colors ${
                     suspended
-                      ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                      ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
                       : isDark ? 'border-gray-700 text-gray-400 hover:text-amber-400 hover:border-amber-500/40' : 'border-gray-300 text-gray-500 hover:text-amber-700 hover:border-amber-300'
                   }`}>
                   {suspended ? <><PlayCircle className="h-2.5 w-2.5 inline -mt-0.5 mr-0.5" /> Resume</> : <><PauseCircle className="h-2.5 w-2.5 inline -mt-0.5 mr-0.5" /> Suspend</>}
@@ -1324,106 +1365,172 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
     </div>
   );
 
-  // ── Disputes tab body — open + recent disputes (Phase 4d) ────────
-  const disputesTabBody = (
-    <div className="p-4 space-y-3">
-      <div>
-        <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Disputes</h2>
-        <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>
-          Open quality / SLA / override cases. Approve, reject, or escalate.
-        </p>
-      </div>
-      {finnsDisputes.length === 0 ? (
-        <div className={`text-[11px] py-6 text-center rounded-lg border border-dashed ${
-          isDark ? 'border-gray-800 text-gray-500' : 'border-gray-300 text-gray-500'
+  // ── Disputes tab body ─────────────────────────────────────────────
+  const disputesTabBody = (() => {
+    const open     = disputes.filter(d => !disputeResolutions[d.id]);
+    const resolved = disputes.filter(d =>  disputeResolutions[d.id]);
+    const renderCard = (d: FinnsDispute) => {
+      const res = disputeResolutions[d.id];
+      const credit = creditDrafts[d.id] ?? { amount: '', note: '' };
+      const isHighlighted = highlightedDisputePo === d.refPoId;
+      const priColor = d.priority === 'high'
+        ? isDark ? 'text-red-400' : 'text-red-600'
+        : d.priority === 'medium'
+          ? isDark ? 'text-amber-400' : 'text-amber-700'
+          : isDark ? 'text-gray-400' : 'text-gray-600';
+      return (
+        <div key={d.id} className={`rounded-xl border overflow-hidden transition-all ${
+          isHighlighted
+            ? isDark ? 'ring-2 ring-amber-500/60 border-amber-500/40' : 'ring-2 ring-amber-400/50 border-amber-300'
+            : res
+              ? isDark ? 'border-gray-800 opacity-60' : 'border-gray-200 opacity-60'
+              : isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd]'
         }`}>
-          No open disputes.
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {finnsDisputes.map(d => {
-            const priColor =
-              d.priority === 'high'   ? isDark ? 'text-red-400'    : 'text-red-600'
-              : d.priority === 'medium' ? isDark ? 'text-amber-400' : 'text-amber-700'
-                                        : isDark ? 'text-gray-400'   : 'text-gray-600';
-            const statusColor =
-              d.status === 'escalated' ? isDark ? 'bg-red-500/15 text-red-400'      : 'bg-red-50 text-red-700'
-              : d.status === 'open'    ? isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'
-                                        : isDark ? 'bg-gray-800 text-gray-400'     : 'bg-gray-100 text-gray-600';
-            return (
-              <div key={d.id}
-                   className={`p-2.5 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
-                        {d.id}
-                      </span>
-                      <span className={`text-[11px] font-semibold ${t.textPrimary}`}>{d.refPoId}</span>
-                      <span className={`text-[9px] font-bold uppercase tracking-wide ${priColor}`}>● {d.priority}</span>
-                    </div>
-                    <p className={`text-[10px] mt-1 leading-relaxed ${t.textSecondary}`}>{d.reason}</p>
-                  </div>
-                  <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${statusColor}`}>
-                    {d.status}
-                  </span>
-                </div>
-                <p className={`text-[9px] mt-1 ${t.textMuted}`}>
-                  Raised by {d.raisedBy}
-                </p>
-                <div className="mt-2 flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      logUserAction({
-                        kind: 'dispute-approve',
-                        entity: { type: 'dispute', id: d.id },
-                        summary: `Approved dispute ${d.id} · ${d.refPoId} · ${d.reason.slice(0, 60)}${d.reason.length > 60 ? '…' : ''}`,
-                        details: `Raised by ${d.raisedBy}. Priority ${d.priority}.`,
-                        meta: { poId: d.refPoId, raisedBy: d.raisedBy, priority: d.priority },
-                      });
-                      toast.success(`Approved ${d.id}`, { description: 'Override accepted. Logged to action log.' });
-                    }}
-                    className={`text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border ${isDark ? 'border-green-500/40 text-green-400 hover:bg-green-500/10' : 'border-green-300/70 text-green-600 hover:bg-green-50'}`}>
-                    <Check className="h-2.5 w-2.5" /> Approve
-                  </button>
-                  <button
-                    onClick={() => {
-                      logUserAction({
-                        kind: 'dispute-reject',
-                        entity: { type: 'dispute', id: d.id },
-                        summary: `Rejected dispute ${d.id} · ${d.refPoId}`,
-                        details: `Raised by ${d.raisedBy}. Priority ${d.priority}.`,
-                        outcome: 'overridden',
-                        meta: { poId: d.refPoId, raisedBy: d.raisedBy, priority: d.priority },
-                      });
-                      toast.warning(`Rejected ${d.id}`, { description: 'Override denied. Logged to action log.' });
-                    }}
-                    className={`text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border ${isDark ? 'border-red-500/40 text-red-400 hover:bg-red-500/10' : 'border-red-300/70 text-red-600 hover:bg-red-50'}`}>
-                    <X className="h-2.5 w-2.5" /> Reject
-                  </button>
-                  <button
-                    onClick={() => {
-                      logUserAction({
-                        kind: 'dispute-escalate',
-                        entity: { type: 'dispute', id: d.id },
-                        summary: `Escalated dispute ${d.id} · ${d.refPoId} to F&B Director`,
-                        details: `Raised by ${d.raisedBy}. Awaiting Director sign-off.`,
-                        outcome: 'pending',
-                        meta: { poId: d.refPoId, raisedBy: d.raisedBy, priority: d.priority },
-                      });
-                      toast.info(`Escalated ${d.id}`, { description: 'Routed to F&B Director for sign-off.' });
-                    }}
-                    className={`text-[10px] inline-flex items-center gap-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
-                    Escalate
-                  </button>
-                </div>
+          {/* Card header */}
+          <div className="p-3">
+            <div className="flex items-start justify-between gap-2 mb-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className={`text-[9px] font-bold font-mono px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>{d.id}</span>
+                {d.refPoId && <span className={`text-[10px] font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{d.refPoId}</span>}
+                <span className={`text-[9px] font-bold uppercase ${priColor}`}>● {d.priority}</span>
               </div>
-            );
-          })}
+              {res ? (
+                <span className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                  res.action === 'approved' ? isDark ? 'bg-green-500/15 text-green-400' : 'bg-green-50 text-green-700'
+                  : res.action === 'credit-requested' ? isDark ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-700'
+                  : isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-700'
+                }`}>
+                  {res.action === 'approved' ? '✓ Payment approved' : res.action === 'credit-requested' ? '↩ Credit requested' : '↑ Escalated'}
+                </span>
+              ) : (
+                <span className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                  d.status === 'escalated' ? isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-700'
+                  : isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'
+                }`}>{d.status}</span>
+              )}
+            </div>
+            <p className={`text-[10px] leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{d.reason}</p>
+            <p className={`text-[9px] mt-1 ${t.textMuted}`}>Raised by {d.raisedBy}</p>
+            {res?.note && <p className={`text-[9px] mt-1 italic ${t.textMuted}`}>Note: {res.note}</p>}
+          </div>
+          {/* Action row — only when open */}
+          {!res && (
+            <>
+              <div className={`px-3 pb-3 flex items-center gap-2 flex-wrap border-t ${isDark ? 'border-gray-800' : 'border-gray-100'} pt-2.5`}>
+                {/* Approve Payment */}
+                <button
+                  onClick={() => {
+                    setDisputeResolutions(prev => ({ ...prev, [d.id]: { action: 'approved', at: new Date().toISOString() } }));
+                    logUserAction({ kind: 'dispute-approve', entity: { type: 'dispute', id: d.id }, summary: `Approved payment for ${d.id} · ${d.refPoId} — dispute resolved`, meta: { poId: d.refPoId } });
+                    toast.success(`Payment approved · ${d.id}`, { description: 'Dispute resolved. Payment authorised in full.' });
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-colors ${
+                    isDark ? 'border-green-500/40 text-green-400 hover:bg-green-500/10' : 'border-green-300/70 text-green-600 hover:bg-green-50'
+                  }`}>
+                  <Check className="h-3 w-3" /> Approve Payment
+                </button>
+                {/* Request Credit Note toggle */}
+                <button
+                  onClick={() => setCreditDrafts(prev => prev[d.id] ? (({ [d.id]: _, ...r }) => r)(prev) : { ...prev, [d.id]: { amount: '', note: `Credit note request for ${d.id}` } })}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-colors ${
+                    creditDrafts[d.id]
+                      ? isDark ? 'bg-blue-500/15 border-blue-500/40 text-blue-300' : 'bg-blue-50 border-blue-300 text-blue-700'
+                      : isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}>
+                  {creditDrafts[d.id] ? 'Credit Note ▲' : 'Request Credit Note ▼'}
+                </button>
+                {/* Escalate */}
+                <button
+                  onClick={() => {
+                    setDisputeResolutions(prev => ({ ...prev, [d.id]: { action: 'escalated', at: new Date().toISOString() } }));
+                    logUserAction({ kind: 'dispute-escalate', entity: { type: 'dispute', id: d.id }, summary: `Escalated ${d.id} · ${d.refPoId} to F&B Director`, outcome: 'pending', meta: { poId: d.refPoId } });
+                    toast.info(`Escalated · ${d.id}`, { description: 'Routed to F&B Director for sign-off.' });
+                  }}
+                  className={`ml-auto text-[10px] transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700'}`}>
+                  Escalate to Director →
+                </button>
+              </div>
+              {/* Inline credit note form */}
+              {creditDrafts[d.id] && (
+                <div className={`px-3 pb-3 pt-2 border-t space-y-2 ${isDark ? 'border-gray-800 bg-blue-500/5' : 'border-blue-100 bg-blue-50/50'}`}>
+                  <p className={`text-[10px] font-semibold ${isDark ? 'text-blue-300' : 'text-blue-800'}`}>Credit note request · {d.refPoId}</p>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className={`text-[9px] uppercase tracking-wide font-bold block mb-1 ${t.textMuted}`}>Credit amount (Rp)</label>
+                      <input
+                        type="number"
+                        value={credit.amount}
+                        onChange={e => setCreditDrafts(prev => ({ ...prev, [d.id]: { ...credit, amount: e.target.value } }))}
+                        placeholder="e.g. 800000"
+                        className={`w-full rounded-lg px-2.5 py-1.5 text-xs border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white' : 'bg-white border-[#dddddd] text-gray-800'}`}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={`text-[9px] uppercase tracking-wide font-bold block mb-1 ${t.textMuted}`}>Note to vendor (optional)</label>
+                    <input
+                      value={credit.note}
+                      onChange={e => setCreditDrafts(prev => ({ ...prev, [d.id]: { ...credit, note: e.target.value } }))}
+                      placeholder="e.g. Short delivery — credit note expected within 3 days"
+                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs border outline-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border-[#dddddd] text-gray-800 placeholder:text-gray-400'}`}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => setCreditDrafts(prev => (({ [d.id]: _, ...r }) => r)(prev))}
+                      className={`text-[10px] ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}>
+                      Cancel
+                    </button>
+                    <button
+                      disabled={!credit.amount}
+                      onClick={() => {
+                        setDisputeResolutions(prev => ({ ...prev, [d.id]: { action: 'credit-requested', note: credit.note || undefined, creditAmount: credit.amount, at: new Date().toISOString() } }));
+                        setCreditDrafts(prev => (({ [d.id]: _, ...r }) => r)(prev));
+                        logUserAction({ kind: 'dispute-reject', entity: { type: 'dispute', id: d.id }, summary: `Credit note requested for ${d.id} · Rp ${Number(credit.amount).toLocaleString()} · ${d.refPoId}`, details: credit.note, meta: { poId: d.refPoId, creditAmount: credit.amount } });
+                        toast.success(`Credit note requested · ${d.id}`, { description: `Rp ${Number(credit.amount).toLocaleString()} · ${d.refPoId}` });
+                      }}
+                      className="ml-auto px-3 py-1.5 rounded-lg text-[10px] font-semibold bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      Send Request
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
-      )}
-    </div>
-  );
+      );
+    };
+    return (
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Disputes</h2>
+            <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>Quality / SLA / override cases — approve payment, request credit note, or escalate.</p>
+          </div>
+          {open.length > 0 && (
+            <span className={`text-[9px] font-bold px-2 py-1 rounded-full ${isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'}`}>
+              {open.length} open
+            </span>
+          )}
+        </div>
+        {open.length === 0 && resolved.length === 0 ? (
+          <div className={`text-[11px] py-6 text-center rounded-lg border border-dashed ${isDark ? 'border-gray-800 text-gray-500' : 'border-gray-300 text-gray-500'}`}>
+            No open disputes.
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2">{open.map(renderCard)}</div>
+            {resolved.length > 0 && (
+              <div>
+                <p className={`text-[9px] uppercase tracking-wide font-semibold mb-2 ${t.textMuted}`}>Resolved</p>
+                <div className="space-y-2">{resolved.map(renderCard)}</div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  })();
 
   // ── Left-panel shell with tab strip ──────────────────────────────
   const TAB_DEFS: { id: LeftTab; label: string; icon: typeof Gauge; count?: number }[] = [
@@ -1446,7 +1553,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
               onClick={() => setLeftTab(tab.id)}
               className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold transition-colors border-b-2 ${
                 active
-                  ? isDark ? 'text-[#a3b085] border-[#87986a]' : 'text-[#6b7a54] border-[#87986a]'
+                  ? isDark ? 'text-[#82d3d5] border-[#4bbcbe]' : 'text-[#2c9a9c] border-[#4bbcbe]'
                   : isDark ? 'text-gray-500 border-transparent hover:text-gray-300' : 'text-gray-500 border-transparent hover:text-gray-700'
               }`}>
               <Icon className="h-3 w-3" />
@@ -1454,7 +1561,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
               {tab.count != null && tab.count > 0 && (
                 <span className={`ml-0.5 text-[9px] px-1 py-0 rounded-full font-bold ${
                   active
-                    ? isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                    ? isDark ? 'bg-[#4bbcbe]/30 text-[#82d3d5]' : 'bg-[#4bbcbe]/20 text-[#2c9a9c]'
                     : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'
                 }`}>
                   {tab.count}
@@ -1508,33 +1615,33 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
         <div className="grid grid-cols-4 gap-3">
           {/* Actions Executed */}
           <div className={t.cardBorder}>
-            <Zap className={`h-4 w-4 mb-1.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} strokeWidth={1.5} />
+            <Zap className={`h-4 w-4 mb-1.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} strokeWidth={1.5} />
             <span className={`text-[10px] ${t.textMuted}`}>Actions Executed</span>
             <div className={`text-sm font-semibold mt-0.5 ${t.textPrimary}`}>{dailyCapital.tasksCompleted}</div>
           </div>
           {/* Direct Savings — sparkline */}
           <div className={`${t.cardBorder} flex flex-col`}>
-            <DollarSign className={`h-4 w-4 mb-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} strokeWidth={1.5} />
+            <DollarSign className={`h-4 w-4 mb-1 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} strokeWidth={1.5} />
             <span className={`text-[10px] ${t.textMuted}`}>Direct Savings</span>
             <div className={`text-sm font-semibold mt-0.5 mb-1 ${t.textPrimary}`}>${dailyCapital.moneySaved.toLocaleString()}</div>
             <Sparkline data={SAVINGS_24H} color="#22c55e" />
           </div>
           {/* Capital Preserved — sparkline */}
           <div className={`${t.cardBorder} flex flex-col`}>
-            <TrendingUp className={`h-4 w-4 mb-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} strokeWidth={1.5} />
+            <TrendingUp className={`h-4 w-4 mb-1 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} strokeWidth={1.5} />
             <span className={`text-[10px] ${t.textMuted}`}>Capital Preserved</span>
             <div className={`text-sm font-semibold mt-0.5 mb-1 ${t.textPrimary}`}>${dailyCapital.capitalPreserved.toLocaleString()}</div>
-            <Sparkline data={CAPITAL_24H} color="#87986a" />
+            <Sparkline data={CAPITAL_24H} color="#4bbcbe" />
           </div>
           {/* In Undo Window — now mode-aware */}
           <div className={t.cardBorder}>
             <div className="flex items-center justify-between mb-1.5">
-              <Timer className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} strokeWidth={1.5} />
+              <Timer className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} strokeWidth={1.5} />
               <span className={`text-[8px] uppercase tracking-wide font-bold ${
                 undoMode === 'hard-60'
                   ? isDark ? 'text-amber-300' : 'text-amber-700'
                   : undoMode === 'ledger-close'
-                    ? isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                    ? isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                     : isDark ? 'text-blue-300' : 'text-blue-700'
               }`}>
                 {undoMode === 'hard-60' ? '60-min' : undoMode === 'ledger-close' ? 'ledger' : 'mixed'}
@@ -1551,13 +1658,13 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
             "approve the day" mental model. Per-class is the recommended hybrid. */}
         <div className={`mt-3 p-3 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'}`}>
           <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <Timer className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} strokeWidth={1.5} />
+            <Timer className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} strokeWidth={1.5} />
             <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Undo Window Policy</h3>
             {!ledgerApproved && undoMode !== 'hard-60' && (
               <button onClick={() => { setLedgerApproved(true); toast.success('Daily ledger approved', { description: 'Reversible actions are now finalized for today.' }); }}
                 className={`ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors ${
-                  isDark ? 'bg-[#87986a]/15 border border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/25'
-                        : 'bg-[#f4f6f0] border border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e8eddf]'
+                  isDark ? 'bg-[#4bbcbe]/15 border border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/25'
+                        : 'bg-[#eafafa] border border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#d6f4f5]'
                 }`}>
                 <CheckCircle className="h-3 w-3" /> Approve Today's Ledger
               </button>
@@ -1581,7 +1688,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                 <button key={m.id} onClick={() => { setUndoMode(m.id); if (m.id === 'hard-60') setLedgerApproved(false); }}
                   className={`text-left p-2 rounded-lg border transition-colors ${
                     active
-                      ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/50 ring-1 ring-[#87986a]/30' : 'bg-[#f4f6f0] border-[#87986a]/50 ring-1 ring-[#87986a]/30'
+                      ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/50 ring-1 ring-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#4bbcbe]/50 ring-1 ring-[#4bbcbe]/30'
                       : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:border-gray-700' : 'bg-gray-50 border-gray-200 hover:border-gray-300'
                   }`}>
                   <div className={`text-[11px] font-bold ${t.textPrimary}`}>{m.label}</div>
@@ -1610,13 +1717,13 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
           <div className="flex items-center gap-2 text-[10px]">
             {confFilter !== 'all' && (
               <button onClick={() => setConfFilter('all')}
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e6ecda]'}`}>
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5]'}`}>
                 <XCircle className="h-2.5 w-2.5" /> Clear confidence filter
               </button>
             )}
             {typeFilter !== 'all' && (
               <button onClick={() => setTypeFilter('all')}
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e6ecda]'}`}>
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5]'}`}>
                 <XCircle className="h-2.5 w-2.5" /> Clear type filter
               </button>
             )}
@@ -1657,7 +1764,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                       isReversed
                         ? isDark ? 'border-gray-800 bg-[#1a1a1a] opacity-50 cursor-default' : 'border-gray-200 bg-white opacity-50 cursor-default'
                         : isSelected
-                          ? `cursor-pointer ${isDark ? 'border-[#87986a]/50 bg-[#87986a]/8 ring-1 ring-[#87986a]/20' : 'border-[#87986a]/50 bg-[#f4f6f0] ring-1 ring-[#87986a]/20'}`
+                          ? `cursor-pointer ${isDark ? 'border-[#4bbcbe]/50 bg-[#4bbcbe]/8 ring-1 ring-[#4bbcbe]/20' : 'border-[#4bbcbe]/50 bg-[#eafafa] ring-1 ring-[#4bbcbe]/20'}`
                           : `cursor-pointer ${isDark ? 'border-gray-800 bg-[#1a1a1a] hover:border-gray-700' : 'border-gray-200 bg-white hover:border-gray-300'}`
                     }`}
                   >
@@ -1757,7 +1864,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                             </span>
                           )}
                           {event.capitalPreserved > 0 && (
-                            <span className={`text-[10px] ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                            <span className={`text-[10px] ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                               ${event.capitalPreserved.toLocaleString()} capital preserved
                             </span>
                           )}
@@ -1847,11 +1954,11 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
 
                 {/* Agent identity card — clickable + Suspend button */}
                 <div className={`p-2.5 rounded-lg border mb-2.5`}
-                     style={{ background: `${agent?.accent ?? '#87986a'}12`, borderColor: `${agent?.accent ?? '#87986a'}40` }}>
+                     style={{ background: `${agent?.accent ?? '#4bbcbe'}12`, borderColor: `${agent?.accent ?? '#4bbcbe'}40` }}>
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                          style={{ background: `${agent?.accent ?? '#87986a'}33` }}>
-                      <AgentIcon className="h-3.5 w-3.5" strokeWidth={1.5} style={{ color: agent?.accent ?? '#87986a' }} />
+                          style={{ background: `${agent?.accent ?? '#4bbcbe'}33` }}>
+                      <AgentIcon className="h-3.5 w-3.5" strokeWidth={1.5} style={{ color: agent?.accent ?? '#4bbcbe' }} />
                     </span>
                     <button onClick={() => openAgentGovernance(selectedEvent.agent)}
                       title="Open Employment Contract in Governance"
@@ -1869,7 +1976,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                   </div>
                   {/* Suspend / Resume — global halt across the app */}
                   <div className="mt-2 pt-2 border-t flex items-center gap-2"
-                       style={{ borderColor: `${agent?.accent ?? '#87986a'}30` }}>
+                       style={{ borderColor: `${agent?.accent ?? '#4bbcbe'}30` }}>
                     {suspendedAgents.has(selectedEvent.agent) ? (
                       <>
                         <span className={`text-[10px] font-bold inline-flex items-center gap-1 ${
@@ -1878,7 +1985,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                           <PauseCircle className="h-3 w-3" /> Globally Suspended
                         </span>
                         <button onClick={() => toggleAgentSuspension(selectedEvent.agent)}
-                          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors">
                           <PlayCircle className="h-3 w-3" /> Clear Suspension
                         </button>
                       </>
@@ -1960,7 +2067,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                                   isDark ? 'bg-[#1a1a1a] border-amber-500/40 text-white' : 'bg-white border-amber-400/50'
                                 }`}
                               />
-                              <button onClick={saveEditField} title="Save" className="w-5 h-5 rounded flex items-center justify-center bg-[#87986a] text-white hover:bg-[#6b7a54]">
+                              <button onClick={saveEditField} title="Save" className="w-5 h-5 rounded flex items-center justify-center bg-[#4bbcbe] text-white hover:bg-[#2c9a9c]">
                                 <Check className="h-2.5 w-2.5" />
                               </button>
                               <button onClick={cancelEditField} title="Cancel" className={`w-5 h-5 rounded flex items-center justify-center ${isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
@@ -2064,11 +2171,11 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
           </div>
           <div className={`p-3 rounded-lg border ${t.sageBg} ${t.sageBorder}`}>
             <span className={`text-[10px] ${t.textMuted}`}>Working capital preserved today</span>
-            <div className="text-xl font-bold text-[#87986a] mt-0.5">${dailyCapital.capitalPreserved.toLocaleString()}</div>
+            <div className="text-xl font-bold text-[#4bbcbe] mt-0.5">${dailyCapital.capitalPreserved.toLocaleString()}</div>
             <p className={`text-[10px] mt-1.5 leading-relaxed ${t.textSecondary}`}>
               Buyamia agents avoided tying up ${dailyCapital.capitalPreserved.toLocaleString()} in premature orders, excess inventory, or bad quotes — in addition to ${dailyCapital.moneySaved.toLocaleString()} in direct savings.
             </p>
-            <div className="grid grid-cols-2 gap-2 mt-2.5 pt-2.5 border-t border-[#87986a]/15">
+            <div className="grid grid-cols-2 gap-2 mt-2.5 pt-2.5 border-t border-[#4bbcbe]/15">
               <div>
                 <div className={`text-[9px] ${t.textMuted}`}>Direct savings</div>
                 <div className={`text-sm font-semibold ${t.textPrimary}`}>${dailyCapital.moneySaved.toLocaleString()}</div>
@@ -2124,10 +2231,10 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
           <div className="p-5 space-y-3">
             <button onClick={() => handleRollbackChoice(event.id, 'fix')}
               className={`w-full p-4 rounded-xl border-2 text-left transition-colors group ${
-                isDark ? 'border-[#87986a]/40 hover:border-[#87986a]/70 hover:bg-[#87986a]/8' : 'border-[#87986a]/40 hover:border-[#87986a]/70 hover:bg-[#f4f6f0]'
+                isDark ? 'border-[#4bbcbe]/40 hover:border-[#4bbcbe]/70 hover:bg-[#4bbcbe]/8' : 'border-[#4bbcbe]/40 hover:border-[#4bbcbe]/70 hover:bg-[#eafafa]'
               }`}>
               <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center bg-[#87986a] text-white">
+                <div className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center bg-[#4bbcbe] text-white">
                   <RotateCcw className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
@@ -2136,7 +2243,7 @@ export function AIActivityPage({ theme, onNavigate }: AIActivityPageProps) {
                     Revert this action, then edit the data points below (e.g., the price or quote)
                     so the agent retries with corrected inputs.
                   </p>
-                  <p className={`text-[9px] mt-1 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'} font-semibold`}>
+                  <p className={`text-[9px] mt-1 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'} font-semibold`}>
                     → Best when the AI used stale or wrong data.
                   </p>
                 </div>

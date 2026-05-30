@@ -47,12 +47,12 @@ export function ProductSidebar({ theme = 'dark' }: ProductSidebarProps) {
   ];
 
   const categories = [
-    { name: 'Food & Beverage', icon: Utensils, color: isDark ? 'text-[#a3b085]' : 'text-[#87986a]' },
-    { name: 'Coffee & Tea', icon: Coffee, color: isDark ? 'text-[#a3b085]' : 'text-[#87986a]' },
-    { name: 'Fresh Produce', icon: Package, color: isDark ? 'text-[#a3b085]' : 'text-[#87986a]' },
-    { name: 'Bakery', icon: ChefHat, color: isDark ? 'text-[#a3b085]' : 'text-[#87986a]' },
-    { name: 'Proteins', icon: Beef, color: isDark ? 'text-[#a3b085]' : 'text-[#87986a]' },
-    { name: 'Equipment', icon: ShoppingCart, color: isDark ? 'text-[#a3b085]' : 'text-[#87986a]' }
+    { name: 'Food & Beverage', icon: Utensils, color: isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]' },
+    { name: 'Coffee & Tea', icon: Coffee, color: isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]' },
+    { name: 'Fresh Produce', icon: Package, color: isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]' },
+    { name: 'Bakery', icon: ChefHat, color: isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]' },
+    { name: 'Proteins', icon: Beef, color: isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]' },
+    { name: 'Equipment', icon: ShoppingCart, color: isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]' }
   ];
 
   const videos = [
@@ -197,14 +197,14 @@ export function ProductSidebar({ theme = 'dark' }: ProductSidebarProps) {
                       </Badge>
                     </div>
                   </div>
-                  <Users className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+                  <Users className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
                 </div>
                 <div className={`text-xs mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                   {deal.participants}/{deal.target} participants
                 </div>
                 <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden mb-2">
                   <div 
-                    className="h-full bg-[#87986a] rounded-full"
+                    className="h-full bg-[#4bbcbe] rounded-full"
                     style={{ width: `${(deal.participants / deal.target) * 100}%` }}
                   />
                 </div>
@@ -247,7 +247,7 @@ export function ProductSidebar({ theme = 'dark' }: ProductSidebarProps) {
                   <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
                     {review.author}
                   </span>
-                  <span className={`text-xs ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`}>
+                  <span className={`text-xs ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`}>
                     {review.vendor}
                   </span>
                 </div>
@@ -279,7 +279,7 @@ export function ProductSidebar({ theme = 'dark' }: ProductSidebarProps) {
           <Button 
             variant="ghost" 
             size="sm" 
-            className={`w-full mt-3 ${isDark ? 'text-[#a3b085] hover:text-[#bfc89f] hover:bg-[#87986a]/10' : 'text-[#87986a] hover:text-[#6b7a54]'}`}
+            className={`w-full mt-3 ${isDark ? 'text-[#82d3d5] hover:text-[#bfc89f] hover:bg-[#4bbcbe]/10' : 'text-[#4bbcbe] hover:text-[#2c9a9c]'}`}
           >
             View All Products
             <ChevronRight className="h-4 w-4 ml-1" />

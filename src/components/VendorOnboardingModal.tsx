@@ -195,7 +195,7 @@ export function VendorOnboardingModal({ isDark, isOpen, onClose }: VendorOnboard
   const textPrimary = isDark ? 'text-white' : 'text-gray-900';
   const textMuted   = isDark ? 'text-gray-400' : 'text-gray-600';
   const inputClass  = `${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400'}`;
-  const chipActive  = isDark ? 'bg-[#87986a]/20 text-[#a3b085] border-[#87986a]/50' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#87986a]/40';
+  const chipActive  = isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border-[#4bbcbe]/50' : 'bg-[#eafafa] text-[#2c9a9c] border-[#4bbcbe]/40';
   const chipIdle    = isDark ? 'bg-[#2a2a2a] text-gray-400 border-gray-700 hover:border-gray-600' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300';
 
   return (
@@ -230,14 +230,14 @@ export function VendorOnboardingModal({ isDark, isOpen, onClose }: VendorOnboard
                   <div key={s.id} className="flex items-center gap-1 flex-1">
                     <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-semibold ${
                       active ? chipActive
-                        : done ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]')
+                        : done ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]')
                               : textMuted
                     }`}>
                       <span className={`h-4 w-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
                         active
-                          ? 'bg-[#87986a] text-white'
+                          ? 'bg-[#4bbcbe] text-white'
                           : done
-                            ? isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                            ? isDark ? 'bg-[#4bbcbe]/30 text-[#82d3d5]' : 'bg-[#4bbcbe]/20 text-[#2c9a9c]'
                             : isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-400'
                       }`}>
                         {done ? <Check className="h-2.5 w-2.5" /> : s.id}
@@ -245,7 +245,7 @@ export function VendorOnboardingModal({ isDark, isOpen, onClose }: VendorOnboard
                       {s.label}
                     </div>
                     {idx < STEPS.length - 1 && (
-                      <div className={`flex-1 h-0.5 rounded ${done ? 'bg-[#87986a]' : isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
+                      <div className={`flex-1 h-0.5 rounded ${done ? 'bg-[#4bbcbe]' : isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
                     )}
                   </div>
                 );
@@ -443,7 +443,7 @@ export function VendorOnboardingModal({ isDark, isOpen, onClose }: VendorOnboard
                 <input type="checkbox" id="coldchain"
                        checked={draft.coldChainRequired}
                        onChange={e => patch('coldChainRequired', e.target.checked)}
-                       className="h-4 w-4 accent-[#87986a]" />
+                       className="h-4 w-4 accent-[#4bbcbe]" />
                 <label htmlFor="coldchain" className={`text-xs ${textPrimary}`}>
                   Cold-chain required (proteins, seafood, dairy)
                 </label>
@@ -467,7 +467,7 @@ export function VendorOnboardingModal({ isDark, isOpen, onClose }: VendorOnboard
                 </p>
                 <input type="range" min={50} max={95} value={draft.initialComposite}
                        onChange={e => patch('initialComposite', Number(e.target.value))}
-                       className="w-full mt-2 accent-[#87986a]" />
+                       className="w-full mt-2 accent-[#4bbcbe]" />
               </section>
             </>
           )}
@@ -487,13 +487,13 @@ export function VendorOnboardingModal({ isDark, isOpen, onClose }: VendorOnboard
             )}
             {step < 4 && (
               <Button onClick={() => setStep((step + 1) as 1 | 2 | 3 | 4)} disabled={!currentValid}
-                      className="bg-[#87986a] hover:bg-[#6b7a54] text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white disabled:opacity-40 disabled:cursor-not-allowed">
                 Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
               </Button>
             )}
             {step === 4 && (
               <Button onClick={handleSubmit} disabled={!allValid}
-                      className="bg-[#87986a] hover:bg-[#6b7a54] text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white disabled:opacity-40 disabled:cursor-not-allowed">
                 <Send className="h-3.5 w-3.5 mr-1.5" /> Queue for directory
               </Button>
             )}

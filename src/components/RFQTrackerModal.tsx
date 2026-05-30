@@ -292,7 +292,7 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                 {rfq.quotes.length}/{rfq.vendorIds.length} quoted
               </span>
               {totalItems > 0 && rfq.awards.length > 0 && (
-                <span className={`text-[10px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                <span className={`text-[10px] font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                   · {awardedCount}/{totalItems} items awarded
                 </span>
               )}
@@ -359,14 +359,14 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                   return (
                     <div key={vid} className={`flex items-start gap-2 p-2 rounded border ${
                       isWinner
-                        ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/50' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                        ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/50' : 'bg-[#eafafa] border-[#4bbcbe]/40'
                         : isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200'
                     }`}>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`text-[11px] font-semibold ${textPrimary}`}>{vendorName}</span>
                           {isWinner && award && (
-                            <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                            <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                               <Award className="h-2.5 w-2.5" /> Awarded · {award.poId}
                             </span>
                           )}
@@ -379,7 +379,7 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
                               claimable.length === 0
                                 ? isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-500'
-                                : isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                                : isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                             }`}>
                               {isNoBidForBasket
                                 ? 'No bid'
@@ -400,7 +400,7 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                               <span>·</span>
                               <span className={`inline-flex items-center gap-0.5 ${
                                 rfq.channel === 'whatsapp'
-                                  ? isDark ? 'text-[#a3b085]' : 'text-[#25D366]'
+                                  ? isDark ? 'text-[#82d3d5]' : 'text-[#25D366]'
                                   : isDark ? 'text-blue-300' : 'text-blue-700'
                               }`}>
                                 via {rfq.channel === 'whatsapp' ? 'WhatsApp' : 'email'}
@@ -434,7 +434,7 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
                           onClick={() => handleAward(rfq, quote)}
                           className={`shrink-0 text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded border transition-colors ${
                             isLowest
-                              ? 'bg-[#87986a] border-[#87986a] text-white hover:bg-[#6b7a54]'
+                              ? 'bg-[#4bbcbe] border-[#4bbcbe] text-white hover:bg-[#2c9a9c]'
                               : isDark
                                 ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
                                 : 'border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -523,7 +523,7 @@ export function RFQTrackerModal({ isDark, isOpen, onClose, onComposeNew, onNavig
           <div className="flex items-center gap-2 shrink-0">
             {onComposeNew && (
               <Button onClick={() => { onComposeNew(); onClose(); }}
-                      className="bg-[#87986a] hover:bg-[#6b7a54] text-white h-8 px-3 text-xs">
+                      className="bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white h-8 px-3 text-xs">
                 <Sparkles className="h-3.5 w-3.5 mr-1" /> Compose new
               </Button>
             )}

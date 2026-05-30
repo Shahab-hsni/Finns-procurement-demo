@@ -2,80 +2,152 @@
 
 :root {
   --font-size: 16px;
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
-  --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #87986a;
+
+  /* ── Finn's brand voltage (single accent, like Airbnb's Rausch) ── */
+  --primary:           #4bbcbe;   /* Finn's teal */
+  --primary-active:    #2c9a9c;   /* darker press state */
+  --primary-disabled:  #c4eef0;   /* pale tint for disabled CTAs */
   --primary-foreground: #ffffff;
-  --secondary: #6b7a54;
+
+  /* Backward-compat alias for any code still reading --secondary */
+  --secondary:           #2c9a9c;
   --secondary-foreground: #ffffff;
-  --muted: #dbe3ce;
-  --muted-foreground: #6b7280;
-  --accent: #f4f6f0;
-  --accent-foreground: #4f5c3e;
-  --destructive: #c6564c;
-  --destructive-foreground: #ffffff;
-  --border: #e5e5e0;
-  --input: #e5e5e0;
+
+  /* ── Neutrals (Airbnb-derived warm scale) ────────────────────── */
+  --canvas:        #ffffff;
+  --surface-soft:  #f7f7f7;
+  --surface-strong:#f2f2f2;
+
+  --ink:        #222222;   /* primary text — near-black, not pure */
+  --body-text:  #3f3f3f;   /* long-form body */
+
+  --background: #ffffff;
+  --foreground: #222222;
+
+  /* Cards / popovers */
+  --card:               #ffffff;
+  --card-foreground:    #222222;
+  --popover:            #ffffff;
+  --popover-foreground: #222222;
+
+  /* Hairlines / borders (Airbnb scale) */
+  --border:        #dddddd;
+  --border-soft:   #ebebeb;
+  --border-strong: #c1c1c1;
+  --input:         #dddddd;
   --input-background: #ffffff;
-  --switch-background: #bfc89f;
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --ring: #87986a;
-  --chart-1: #87986a;
-  --chart-2: #6b7a54;
-  --chart-3: #a3b085;
-  --chart-4: #bfc89f;
-  --chart-5: #dbe3ce;
-  --radius: 0.625rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #87986a;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f4f6f0;
-  --sidebar-accent-foreground: #4f5c3e;
-  --sidebar-border: #e5e5e0;
-  --sidebar-ring: #87986a;
+
+  /* Muted / accent (now teal-tinted) */
+  --muted:               #c4eef0;   /* pale teal — was sage muted */
+  --muted-foreground:    #6a6a6a;
+  --muted-soft:          #929292;
+  --accent:              #eafafa;   /* lightest teal-ash — was sage-ash */
+  --accent-foreground:   #1d6f70;   /* dark teal for chip text */
+
+  /* Semantic */
+  --destructive:           #c13515;   /* Airbnb error red */
+  --destructive-foreground: #ffffff;
+  --destructive-hover:     #b32505;
+  --legal-link:            #428bff;
+
+  /* Switch / ring */
+  --switch-background: #c4eef0;
+  --ring:              #4bbcbe;
+
+  /* Chart palette — teal-anchored */
+  --chart-1: #4bbcbe;
+  --chart-2: #2c9a9c;
+  --chart-3: #82d3d5;
+  --chart-4: #c4eef0;
+  --chart-5: #eafafa;
+
+  /* Radius scale (softer per Airbnb) */
+  --radius:    14px;   /* default card radius — was 10px */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 32px;
+
+  /* Typography weights (modest per Airbnb principle — display 500-600, not 700+) */
+  --font-weight-medium:   500;
+  --font-weight-normal:   400;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  /* Type stack — Inter as the Cereal VF substitute (per DESIGN.md note) */
+  --font-sans:  'Inter', -apple-system, system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono:  ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Sidebar (kept consistent with main canvas) */
+  --sidebar:                       #ffffff;
+  --sidebar-foreground:            #222222;
+  --sidebar-primary:               #4bbcbe;
+  --sidebar-primary-foreground:    #ffffff;
+  --sidebar-accent:                #eafafa;
+  --sidebar-accent-foreground:     #1d6f70;
+  --sidebar-border:                #dddddd;
+  --sidebar-ring:                  #4bbcbe;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  /* Dark mode — kept utilitarian for now; teal voltage stays consistent */
+  --background: #0e1414;
+  --foreground: #f5f5f5;
+  --card:       #1a1f1f;
+  --card-foreground: #f5f5f5;
+  --popover:    #1a1f1f;
+  --popover-foreground: #f5f5f5;
+
+  --primary:           #4bbcbe;
+  --primary-active:    #6dd5d7;
+  --primary-disabled:  #244747;
+  --primary-foreground: #0e1414;
+
+  --secondary:           #82d3d5;
+  --secondary-foreground: #0e1414;
+
+  --canvas:        #0e1414;
+  --surface-soft:  #1a1f1f;
+  --surface-strong:#252b2b;
+
+  --ink:        #f5f5f5;
+  --body-text:  #d0d0d0;
+
+  --muted:               #244747;
+  --muted-foreground:    #929292;
+  --muted-soft:          #6a6a6a;
+  --accent:              #1d3535;
+  --accent-foreground:   #82d3d5;
+
+  --destructive:           #c13515;
+  --destructive-foreground: #ffffff;
+  --destructive-hover:     #b32505;
+  --legal-link:            #6aa3ff;
+
+  --border:        #2a3030;
+  --border-soft:   #1f2424;
+  --border-strong: #444a4a;
+  --input:         #2a3030;
+  --input-background: #1a1f1f;
+
+  --switch-background: #244747;
+  --ring:              #4bbcbe;
+
+  --chart-1: #4bbcbe;
+  --chart-2: #82d3d5;
+  --chart-3: #2c9a9c;
+  --chart-4: #c4eef0;
+  --chart-5: #6dd5d7;
+
+  --sidebar:                       #0e1414;
+  --sidebar-foreground:            #f5f5f5;
+  --sidebar-primary:               #4bbcbe;
+  --sidebar-primary-foreground:    #0e1414;
+  --sidebar-accent:                #1d3535;
+  --sidebar-accent-foreground:     #82d3d5;
+  --sidebar-border:                #2a3030;
+  --sidebar-ring:                  #4bbcbe;
 }
 
 @theme inline {
@@ -126,6 +198,19 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01', 'ss02';   /* Inter optical refinements */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Custom range slider thumb in teal */
+  input[type='range']::-webkit-slider-thumb {
+    background: var(--primary);
+  }
+  input[type='range']::-moz-range-thumb {
+    background: var(--primary);
   }
 }
 

@@ -28,23 +28,23 @@ function tones(isDark: boolean) {
   return {
     canvas:   isDark ? 'bg-[#141414]'   : 'bg-[#fafaf7]',
     panel:    isDark ? 'bg-[#2a2a2a]'   : 'bg-white',
-    border:   isDark ? 'border-gray-800': 'border-[#e5e5e0]',
-    accent:   isDark ? 'bg-[#87986a]/25': 'bg-[#f4f6f0]',
-    accentB:  isDark ? 'border-[#87986a]/40' : 'border-[#87986a]/40',
-    sage:     isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]',
+    border:   isDark ? 'border-gray-800': 'border-[#dddddd]',
+    accent:   isDark ? 'bg-[#4bbcbe]/25': 'bg-[#eafafa]',
+    accentB:  isDark ? 'border-[#4bbcbe]/40' : 'border-[#4bbcbe]/40',
+    sage:     isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]',
     muted:    isDark ? 'text-gray-500'  : 'text-gray-400',
-    dim:      isDark ? 'bg-gray-700'    : 'bg-[#e5e5e0]',
+    dim:      isDark ? 'bg-gray-700'    : 'bg-[#dddddd]',
   };
 }
 
 function toneClass(tone: Tone, isDark: boolean) {
   const map: Record<Tone, string> = {
-    sage:  isDark ? 'bg-[#87986a]/60' : 'bg-[#87986a]',
+    sage:  isDark ? 'bg-[#4bbcbe]/60' : 'bg-[#4bbcbe]',
     amber: 'bg-amber-500',
     blue:  'bg-blue-500',
     red:   'bg-red-500',
     green: 'bg-green-500',
-    gray:  isDark ? 'bg-gray-700' : 'bg-[#e5e5e0]',
+    gray:  isDark ? 'bg-gray-700' : 'bg-[#dddddd]',
   };
   return map[tone];
 }
@@ -86,7 +86,7 @@ function DotRow({
         <div
           key={i}
           className={`${h} rounded ${
-            i === accentIdx ? 'bg-[#87986a]' : t.dim
+            i === accentIdx ? 'bg-[#4bbcbe]' : t.dim
           }`}
           style={{ width: `${60 + ((i * 13) % 35)}%` }}
         />
@@ -164,13 +164,13 @@ export function OrdersSnap({ isDark, large }: SnapProps) {
               <div className={`h-[3px] rounded ${t.dim} w-[90%]`} />
               <div className={`h-[3px] rounded ${t.dim} w-[80%]`} />
             </div>
-            <div className="bg-[#87986a] rounded h-[8px] mt-1" />
+            <div className="bg-[#4bbcbe] rounded h-[8px] mt-1" />
           </div>
           {/* Mini DAG column */}
           <div className={`w-[24%] flex flex-col gap-[3px] border-l ${t.border} pl-1`}>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex items-center gap-[2px]">
-                <div className={`w-[4px] h-[4px] rounded-full ${i < 2 ? 'bg-[#87986a]' : i === 2 ? 'bg-amber-500' : t.dim}`} />
+                <div className={`w-[4px] h-[4px] rounded-full ${i < 2 ? 'bg-[#4bbcbe]' : i === 2 ? 'bg-amber-500' : t.dim}`} />
                 <div className={`h-[2px] rounded ${t.dim} w-full`} />
               </div>
             ))}
@@ -254,7 +254,7 @@ export function SpendingSnap({ isDark, large }: SnapProps) {
           {/* Bar chart proxy */}
           <div className="flex items-end gap-[3px] h-[20px]">
             {[40, 70, 30, 90, 55, 75, 35].map((h, i) => (
-              <div key={i} className={`flex-1 rounded-t ${i === 3 ? 'bg-[#87986a]' : t.dim}`} style={{ height: `${h}%` }} />
+              <div key={i} className={`flex-1 rounded-t ${i === 3 ? 'bg-[#4bbcbe]' : t.dim}`} style={{ height: `${h}%` }} />
             ))}
           </div>
         </div>
@@ -280,7 +280,7 @@ export function SuppliersSnap({ isDark, large }: SnapProps) {
           <Users className={`h-2.5 w-2.5 ${t.sage}`} />
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className={`p-[2px] rounded border ${t.border} flex items-center gap-1`}>
-              <div className={`w-[5px] h-[5px] rounded-full ${i === 1 ? 'bg-[#87986a]' : i === 2 ? 'bg-amber-500' : t.dim}`} />
+              <div className={`w-[5px] h-[5px] rounded-full ${i === 1 ? 'bg-[#4bbcbe]' : i === 2 ? 'bg-amber-500' : t.dim}`} />
               <div className={`h-[2px] rounded ${t.dim} flex-1`} />
             </div>
           ))}
@@ -294,7 +294,7 @@ export function SuppliersSnap({ isDark, large }: SnapProps) {
           <div className="grid grid-cols-2 gap-1">
             <div className={`h-[28px] rounded border ${t.border} p-[2px]`}>
               <div className={`h-[2px] rounded ${t.dim} w-[60%] mb-[2px]`} />
-              <div className={`h-[2px] rounded bg-[#87986a] w-[80%]`} />
+              <div className={`h-[2px] rounded bg-[#4bbcbe] w-[80%]`} />
             </div>
             <div className={`h-[28px] rounded border ${t.border} p-[2px]`}>
               <div className={`h-[2px] rounded ${t.dim} w-[50%] mb-[2px]`} />
@@ -352,7 +352,7 @@ export function NewRequestSnap({ isDark, large }: SnapProps) {
       {/* Step indicator */}
       <div className="flex items-center gap-1 mb-1.5">
         {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-          <div key={i} className={`flex-1 h-[5px] rounded-full ${i <= 3 ? 'bg-[#87986a]' : i === 4 ? 'bg-[#87986a]/50' : t.dim}`} />
+          <div key={i} className={`flex-1 h-[5px] rounded-full ${i <= 3 ? 'bg-[#4bbcbe]' : i === 4 ? 'bg-[#4bbcbe]/50' : t.dim}`} />
         ))}
       </div>
       {/* Body */}
@@ -362,7 +362,7 @@ export function NewRequestSnap({ isDark, large }: SnapProps) {
         <Pill tone="gray" isDark={isDark} w="w-[60%]" />
         <Pill tone="gray" isDark={isDark} w="w-[50%]" />
         <div className="flex justify-end mt-1.5">
-          <div className="h-[10px] w-[40%] rounded bg-[#87986a]" />
+          <div className="h-[10px] w-[40%] rounded bg-[#4bbcbe]" />
         </div>
       </div>
     </div>
@@ -391,18 +391,18 @@ export function NerveCenterSnap({ isDark, large }: SnapProps) {
           {/* DAG nodes — 2 rows of 6 */}
           <div className="grid grid-cols-6 gap-[2px] mb-1.5">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className={`h-[10px] rounded ${i === 2 ? 'bg-red-500' : 'bg-[#87986a]'}`} />
+              <div key={i} className={`h-[10px] rounded ${i === 2 ? 'bg-red-500' : 'bg-[#4bbcbe]'}`} />
             ))}
           </div>
           <div className="grid grid-cols-6 gap-[2px] mb-1.5">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className={`h-[10px] rounded ${i === 4 ? 'bg-amber-500' : 'bg-[#87986a]'}`} />
+              <div key={i} className={`h-[10px] rounded ${i === 4 ? 'bg-amber-500' : 'bg-[#4bbcbe]'}`} />
             ))}
           </div>
           {/* Live metrics */}
           <div className="flex items-end gap-[2px] h-[16px]">
             {[30, 60, 45, 80, 50].map((h, i) => (
-              <div key={i} className="flex-1 rounded-t bg-[#87986a]" style={{ height: `${h}%` }} />
+              <div key={i} className="flex-1 rounded-t bg-[#4bbcbe]" style={{ height: `${h}%` }} />
             ))}
           </div>
         </div>
@@ -412,7 +412,7 @@ export function NerveCenterSnap({ isDark, large }: SnapProps) {
           <Sparkles className={`h-2.5 w-2.5 ${t.sage}`} />
           {/* Autonomy slider proxy */}
           <div className={`h-[4px] rounded-full ${t.dim}`}>
-            <div className="h-[4px] rounded-full bg-[#87986a]" style={{ width: '66%' }} />
+            <div className="h-[4px] rounded-full bg-[#4bbcbe]" style={{ width: '66%' }} />
           </div>
           <div className={`h-[3px] rounded ${t.dim} w-[80%]`} />
         </div>
@@ -444,7 +444,7 @@ export function WorkflowsSnap({ isDark, large }: SnapProps) {
           <div className="flex items-center gap-[3px] mb-2">
             {Array.from({ length: 5 }).map((_, i) => (
               <Fragment key={i}>
-                <div className={`w-[10px] h-[10px] rounded-full ${i <= 1 ? 'bg-[#87986a]' : i === 2 ? 'bg-amber-500' : t.dim}`} />
+                <div className={`w-[10px] h-[10px] rounded-full ${i <= 1 ? 'bg-[#4bbcbe]' : i === 2 ? 'bg-amber-500' : t.dim}`} />
                 {i < 4 && <div className={`flex-1 h-[2px] ${t.dim}`} />}
               </Fragment>
             ))}
@@ -498,8 +498,8 @@ export function GlobalOpsSnap({ isDark, large }: SnapProps) {
           />
         ))}
         {/* Routes */}
-        <div className={`absolute h-px bg-[#87986a]/40`} style={{ left: '18%', top: '36%', width: '20%' }} />
-        <div className={`absolute h-px bg-[#87986a]/40`} style={{ left: '35%', top: '32%', width: '15%' }} />
+        <div className={`absolute h-px bg-[#4bbcbe]/40`} style={{ left: '18%', top: '36%', width: '20%' }} />
+        <div className={`absolute h-px bg-[#4bbcbe]/40`} style={{ left: '35%', top: '32%', width: '15%' }} />
       </div>
     </div>
   );
@@ -529,7 +529,7 @@ export function GovernanceSnap({ isDark, large }: SnapProps) {
             <div className={`h-[2px] rounded ${t.dim} w-[40%]`} />
             <div className="flex gap-[1px]">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className={`flex-1 h-[5px] rounded-sm ${i < 4 ? 'bg-[#87986a]' : t.dim}`} />
+                <div key={i} className={`flex-1 h-[5px] rounded-sm ${i < 4 ? 'bg-[#4bbcbe]' : t.dim}`} />
               ))}
             </div>
           </div>
@@ -537,7 +537,7 @@ export function GovernanceSnap({ isDark, large }: SnapProps) {
           <div className="space-y-[2px]">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex items-center gap-1">
-                <div className={`w-1 h-[3px] rounded ${i === 2 ? 'bg-amber-500' : 'bg-[#87986a]'}`} />
+                <div className={`w-1 h-[3px] rounded ${i === 2 ? 'bg-amber-500' : 'bg-[#4bbcbe]'}`} />
                 <div className={`h-[2px] rounded ${t.dim} flex-1`} />
               </div>
             ))}
@@ -567,7 +567,7 @@ export function IntelligenceSnap({ isDark, large }: SnapProps) {
           {/* Pattern cards */}
           {[1, 2, 3].map((i) => (
             <div key={i} className={`p-[2px] rounded border ${t.border}`}>
-              <div className={`h-[2px] rounded bg-[#87986a] mb-[1px]`} style={{ width: `${50 + i * 8}%` }} />
+              <div className={`h-[2px] rounded bg-[#4bbcbe] mb-[1px]`} style={{ width: `${50 + i * 8}%` }} />
               <div className={`h-[2px] rounded ${t.dim} w-[60%]`} />
             </div>
           ))}
@@ -624,25 +624,20 @@ export function InfrastructureSnap({ isDark, large }: SnapProps) {
 }
 
 // ── Snapshot registry ─────────────────────────────────────
+// Finn's 8-page platform — removed Buyamia-era pages from key type.
 export type SnapshotKey =
   | 'overview' | 'orders' | 'inventory' | 'spending' | 'suppliers'
-  | 'ai-activity' | 'request' | 'nerve-center' | 'workflows'
-  | 'global-ops' | 'governance' | 'intelligence' | 'infrastructure';
+  | 'activity' | 'request' | 'workflows';
 
 export function PageSnapshot({ pageId, isDark, large }: { pageId: SnapshotKey; isDark: boolean; large?: boolean }) {
   switch (pageId) {
-    case 'overview':       return <OverviewSnap isDark={isDark} large={large} />;
-    case 'orders':         return <OrdersSnap isDark={isDark} large={large} />;
-    case 'inventory':      return <InventorySnap isDark={isDark} large={large} />;
-    case 'spending':       return <SpendingSnap isDark={isDark} large={large} />;
-    case 'suppliers':      return <SuppliersSnap isDark={isDark} large={large} />;
-    case 'ai-activity':    return <AIActivitySnap isDark={isDark} large={large} />;
-    case 'request':        return <NewRequestSnap isDark={isDark} large={large} />;
-    case 'nerve-center':   return <NerveCenterSnap isDark={isDark} large={large} />;
-    case 'workflows':      return <WorkflowsSnap isDark={isDark} large={large} />;
-    case 'global-ops':     return <GlobalOpsSnap isDark={isDark} large={large} />;
-    case 'governance':     return <GovernanceSnap isDark={isDark} large={large} />;
-    case 'intelligence':   return <IntelligenceSnap isDark={isDark} large={large} />;
-    case 'infrastructure': return <InfrastructureSnap isDark={isDark} large={large} />;
+    case 'overview':   return <OverviewSnap isDark={isDark} large={large} />;
+    case 'orders':     return <OrdersSnap isDark={isDark} large={large} />;
+    case 'inventory':  return <InventorySnap isDark={isDark} large={large} />;
+    case 'spending':   return <SpendingSnap isDark={isDark} large={large} />;
+    case 'suppliers':  return <SuppliersSnap isDark={isDark} large={large} />;
+    case 'activity':   return <AIActivitySnap isDark={isDark} large={large} />;
+    case 'request':    return <NewRequestSnap isDark={isDark} large={large} />;
+    case 'workflows':  return <WorkflowsSnap isDark={isDark} large={large} />;
   }
 }

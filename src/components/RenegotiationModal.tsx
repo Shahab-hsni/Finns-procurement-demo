@@ -175,7 +175,7 @@ export function RenegotiationModal({ isDark, isOpen, vendor, onClose }: Renegoti
   const textPrimary = isDark ? 'text-white' : 'text-gray-900';
   const textMuted   = isDark ? 'text-gray-400' : 'text-gray-600';
   const inputClass  = `${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400'}`;
-  const chipActive  = isDark ? 'bg-[#87986a]/20 text-[#a3b085] border-[#87986a]/50' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#87986a]/40';
+  const chipActive  = isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border-[#4bbcbe]/50' : 'bg-[#eafafa] text-[#2c9a9c] border-[#4bbcbe]/40';
   const chipIdle    = isDark ? 'bg-[#2a2a2a] text-gray-400 border-gray-700 hover:border-gray-600' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300';
 
   return (
@@ -210,14 +210,14 @@ export function RenegotiationModal({ isDark, isOpen, vendor, onClose }: Renegoti
                   <div key={s.id} className="flex items-center gap-1 flex-1">
                     <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-semibold ${
                       active ? chipActive
-                        : done ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]')
+                        : done ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]')
                               : textMuted
                     }`}>
                       <span className={`h-4 w-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
                         active
-                          ? 'bg-[#87986a] text-white'
+                          ? 'bg-[#4bbcbe] text-white'
                           : done
-                            ? isDark ? 'bg-[#87986a]/30 text-[#a3b085]' : 'bg-[#87986a]/20 text-[#6b7a54]'
+                            ? isDark ? 'bg-[#4bbcbe]/30 text-[#82d3d5]' : 'bg-[#4bbcbe]/20 text-[#2c9a9c]'
                             : isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-400'
                       }`}>
                         {done ? <Check className="h-2.5 w-2.5" /> : s.id}
@@ -225,7 +225,7 @@ export function RenegotiationModal({ isDark, isOpen, vendor, onClose }: Renegoti
                       {s.label}
                     </div>
                     {idx < STEPS.length - 1 && (
-                      <div className={`flex-1 h-0.5 rounded ${done ? 'bg-[#87986a]' : isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
+                      <div className={`flex-1 h-0.5 rounded ${done ? 'bg-[#4bbcbe]' : isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
                     )}
                   </div>
                 );
@@ -282,7 +282,7 @@ export function RenegotiationModal({ isDark, isOpen, vendor, onClose }: Renegoti
                           placeholder={`e.g. "Pak Wayan — based on our Q2 volume we'd like to lock 6kg/cycle at AUD 230/kg through Sep. Open to extending Net-30 to Net-45 in exchange for that volume floor. FX peg at 15,490 for the period. Let me know your read by end of week."`}
                           className={`mt-1 text-xs ${inputClass}`} />
               </section>
-              <section className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+              <section className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                 <p className={`text-[10px] leading-relaxed ${textPrimary}`}>
                   <strong>Reminder:</strong> The vendor's account manager + WhatsApp lives on the Suppliers detail page. Send the opening offer through the channel you usually use; record what comes back in the next step.
                 </p>
@@ -305,7 +305,7 @@ export function RenegotiationModal({ isDark, isOpen, vendor, onClose }: Renegoti
                     </button>
                     <button onClick={() => addRound('you')}
                             className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border ${
-                              isDark ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                              isDark ? 'border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#eafafa]'
                             }`}>
                       <Plus className="h-3 w-3" /> You reply…
                     </button>
@@ -329,12 +329,12 @@ export function RenegotiationModal({ isDark, isOpen, vendor, onClose }: Renegoti
                              className={`p-2.5 rounded-lg border ${
                                isVendor
                                  ? isDark ? 'bg-[#2a2a2a] border-gray-700' : 'bg-gray-50 border-gray-200'
-                                 : isDark ? 'bg-[#87986a]/8 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                                 : isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'
                              }`}>
                           <div className="flex items-center justify-between mb-1.5">
                             <span className={`text-[10px] font-bold uppercase tracking-wide ${
                               isVendor ? textMuted
-                                       : isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                                       : isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                             }`}>
                               Round {idx + 1} · {isVendor ? 'Vendor' : 'You'}
                             </span>
@@ -409,10 +409,10 @@ export function RenegotiationModal({ isDark, isOpen, vendor, onClose }: Renegoti
                 </div>
               </section>
               <section className={`p-4 rounded-xl border-2 ${
-                isDark ? 'bg-[#87986a]/8 border-[#87986a]/50' : 'bg-[#f4f6f0] border-[#87986a]/40'
+                isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/50' : 'bg-[#eafafa] border-[#4bbcbe]/40'
               }`}>
                 <div className="flex items-start gap-3">
-                  <FileSignature className={`h-5 w-5 mt-0.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                  <FileSignature className={`h-5 w-5 mt-0.5 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                   <div>
                     <p className={`text-xs font-bold ${textPrimary}`}>
                       Sign and log this amendment
@@ -451,13 +451,13 @@ export function RenegotiationModal({ isDark, isOpen, vendor, onClose }: Renegoti
             )}
             {step < 5 && (
               <Button onClick={() => setStep((step + 1) as 1 | 2 | 3 | 4 | 5)} disabled={!currentValid}
-                      className="bg-[#87986a] hover:bg-[#6b7a54] text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white disabled:opacity-40 disabled:cursor-not-allowed">
                 Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
               </Button>
             )}
             {step === 5 && (
               <Button onClick={handleSubmit} disabled={!allValid}
-                      className="bg-[#87986a] hover:bg-[#6b7a54] text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white disabled:opacity-40 disabled:cursor-not-allowed">
                 <Send className="h-3.5 w-3.5 mr-1.5" /> Sign amendment
               </Button>
             )}

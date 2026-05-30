@@ -80,7 +80,7 @@ function FlowChartInner({ theme, onOpenGuidedTour, onNavigateLive }: FlowChartPa
     () =>
       EDGES.map((e) => {
         const color =
-          e.kind === 'nav'   ? '#87986a' :
+          e.kind === 'nav'   ? '#4bbcbe' :
           e.kind === 'data'  ? '#3b82f6' :
                                '#f59e0b';
         const isLit = focusedId === e.source || focusedId === e.target;
@@ -103,7 +103,7 @@ function FlowChartInner({ theme, onOpenGuidedTour, onNavigateLive }: FlowChartPa
           // legible when edges cross or run parallel.
           labelBgStyle: {
             fill: isDark ? '#1f1f1f' : '#ffffff',
-            stroke: isLit ? color : isDark ? '#374151' : '#e5e5e0',
+            stroke: isLit ? color : isDark ? '#374151' : '#dddddd',
             strokeWidth: 1,
           },
           labelBgPadding: [8, 4] as [number, number],
@@ -162,13 +162,13 @@ function FlowChartInner({ theme, onOpenGuidedTour, onNavigateLive }: FlowChartPa
   const t = {
     canvas:    isDark ? 'bg-[#141414]'   : 'bg-[#fafaf7]',
     surface:   isDark ? 'bg-[#1a1a1a]'   : 'bg-white',
-    border:    isDark ? 'border-gray-800': 'border-[#e5e5e0]',
-    textHead:  isDark ? 'text-white'     : 'text-[#0a0a0a]',
+    border:    isDark ? 'border-gray-800': 'border-[#dddddd]',
+    textHead:  isDark ? 'text-white'     : 'text-[#222222]',
     textBody:  isDark ? 'text-gray-300'  : 'text-gray-700',
     textMuted: isDark ? 'text-gray-500'  : 'text-gray-500',
     textDim:   isDark ? 'text-gray-600'  : 'text-gray-400',
-    sageBg:    isDark ? 'bg-[#87986a]/20': 'bg-[#f4f6f0]',
-    sageText:  isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]',
+    sageBg:    isDark ? 'bg-[#4bbcbe]/20': 'bg-[#eafafa]',
+    sageText:  isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]',
   };
 
   return (
@@ -178,7 +178,7 @@ function FlowChartInner({ theme, onOpenGuidedTour, onNavigateLive }: FlowChartPa
         {/* Title pill */}
         <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${t.border} ${t.surface} shadow-sm`}>
           <Compass className={`h-4 w-4 ${t.sageText}`} />
-          <span className={`text-sm font-bold ${t.textHead}`}>Buyamia · System Map</span>
+          <span className={`text-sm font-bold ${t.textHead}`}>Finn's · System Map</span>
           <span className={`text-[10px] ${t.textMuted} ml-1`}>{PAGES.length} pages · {EDGES.length} routes</span>
         </div>
 
@@ -218,7 +218,7 @@ function FlowChartInner({ theme, onOpenGuidedTour, onNavigateLive }: FlowChartPa
         {onOpenGuidedTour && (
           <button
             onClick={onOpenGuidedTour}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white shadow-sm`}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-colors bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white shadow-sm`}
           >
             <BookOpen className="h-3.5 w-3.5" /> Guided Tour
           </button>
@@ -229,7 +229,7 @@ function FlowChartInner({ theme, onOpenGuidedTour, onNavigateLive }: FlowChartPa
       <div className={`absolute bottom-4 left-4 z-20 px-3 py-2.5 rounded-xl border ${t.border} ${t.surface} shadow-sm`}>
         <div className={`text-[9px] font-bold uppercase tracking-wider mb-1.5 ${t.textDim}`}>Edge legend</div>
         <div className="space-y-1">
-          <LegendRow color="#87986a" label="Navigation — user click"  t={t} />
+          <LegendRow color="#4bbcbe" label="Navigation — user click"  t={t} />
           <LegendRow color="#3b82f6" label="Data flow — system push"  t={t} />
           <LegendRow color="#f59e0b" label="Event — system fires"     t={t} />
         </div>
@@ -258,7 +258,7 @@ function FlowChartInner({ theme, onOpenGuidedTour, onNavigateLive }: FlowChartPa
         <Background
           gap={20}
           size={1}
-          color={isDark ? '#262626' : '#e5e5e0'}
+          color={isDark ? '#262626' : '#dddddd'}
         />
         <Controls
           showInteractive={false}
@@ -270,12 +270,12 @@ function FlowChartInner({ theme, onOpenGuidedTour, onNavigateLive }: FlowChartPa
           nodeColor={(node) => {
             const page = PAGES.find((p) => p.id === node.id);
             if (!page) return '#888';
-            return page.group === 'core' ? '#87986a' : '#f59e0b';
+            return page.group === 'core' ? '#4bbcbe' : '#f59e0b';
           }}
           maskColor={isDark ? 'rgba(20,20,20,0.7)' : 'rgba(245,245,240,0.7)'}
           style={{
             backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
-            border: `1px solid ${isDark ? '#262626' : '#e5e5e0'}`,
+            border: `1px solid ${isDark ? '#262626' : '#dddddd'}`,
             borderRadius: 8,
           }}
         />

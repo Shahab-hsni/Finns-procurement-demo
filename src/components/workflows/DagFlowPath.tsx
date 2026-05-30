@@ -43,7 +43,7 @@ export function DagFlowPath({ isDark, selectedWorkflowId }: DagFlowPathProps) {
         className={`p-5 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
         <div className="flex items-start gap-3">
           <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${
-            isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+            isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
           }`}>
             <Icon className="h-5 w-5" />
           </div>
@@ -51,7 +51,7 @@ export function DagFlowPath({ isDark, selectedWorkflowId }: DagFlowPathProps) {
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className={`text-sm font-bold ${t.textPrimary}`}>{playbook.id} · {playbook.name}</h2>
               <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
-                isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
               }`}>{playbook.complexity}</span>
             </div>
             <p className={`text-[11px] mt-1 leading-relaxed ${t.textMuted}`}>{playbook.description}</p>
@@ -74,13 +74,13 @@ export function DagFlowPath({ isDark, selectedWorkflowId }: DagFlowPathProps) {
           </div>
           <div>
             <p className={`text-[9px] uppercase ${t.textMuted}`}>Savings</p>
-            <p className={`text-base font-bold mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>+{playbook.savingsVsBaseline}%</p>
+            <p className={`text-base font-bold mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>+{playbook.savingsVsBaseline}%</p>
           </div>
         </div>
 
         {/* When-it-runs */}
         <div className={`mt-4 p-2.5 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}>
-          <p className={`text-[9px] font-bold uppercase ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'} mb-1`}>When it runs</p>
+          <p className={`text-[9px] font-bold uppercase ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'} mb-1`}>When it runs</p>
           <p className={`text-[11px] leading-relaxed ${t.textPrimary}`}>{playbook.whenItRuns}</p>
         </div>
       </div>
@@ -116,7 +116,7 @@ export function DagFlowPath({ isDark, selectedWorkflowId }: DagFlowPathProps) {
                 {/* Node column */}
                 <div className="flex flex-col items-center pt-1">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                    isDark ? 'bg-[#87986a]/20 text-[#a3b085] border border-[#87986a]/40' : 'bg-[#f4f6f0] text-[#6b7a54] border border-[#87986a]/40'
+                    isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border border-[#4bbcbe]/40' : 'bg-[#eafafa] text-[#2c9a9c] border border-[#4bbcbe]/40'
                   }`}>
                     {stage.stage}
                   </div>
@@ -130,7 +130,7 @@ export function DagFlowPath({ isDark, selectedWorkflowId }: DagFlowPathProps) {
                   <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
                     <span className={`text-xs font-semibold ${t.textPrimary}`}>{stage.name}</span>
                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
-                      isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                      isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                     }`}>
                       <Bot className="h-2.5 w-2.5" />
                       {stage.owningAgent === 'human' ? 'Human' : stage.owningAgent}

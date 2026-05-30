@@ -1010,8 +1010,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
       <button key={item.id} onClick={() => handleSelect(item.id)}
         className={`group w-full text-left p-3 rounded-lg border transition-all duration-[380ms] ${isFly ? 'opacity-0 translate-x-12 scale-90' : ''} ${
           isManual ? (isDark ? 'bg-amber-500/5 border-amber-500/40 hover:bg-amber-500/10' : 'bg-amber-50/60 border-amber-400/50 hover:bg-amber-100/50')
-          : isSelected ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/40' : 'bg-[#f4f6f0] border-[#87986a]/40'
-          : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-[#f4f6f0]'
+          : isSelected ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40' : 'bg-[#eafafa] border-[#4bbcbe]/40'
+          : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-[#eafafa]'
         }`}
       >
         <div className="flex items-center justify-between mb-1">
@@ -1024,7 +1024,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               className={`inline-flex items-center gap-0.5 px-1 py-px rounded-full text-[8px] font-bold border shrink-0 ${
                 isManual
                   ? isDark ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-amber-50 border-amber-400/50 text-amber-700'
-                  : isDark ? 'bg-[#87986a]/15 border-[#87986a]/30 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/30 text-[#6b7a54]'
+                  : isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/30 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/30 text-[#2c9a9c]'
               }`}>
               {isManual ? <AlertTriangle className="h-2 w-2" /> : <Bot className="h-2 w-2" />}
               {isManual ? 'Override' : `#${String(agent.id).padStart(2, '0')}`}
@@ -1052,7 +1052,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               </div>
             )}
             {isEmergency && <span className="text-[9px] font-semibold text-amber-400 animate-pulse">Reordering...</span>}
-            <ChevronRight className={`h-3 w-3 shrink-0 ml-0.5 ${isSelected ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textMuted}`} />
+            <ChevronRight className={`h-3 w-3 shrink-0 ml-0.5 ${isSelected ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : t.textMuted}`} />
           </div>
         </div>
         <p className={`text-[10px] leading-snug ${t.textMuted}`}>
@@ -1083,8 +1083,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
           isManual
             ? isDark ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
                     : 'bg-amber-50 border-amber-400/50 text-amber-700 hover:bg-amber-100'
-            : isDark ? 'bg-[#87986a]/15 border-[#87986a]/30 text-[#a3b085] hover:bg-[#87986a]/25'
-                    : 'bg-[#f4f6f0] border-[#87986a]/30 text-[#6b7a54] hover:bg-[#e8eddf]'
+            : isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/30 text-[#82d3d5] hover:bg-[#4bbcbe]/25'
+                    : 'bg-[#eafafa] border-[#4bbcbe]/30 text-[#2c9a9c] hover:bg-[#d6f4f5]'
         }`}>
         {isManual ? <AlertTriangle className={dense ? 'h-2 w-2' : 'h-2.5 w-2.5'} /> : <Bot className={dense ? 'h-2 w-2' : 'h-2.5 w-2.5'} />}
         {isManual ? 'Override' : `#${String(agent.id).padStart(2, '0')}`}
@@ -1122,7 +1122,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             <div className="mt-2">
               <div className="flex items-center justify-between mb-1">
                 <span className={`text-[10px] ${t.textMuted}`}>Stock health</span>
-                <span className={`text-[10px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{safePercent}% safe</span>
+                <span className={`text-[10px] font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{safePercent}% safe</span>
               </div>
               <div className={`h-1.5 rounded-full ${t.progressTrack}`}>
                 <div className="h-1.5 rounded-full bg-gradient-to-r from-red-500 via-amber-400 to-green-500 transition-all" style={{ width: `${safePercent}%` }} />
@@ -1151,7 +1151,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
       {/* ── AUDIT MODE (expanded grid) ── */}
       {auditMode && (
         <>
-          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className={`text-sm font-semibold ${t.textPrimary}`}>Inventory Audit</h2>
@@ -1177,8 +1177,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 <button key={chip.id} onClick={() => setAuditFilter(chip.id)}
                   className={`px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors ${
                     auditFilter === chip.id
-                      ? isDark ? 'bg-[#87986a]/20 text-[#a3b085] border border-[#87986a]/30' : 'bg-[#f4f6f0] text-[#6b7a54] border border-[#dbe3ce]'
-                      : isDark ? 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700' : 'bg-gray-100 text-gray-500 border border-[#e5e5e0] hover:bg-gray-200'
+                      ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] border border-[#4bbcbe]/30' : 'bg-[#eafafa] text-[#2c9a9c] border border-[#c4eef0]'
+                      : isDark ? 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700' : 'bg-gray-100 text-gray-500 border border-[#dddddd] hover:bg-gray-200'
                   }`}>
                   {chip.label} <span className="ml-1 opacity-60">{chip.count}</span>
                 </button>
@@ -1187,21 +1187,21 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
           </div>
 
           {/* Toolbar: Select All + View Toggle + Batch Action */}
-          <div className={`px-4 py-2 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'} flex items-center gap-3`}>
+          <div className={`px-4 py-2 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'} flex items-center gap-3`}>
             <button onClick={toggleAuditSelectAll} className="flex items-center gap-1.5">
               {allAuditSelected
-                ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                 : <Square className={`h-3.5 w-3.5 ${t.textMuted}`} />
               }
               <span className={`text-[10px] font-medium ${t.textMuted}`}>{auditSelected.size > 0 ? `${auditSelected.size} selected` : 'Select All'}</span>
             </button>
 
             {/* View toggle */}
-            <div className={`flex items-center rounded-lg border ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'} ml-auto`}>
+            <div className={`flex items-center rounded-lg border ${isDark ? 'border-gray-700' : 'border-[#dddddd]'} ml-auto`}>
               <button onClick={() => setAuditView('table')} title="Table view"
                 className={`flex items-center justify-center w-7 h-6 rounded-l-lg transition-colors ${
                   auditView === 'table'
-                    ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                    ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                     : isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
                 }`}>
                 <List className="h-3.5 w-3.5" />
@@ -1209,7 +1209,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               <button onClick={() => setAuditView('grid')} title="Grid view"
                 className={`flex items-center justify-center w-7 h-6 rounded-r-lg transition-colors ${
                   auditView === 'grid'
-                    ? isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                    ? isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                     : isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
                 }`}>
                 <LayoutGrid className="h-3.5 w-3.5" />
@@ -1217,7 +1217,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             </div>
 
             {auditSelected.size > 0 && (
-              <Button size="sm" className="h-6 px-3 text-[10px] bg-[#87986a] hover:bg-[#6b7a54] text-white">
+              <Button size="sm" className="h-6 px-3 text-[10px] bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white">
                 <Zap className="h-3 w-3 mr-1" /> Batch Restock ({auditSelected.size})
               </Button>
             )}
@@ -1250,12 +1250,12 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                       <tr key={item.id}
                         onClick={() => handleSelect(item.id)}
                         className={`cursor-pointer border-b transition-colors duration-200 ${
-                          selectedId === item.id ? (isDark ? 'bg-[#87986a]/10 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#87986a]/20') : isDark ? 'border-gray-800/50 hover:bg-gray-800/50' : 'border-gray-100 hover:bg-[#f4f6f0]'
+                          selectedId === item.id ? (isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#4bbcbe]/20') : isDark ? 'border-gray-800/50 hover:bg-gray-800/50' : 'border-gray-100 hover:bg-[#eafafa]'
                         }`}>
                         <td className="py-2 px-4">
                           <button onClick={(e) => { e.stopPropagation(); toggleAuditItem(item.id); }}>
                             {isChecked
-                              ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                              ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                               : <Square className={`h-3.5 w-3.5 ${t.textMuted}`} />
                             }
                           </button>
@@ -1317,13 +1317,13 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                     <button key={item.id} onClick={() => handleSelect(item.id)}
                       className={`group relative w-full text-left p-4 rounded-xl border transition-all duration-200 ${
                         isManualCardMode ? 'bg-amber-500/5 border-amber-500/40'
-                        : selectedId === item.id ? (isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 ring-1 ring-[#87986a]/20' : 'bg-[#f4f6f0] border-[#87986a]/40 ring-1 ring-[#87986a]/20')
-                        : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-[#f4f6f0]'
+                        : selectedId === item.id ? (isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 ring-1 ring-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#4bbcbe]/40 ring-1 ring-[#4bbcbe]/20')
+                        : isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-[#eafafa]'
                       }`}>
                       {/* Checkbox */}
                       <div className="absolute top-2.5 right-2.5" onClick={(e) => { e.stopPropagation(); toggleAuditItem(item.id); }}>
                         {isChecked
-                          ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                          ? <SquareCheckBig className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                           : <Square className={`h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity ${t.textMuted}`} />
                         }
                       </div>
@@ -1401,21 +1401,21 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             { icon: Flame, label: 'Critical', value: `${criticalItems.length}`, sub: 'Immediate restock' },
             { icon: Zap, label: 'Auto-Reorders', value: `${ITEMS.filter(i => i.autoReordered).length}`, sub: 'Active through kernel' },
           ].map(m => (
-            <div key={m.label} className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
-              <div className="flex items-center gap-1.5 mb-1"><m.icon className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} /><span className={`text-[10px] ${t.textMuted}`}>{m.label}</span></div>
+            <div key={m.label} className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <div className="flex items-center gap-1.5 mb-1"><m.icon className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} /><span className={`text-[10px] ${t.textMuted}`}>{m.label}</span></div>
               <span className={`text-sm font-bold ${t.textPrimary}`}>{m.value}</span>
               <p className={`text-[9px] mt-0.5 ${t.textMuted}`}>{m.sub}</p>
             </div>
           ))}
         </div>
 
-        <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+        <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Consumption Velocity Map</h3>
               <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>Real-time depletion from A-02 (Restock)</p>
             </div>
-            <Badge variant="outline" className={isDark ? 'bg-[#87986a]/10 text-[#a3b085] border-[#87986a]/20 text-[10px]' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#dbe3ce] text-[10px]'}>
+            <Badge variant="outline" className={isDark ? 'bg-[#4bbcbe]/10 text-[#82d3d5] border-[#4bbcbe]/20 text-[10px]' : 'bg-[#eafafa] text-[#2c9a9c] border-[#c4eef0] text-[10px]'}>
               <Activity className="h-3 w-3 mr-1" /> Live
             </Badge>
           </div>
@@ -1423,14 +1423,14 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={AGGREGATE_VELOCITY} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
                 <defs>
-                  <linearGradient id="velGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={isDark ? '#a3b085' : '#87986a'} stopOpacity={0.3} /><stop offset="95%" stopColor={isDark ? '#a3b085' : '#87986a'} stopOpacity={0.05} /></linearGradient>
-                  <linearGradient id="fcGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={isDark ? '#6b7a54' : '#a3b085'} stopOpacity={0.15} /><stop offset="95%" stopColor={isDark ? '#6b7a54' : '#a3b085'} stopOpacity={0.02} /></linearGradient>
+                  <linearGradient id="velGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={isDark ? '#82d3d5' : '#4bbcbe'} stopOpacity={0.3} /><stop offset="95%" stopColor={isDark ? '#82d3d5' : '#4bbcbe'} stopOpacity={0.05} /></linearGradient>
+                  <linearGradient id="fcGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={isDark ? '#2c9a9c' : '#82d3d5'} stopOpacity={0.15} /><stop offset="95%" stopColor={isDark ? '#2c9a9c' : '#82d3d5'} stopOpacity={0.02} /></linearGradient>
                 </defs>
                 <XAxis dataKey="day" tick={{ fontSize: 10, fill: isDark ? '#6b7280' : '#9ca3af' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: isDark ? '#6b7280' : '#9ca3af' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ background: isDark ? '#2a2a2a' : '#fff', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}`, borderRadius: 8, fontSize: 11, color: isDark ? '#fff' : '#111' }} />
-                <Area type="monotone" dataKey="forecast" stroke={isDark ? '#6b7a54' : '#a3b085'} strokeDasharray="4 4" fill="url(#fcGrad)" strokeWidth={1.5} name="AI Forecast" />
-                <Area type="monotone" dataKey="actual" stroke={isDark ? '#a3b085' : '#87986a'} fill="url(#velGrad)" strokeWidth={2} name="Actual" />
+                <Area type="monotone" dataKey="forecast" stroke={isDark ? '#2c9a9c' : '#82d3d5'} strokeDasharray="4 4" fill="url(#fcGrad)" strokeWidth={1.5} name="AI Forecast" />
+                <Area type="monotone" dataKey="actual" stroke={isDark ? '#82d3d5' : '#4bbcbe'} fill="url(#velGrad)" strokeWidth={2} name="Actual" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1443,7 +1443,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             const meta = GROUP_META[item.group]; const GI = meta.icon;
             return (
               <button key={item.id} onClick={() => handleSelect(item.id)}
-                className={`w-full text-left flex items-center gap-3 p-2.5 rounded-lg border transition-colors ${isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-[#f4f6f0]'}`}>
+                className={`w-full text-left flex items-center gap-3 p-2.5 rounded-lg border transition-colors ${isDark ? 'bg-[#2a2a2a] border-gray-800 hover:bg-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-[#eafafa]'}`}>
                 <GI className={`h-3 w-3 shrink-0 ${isDark ? meta.darkColor : meta.color}`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between"><span className={`text-xs font-medium truncate ${t.textPrimary}`}>{item.name}</span><span className={`text-[10px] ${t.textMuted}`}>{item.dailyBurn} {item.unit}/day</span></div>
@@ -1483,7 +1483,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   </div>
                 </div>
                 <button onClick={() => setMode(selected.id, 'auto')}
-                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[10px] font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[10px] font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors">
                   <Bot className="h-3 w-3" /> Resume Auto
                 </button>
               </div>
@@ -1494,7 +1494,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   Row A: identity (title + status + governance link)        — focus
                   Row B: meta + Mode toggle + Back                          — context + state
                   Row C: action toolbar (Restock primary · Adjust · Pipeline) — actions  */}
-            <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
               {/* Row A — identity */}
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className={`text-base font-bold ${t.textPrimary}`}>{selected.name}</h2>
@@ -1506,7 +1506,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 <button
                   onClick={() => openGovernance(skuAgent.id)}
                   title="Open this agent's directory profile to tune autonomy & approval limits"
-                  className={`inline-flex items-center gap-1 text-[10px] font-semibold hover:underline ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                  className={`inline-flex items-center gap-1 text-[10px] font-semibold hover:underline ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                   <Bot className="h-3 w-3" />
                   Managed by {agentLabel(skuAgent)}
                   <ExternalLink className="h-2.5 w-2.5" />
@@ -1530,12 +1530,12 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   {' · '}{selected.dailyBurn} {selected.unit}/day · {selected.sku}
                 </p>
                 {/* Mode toggle (state, not action) — compact pill */}
-                <div className={`inline-flex items-stretch rounded-full border text-[10px] ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-[#e5e5e0] bg-gray-50'}`}>
+                <div className={`inline-flex items-stretch rounded-full border text-[10px] ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-[#dddddd] bg-gray-50'}`}>
                   <button onClick={() => setMode(selected.id, 'auto')}
                     title={!skuIsManual ? `${agentLabel(skuAgent)} executing autonomously` : `Resume ${agentLabel(skuAgent)}`}
                     className={`flex items-center gap-1 pl-2 pr-2.5 py-0.5 rounded-full font-semibold transition-colors ${
                       !skuIsManual
-                        ? 'bg-[#87986a] text-white'
+                        ? 'bg-[#4bbcbe] text-white'
                         : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'
                     }`}>
                     <Bot className="h-2.5 w-2.5" />
@@ -1609,16 +1609,16 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   <div className={`mt-3 px-3 py-2 rounded-lg border flex items-center gap-2 flex-wrap ${
                     breached
                       ? isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-300/60'
-                      : isDark ? 'bg-[#87986a]/8 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                      : isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'
                   }`}>
                     <span className="relative flex h-2 w-2 shrink-0" title="Live">
-                      <span className={`absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping ${breached ? 'bg-amber-500' : 'bg-[#87986a]'}`} />
-                      <span className={`relative inline-flex h-2 w-2 rounded-full ${breached ? 'bg-amber-500' : 'bg-[#87986a]'}`} />
+                      <span className={`absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping ${breached ? 'bg-amber-500' : 'bg-[#4bbcbe]'}`} />
+                      <span className={`relative inline-flex h-2 w-2 rounded-full ${breached ? 'bg-amber-500' : 'bg-[#4bbcbe]'}`} />
                     </span>
                     <span className={`text-[10px] font-bold uppercase tracking-wide ${
                       breached
                         ? isDark ? 'text-amber-300' : 'text-amber-700'
-                        : isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                        : isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                     }`}>
                       {skuAgent.id} Watch
                     </span>
@@ -1632,11 +1632,11 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               })()}
 
               {/* Row C — action toolbar (primary · secondary · tertiary) */}
-              <div className={`mt-3 pt-3 border-t flex items-center gap-1.5 flex-wrap ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+              <div className={`mt-3 pt-3 border-t flex items-center gap-1.5 flex-wrap ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
                 {/* Primary — Restock Now */}
                 <button onClick={() => handleRestockNow(selected.id)}
                   title={`Open a fresh PO with ${selected.supplierName ?? 'your primary vetted vendor'} pre-filled`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm bg-[#87986a] text-white hover:bg-[#6b7a54]">
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm bg-[#4bbcbe] text-white hover:bg-[#2c9a9c]">
                   <Package className="h-3.5 w-3.5" />
                   Restock Now
                 </button>
@@ -1665,8 +1665,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                         <button onClick={() => handleAddToDraft(selected.id, d.id)}
                           title={`Bundle ${selected.name} into Draft ${d.id} (${d.vendor})`}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm border ${
-                            isDark ? 'bg-[#1f2a1f] border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/15'
-                                  : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e8eddf]'
+                            isDark ? 'bg-[#1d3535] border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/15'
+                                  : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#d6f4f5]'
                           }`}>
                           <span className="font-bold">+</span>
                           Add to {d.id}
@@ -1681,8 +1681,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                         <button onClick={() => handleRemoveFromDraft(selected.id, d.id)}
                           title={`Already bundled in Draft ${d.id} — click to remove`}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm border ${
-                            isDark ? 'bg-[#87986a]/15 border-[#87986a]/50 text-[#a3b085] hover:bg-amber-500/15 hover:border-amber-500/40 hover:text-amber-300'
-                                  : 'bg-[#f4f6f0] border-[#87986a]/50 text-[#6b7a54] hover:bg-amber-50 hover:border-amber-400/50 hover:text-amber-700'
+                            isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/50 text-[#82d3d5] hover:bg-amber-500/15 hover:border-amber-500/40 hover:text-amber-300'
+                                  : 'bg-[#eafafa] border-[#4bbcbe]/50 text-[#2c9a9c] hover:bg-amber-50 hover:border-amber-400/50 hover:text-amber-700'
                           }`}>
                           <Check className="h-3 w-3" />
                           In {d.id}
@@ -1704,10 +1704,10 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                             : `In ${totalIn} draft${totalIn === 1 ? '' : 's'} · ${availableDrafts.length} more available`}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm border ${
                             totalIn > 0
-                              ? isDark ? 'bg-[#87986a]/15 border-[#87986a]/50 text-[#a3b085] hover:bg-[#87986a]/25'
-                                      : 'bg-[#f4f6f0] border-[#87986a]/50 text-[#6b7a54] hover:bg-[#e8eddf]'
-                              : isDark ? 'bg-[#1f2a1f] border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/15'
-                                      : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e8eddf]'
+                              ? isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/50 text-[#82d3d5] hover:bg-[#4bbcbe]/25'
+                                      : 'bg-[#eafafa] border-[#4bbcbe]/50 text-[#2c9a9c] hover:bg-[#d6f4f5]'
+                              : isDark ? 'bg-[#1d3535] border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/15'
+                                      : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#d6f4f5]'
                           }`}>
                           {totalIn > 0 ? <Check className="h-3 w-3" /> : <span className="font-bold">+</span>}
                           {label}
@@ -1715,9 +1715,9 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                         </button>
                         {isOpen && (
                           <div className={`absolute right-0 top-full mt-1.5 w-72 rounded-xl border shadow-xl z-30 overflow-hidden ${
-                            isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-[#e5e5e0]'
+                            isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-[#dddddd]'
                           }`} data-pipeline-menu>
-                            <div className={`px-3 py-2 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+                            <div className={`px-3 py-2 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
                               <div className={`text-[9px] font-bold uppercase tracking-wide ${t.textMuted}`}>
                                 Pipeline · {selected.supplierName}
                               </div>
@@ -1733,7 +1733,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                                   className={`group w-full px-3 py-2 flex items-start gap-2 text-left transition-colors ${
                                     isDark ? 'hover:bg-amber-500/10' : 'hover:bg-amber-50'
                                   }`}>
-                                  <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                                  <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                                   <div className="flex-1 min-w-0">
                                     <div className={`text-[11px] font-semibold ${t.textPrimary}`}>{d.id}</div>
                                     <div className={`text-[9px] ${t.textMuted}`}>
@@ -1753,7 +1753,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                                 <button key={d.id}
                                   onClick={() => { handleAddToDraft(selected.id, d.id); setPipelineMenuOpen(null); }}
                                   className={`group w-full px-3 py-2 flex items-start gap-2 text-left transition-colors ${
-                                    isDark ? 'hover:bg-[#87986a]/10' : 'hover:bg-[#f4f6f0]'
+                                    isDark ? 'hover:bg-[#4bbcbe]/10' : 'hover:bg-[#eafafa]'
                                   }`}>
                                   <span className={`shrink-0 mt-0.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border ${
                                     isDark ? 'border-gray-600' : 'border-gray-300'
@@ -1767,17 +1767,17 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                                     </div>
                                   </div>
                                   <span className={`shrink-0 text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity ${
-                                    isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                                    isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                                   }`}>Add</span>
                                 </button>
                               ))}
                             </div>
                             {/* Footer hint — drives the user to Restock Now if they need a brand-new PO */}
-                            <div className={`px-3 py-2 border-t flex items-center gap-1.5 ${isDark ? 'border-gray-800 bg-[#1f1f1f]' : 'border-[#e5e5e0] bg-gray-50'}`}>
+                            <div className={`px-3 py-2 border-t flex items-center gap-1.5 ${isDark ? 'border-gray-800 bg-[#1f1f1f]' : 'border-[#dddddd] bg-gray-50'}`}>
                               <span className={`text-[9px] ${t.textMuted}`}>Need a fresh PO instead?</span>
                               <button
                                 onClick={() => { setPipelineMenuOpen(null); handleRestockNow(selected.id); }}
-                                className={`ml-auto text-[10px] font-bold inline-flex items-center gap-1 ${isDark ? 'text-[#a3b085] hover:text-[#c5d3a8]' : 'text-[#6b7a54] hover:text-[#556142]'}`}>
+                                className={`ml-auto text-[10px] font-bold inline-flex items-center gap-1 ${isDark ? 'text-[#82d3d5] hover:text-[#c5d3a8]' : 'text-[#2c9a9c] hover:text-[#556142]'}`}>
                                 <Package className="h-3 w-3" /> Restock Now
                               </button>
                             </div>
@@ -1790,16 +1790,16 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             </div>
 
             {/* Item velocity */}
-            <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
               <div className="flex items-center justify-between mb-2"><h3 className={`text-xs font-semibold ${t.textPrimary}`}>Consumption Velocity</h3><span className={`text-[10px] ${t.textMuted}`}>7-day · {selected.dailyBurn} {selected.unit}/day avg</span></div>
               <div className="h-28">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={selected.velocityData} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-                    <defs><linearGradient id="ivGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={isDark ? '#a3b085' : '#87986a'} stopOpacity={0.3} /><stop offset="95%" stopColor={isDark ? '#a3b085' : '#87986a'} stopOpacity={0.05} /></linearGradient></defs>
+                    <defs><linearGradient id="ivGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={isDark ? '#82d3d5' : '#4bbcbe'} stopOpacity={0.3} /><stop offset="95%" stopColor={isDark ? '#82d3d5' : '#4bbcbe'} stopOpacity={0.05} /></linearGradient></defs>
                     <XAxis dataKey="day" tick={{ fontSize: 10, fill: isDark ? '#6b7280' : '#9ca3af' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: isDark ? '#6b7280' : '#9ca3af' }} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={{ background: isDark ? '#2a2a2a' : '#fff', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}`, borderRadius: 8, fontSize: 11, color: isDark ? '#fff' : '#111' }} />
-                    <Area type="monotone" dataKey="units" stroke={isDark ? '#a3b085' : '#87986a'} fill="url(#ivGrad)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="units" stroke={isDark ? '#82d3d5' : '#4bbcbe'} fill="url(#ivGrad)" strokeWidth={2} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -1810,7 +1810,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   1. SAVED PAR — the value the agent (or your manual floor) is using right now.
                   2. SIMULATOR — drag the slider to *preview* what risk looks like at any other value.
                 Saving / committing a value only happens in Manual Fixed mode. */}
-            <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
               <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                 <div className="min-w-0">
                   <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Par Level — Digital Twin</h3>
@@ -1821,12 +1821,12 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   </p>
                 </div>
                 {/* AI Recommended | Manual Fixed toggle */}
-                <div className={`inline-flex items-stretch rounded-full border ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-[#e5e5e0] bg-gray-50'}`}>
+                <div className={`inline-flex items-stretch rounded-full border ${isDark ? 'border-gray-700 bg-[#2a2a2a]' : 'border-[#dddddd] bg-gray-50'}`}>
                   <button
                     onClick={() => setParModeWithPivot(selected.id, 'ai')}
                     className={`flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full text-[10px] font-semibold transition-colors ${
                       getParMode(selected.id) === 'ai'
-                        ? 'bg-[#87986a] text-white shadow-sm'
+                        ? 'bg-[#4bbcbe] text-white shadow-sm'
                         : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'
                     }`}>
                     <Bot className="h-3 w-3" /> AI Recommended
@@ -1889,15 +1889,15 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   <div className={`mb-3 p-3 rounded-lg border flex items-center justify-between gap-3 flex-wrap ${
                     savedKind === 'manual'
                       ? isDark ? 'bg-amber-500/8 border-amber-500/30' : 'bg-amber-50 border-amber-300/60'
-                      : isDark ? 'bg-[#87986a]/8 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                      : isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'
                   }`}>
                     <div className="flex items-center gap-2 min-w-0">
-                      {savedKind === 'manual' ? <Lock className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : <Bot className={`h-3.5 w-3.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />}
+                      {savedKind === 'manual' ? <Lock className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : <Bot className={`h-3.5 w-3.5 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />}
                       <div className="min-w-0">
                         <div className={`text-[9px] font-bold uppercase tracking-wide ${
                           savedKind === 'manual'
                             ? isDark ? 'text-amber-300' : 'text-amber-700'
-                            : isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                            : isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
                         }`}>
                           {savedKind === 'manual' ? 'Your Hard Floor' : 'AI-set Par'} — currently in effect
                         </div>
@@ -1932,7 +1932,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                         : 'Drag to your hard floor, then click Save Manual Floor.'}
                       className="flex-1 h-3 rounded-full appearance-none cursor-pointer"
                       style={{ background: `linear-gradient(to right, ${
-                        getParMode(selected.id) === 'manual' ? '#f59e0b' : isDark ? '#a3b085' : '#87986a'
+                        getParMode(selected.id) === 'manual' ? '#f59e0b' : isDark ? '#82d3d5' : '#4bbcbe'
                       } ${(currentPar / (selected.parLevel * 2.5)) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} 0%)` }} />
                     <span className={`text-xs w-20 text-right ${t.textMuted}`}>{Math.round(selected.parLevel * 2.5)} {selected.unit}</span>
                   </div>
@@ -1945,7 +1945,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   </div>
                 </div>
                 {/* Preview metrics — explicitly labeled "if you set par to X" */}
-                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-[#e5e5e0]'}`}>
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-[#dddddd]'}`}>
                   <div className={`text-[9px] font-bold uppercase tracking-wide mb-2 ${t.textMuted}`}>
                     Preview at {currentPar} {selected.unit} par
                   </div>
@@ -1981,10 +1981,10 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   const isManualFloor = getParMode(selected.id) === 'manual';
                   const alreadyAtRecommended = currentPar === recommended;
                   return (
-                    <div className={`p-3 rounded-lg border flex items-start gap-2 ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-                      <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                    <div className={`p-3 rounded-lg border flex items-start gap-2 ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
+                      <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                       <div className="min-w-0 flex-1">
-                        <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                        <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                           Atlas · Recommendation
                         </div>
                         <p className={`text-[11px] leading-relaxed mt-0.5 ${t.textPrimary}`}>
@@ -1997,7 +1997,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                         {isManualFloor && !alreadyAtRecommended && stockoutRisk > 30 && (
                           <button
                             onClick={() => setParOverride(recommended)}
-                            className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors">
+                            className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors">
                             <ArrowRight className="h-2.5 w-2.5" /> Snap slider to {recommended} {selected.unit}
                           </button>
                         )}
@@ -2044,13 +2044,13 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                       className={`group w-full flex items-start gap-3 py-2 px-2 rounded-lg text-left transition-colors cursor-pointer ${
                         skuIsManual
                           ? isDark ? 'hover:bg-amber-500/5' : 'hover:bg-amber-50/40'
-                          : isDark ? 'hover:bg-[#87986a]/5' : 'hover:bg-[#f4f6f0]/60'
+                          : isDark ? 'hover:bg-[#4bbcbe]/5' : 'hover:bg-[#eafafa]/60'
                       }`}>
                       <div className="flex flex-col items-center pt-0.5">
                         <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
                           isFailed ? 'bg-red-500 border-red-500'
                           : stage.status === 'complete' ? (isDark ? 'bg-green-500 border-green-500' : 'bg-green-600 border-green-600')
-                          : stage.status === 'active' ? (skuIsManual ? 'bg-amber-500 border-amber-500' : 'bg-[#87986a] border-[#87986a] animate-pulse')
+                          : stage.status === 'active' ? (skuIsManual ? 'bg-amber-500 border-amber-500' : 'bg-[#4bbcbe] border-[#4bbcbe] animate-pulse')
                           : skuIsManual ? (isDark ? 'border-amber-500/40' : 'border-amber-400/50')
                           : isDark ? 'border-gray-600 bg-transparent' : 'border-gray-300 bg-transparent'
                         }`}>
@@ -2073,7 +2073,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                             <span
                               title="A-01 (Sourcing) cross-referenced only the vetted suppliers in your internal directory"
                               className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${
-                                isDark ? 'bg-[#87986a]/15 border-[#87986a]/40 text-[#a3b085]' : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54]'
+                                isDark ? 'bg-[#4bbcbe]/15 border-[#4bbcbe]/40 text-[#82d3d5]' : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c]'
                               }`}>
                               <ShieldCheck className="h-2.5 w-2.5" />
                               Internal Directory
@@ -2090,7 +2090,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                               <User className="h-2.5 w-2.5" /> Manual Override
                             </span>
                           )}
-                          {stage.status === 'active' && !skuIsManual && <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'}`}>In Progress</span>}
+                          {stage.status === 'active' && !skuIsManual && <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'}`}>In Progress</span>}
                           {stage.status === 'active' && skuIsManual && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-amber-500 text-white">You're driving</span>}
                           {isFailed && <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'}`}>Failed</span>}
                           {/* Hover affordance — Phase 2 reads as a window into the selected stream */}
@@ -2098,7 +2098,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                             isPhase2 && selectedStream
                               ? isDark ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-50 text-blue-700'
                             : stage.status === 'complete'
-                              ? isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                              ? isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                               : isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'
                           }`}>
                             {isPhase2 && selectedStream
@@ -2136,7 +2136,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               const executionStages = stagesEff.slice(DECISION_PHASE_LEN);
               const decisionDone = effectiveStage >= DECISION_PHASE_LEN;
               return (
-              <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+              <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
                 <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                   <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Restock Journey</h3>
                   <div className="flex items-center gap-2">
@@ -2152,8 +2152,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 {/* Phase 1 · The Decision (Inventory-native) */}
                 <div className="mb-1">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Brain className={`h-3 w-3 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
-                    <span className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>Phase 1 · The Decision</span>
+                    <Brain className={`h-3 w-3 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
+                    <span className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>Phase 1 · The Decision</span>
                     <span className={`text-[9px] ${t.textMuted}`}>· forecast → par → sourcing → price</span>
                   </div>
                   <div className="space-y-0">
@@ -2164,11 +2164,11 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 {/* Handoff divider — once Phase 1 is done, link out to the live PO in Orders */}
                 <div className={`flex items-center gap-2 my-2 py-1 px-2 rounded-md ${
                   decisionDone
-                    ? isDark ? 'bg-[#87986a]/8' : 'bg-[#f4f6f0]'
+                    ? isDark ? 'bg-[#4bbcbe]/8' : 'bg-[#eafafa]'
                     : isDark ? 'bg-gray-800/40' : 'bg-gray-100'
                 }`}>
-                  <ArrowRight className={`h-3 w-3 ${decisionDone ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textMuted}`} />
-                  <span className={`text-[9px] font-semibold ${decisionDone ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : t.textMuted}`}>
+                  <ArrowRight className={`h-3 w-3 ${decisionDone ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : t.textMuted}`} />
+                  <span className={`text-[9px] font-semibold ${decisionDone ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : t.textMuted}`}>
                     PO Generated → handoff to Orders kernel
                   </span>
                   {decisionDone && selected.linkedOrderId && (
@@ -2181,7 +2181,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                       }}
                       title={`Open ${selected.linkedOrderId} in Orders — same MBL, carrier and tracking data live there`}
                       className={`ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold transition-colors ${
-                        isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-white text-[#6b7a54] hover:bg-[#e8eddf]'
+                        isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-white text-[#2c9a9c] hover:bg-[#d6f4f5]'
                       }`}>
                       View {selected.linkedOrderId} in Orders
                       <ExternalLink className="h-2.5 w-2.5" />
@@ -2211,7 +2211,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                       Surfaces every active PO and future draft this SKU rides in.
                       Clicking a tab swaps the stage-state below — no stream is replaced. */}
                   {streams.length > 0 && (
-                    <div className={`mb-2 p-2 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-[#e5e5e0]'}`}>
+                    <div className={`mb-2 p-2 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-gray-50 border-[#dddddd]'}`}>
                       <div className="flex items-center gap-1.5 mb-1.5">
                         <span className={`text-[9px] font-bold uppercase tracking-wide ${t.textMuted}`}>
                           {streams.length === 1 ? 'Execution Stream' : `${streams.length} Execution Streams`}
@@ -2227,10 +2227,10 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                           const cls = isSelectedStream
                             ? stream.kind === 'active'
                               ? 'bg-blue-500 border-blue-500 text-white'
-                              : 'bg-[#87986a] border-[#87986a] text-white'
+                              : 'bg-[#4bbcbe] border-[#4bbcbe] text-white'
                             : isDark
                               ? 'bg-[#1a1a1a] border-gray-700 text-gray-300 hover:border-gray-600'
-                              : 'bg-white border-[#e5e5e0] text-gray-700 hover:border-gray-300';
+                              : 'bg-white border-[#dddddd] text-gray-700 hover:border-gray-300';
                           return (
                             <button
                               key={stream.id}
@@ -2240,7 +2240,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                               <span className={`text-[8px] font-bold uppercase px-1 py-px rounded ${
                                 stream.kind === 'active'
                                   ? isSelectedStream ? 'bg-white/20' : isDark ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-50 text-blue-700'
-                                  : isSelectedStream ? 'bg-white/20' : isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                                  : isSelectedStream ? 'bg-white/20' : isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                               }`}>
                                 {stream.kind === 'active' ? 'Active' : 'Draft'}
                               </span>
@@ -2285,7 +2285,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   </div>
                 </div>
 
-                {selected.eta && (<div className={`mt-3 pt-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}><Clock className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} /><span className={`text-xs ${t.textPrimary}`}>Expected: {selected.eta}</span></div>)}
+                {selected.eta && (<div className={`mt-3 pt-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}><Clock className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} /><span className={`text-xs ${t.textPrimary}`}>Expected: {selected.eta}</span></div>)}
               </div>
               );
             })()}
@@ -2305,8 +2305,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
     <div className="flex flex-col h-full">
       <div className={t.section}>
         <div className="flex items-center gap-2">
-          <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${isDark ? 'bg-[#87986a]/15' : 'bg-[#f4f6f0]'}`}>
-            <Sparkles className={`h-3.5 w-3.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+          <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${isDark ? 'bg-[#4bbcbe]/15' : 'bg-[#eafafa]'}`}>
+            <Sparkles className={`h-3.5 w-3.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
           </div>
           <div>
             <h3 className={`text-xs font-semibold ${t.textPrimary}`}>Atlas</h3>
@@ -2320,14 +2320,14 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
         {auditMode && selected && (
           <>
             {/* Header with Full Journey snap-back */}
-            <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+            <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2 min-w-0">
                   {(() => { const m = GROUP_META[selected.group]; const GI = m.icon; return <GI className={`h-3.5 w-3.5 shrink-0 ${isDark ? m.darkColor : m.color}`} />; })()}
                   <span className={`text-xs font-semibold truncate ${t.textPrimary}`}>{selected.name}</span>
                 </div>
                 <button onClick={handleFullJourney} title="Open full journey workspace"
-                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${isDark ? 'bg-[#87986a]/15 text-[#a3b085] hover:bg-[#87986a]/25' : 'bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e8eddf]'}`}>
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] hover:bg-[#4bbcbe]/25' : 'bg-[#eafafa] text-[#2c9a9c] hover:bg-[#d6f4f5]'}`}>
                   <Maximize2 className="h-3 w-3" /> Full Journey
                 </button>
               </div>
@@ -2373,7 +2373,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                           <div className={`w-2.5 h-2.5 rounded-full border-[1.5px] flex items-center justify-center shrink-0 ${
                             isFailed ? 'bg-red-500 border-red-500'
                             : stage.status === 'complete' ? (isDark ? 'bg-green-500 border-green-500' : 'bg-green-600 border-green-600')
-                            : stage.status === 'active' ? 'bg-[#87986a] border-[#87986a] animate-pulse'
+                            : stage.status === 'active' ? 'bg-[#4bbcbe] border-[#4bbcbe] animate-pulse'
                             : isDark ? 'border-gray-600 bg-transparent' : 'border-gray-300 bg-transparent'
                           }`}>
                             {stage.status === 'complete' && <Check className="h-1.5 w-1.5 text-white" />}
@@ -2394,8 +2394,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   })}
                 </div>
                 {selected.eta && (
-                  <div className={`mt-2 pt-2 border-t flex items-center gap-1.5 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
-                    <Clock className={`h-3 w-3 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                  <div className={`mt-2 pt-2 border-t flex items-center gap-1.5 ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
+                    <Clock className={`h-3 w-3 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                     <span className={`text-[10px] ${t.textPrimary}`}>ETA: {selected.eta}</span>
                   </div>
                 )}
@@ -2432,25 +2432,25 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   <Button size="sm" onClick={(e) => handleEmergencyReorder(selected.id, e)}
                     className={`w-full h-9 text-xs justify-start ${emergencyTriggered.has(selected.id)
                       ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      : 'bg-[#87986a] hover:bg-[#6b7a54] text-white'}`}>
+                      : 'bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white'}`}>
                     <Zap className="h-3.5 w-3.5 mr-2" />
                     {emergencyTriggered.has(selected.id) ? 'Reordering...' : 'Emergency Restock'}
                   </Button>
                 )}
                 {selected.supplierPhone && (
                   <Button size="sm" variant="outline"
-                    className={`w-full h-9 text-xs justify-start ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-gray-50'}`}>
+                    className={`w-full h-9 text-xs justify-start ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-700 hover:bg-gray-50'}`}>
                     <PhoneCall className="h-3.5 w-3.5 mr-2" /> Call {selected.supplierName}
                   </Button>
                 )}
                 {selected.supplierPhone && (
                   <Button size="sm" variant="outline"
-                    className={`w-full h-9 text-xs justify-start ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-700 hover:bg-gray-50'}`}>
+                    className={`w-full h-9 text-xs justify-start ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-700 hover:bg-gray-50'}`}>
                     <MessageCircle className="h-3.5 w-3.5 mr-2" /> WhatsApp {selected.supplierName}
                   </Button>
                 )}
                 <Button size="sm" variant="outline" onClick={handleFullJourney}
-                  className={`w-full h-9 text-xs justify-start ${isDark ? 'border-[#87986a]/30 text-[#a3b085] hover:bg-[#87986a]/10' : 'border-[#dbe3ce] text-[#6b7a54] hover:bg-[#f4f6f0]'}`}>
+                  className={`w-full h-9 text-xs justify-start ${isDark ? 'border-[#4bbcbe]/30 text-[#82d3d5] hover:bg-[#4bbcbe]/10' : 'border-[#c4eef0] text-[#2c9a9c] hover:bg-[#eafafa]'}`}>
                   <Maximize2 className="h-3.5 w-3.5 mr-2" /> Open Full Workspace
                 </Button>
               </div>
@@ -2508,7 +2508,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             {/* Spend Concentration (Pareto) */}
             <div className="px-4 pb-3">
               <h4 className={`text-[10px] font-semibold mb-2 ${t.sectionLabel}`}>SPEND CONCENTRATION</h4>
-              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/10 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                 <p className={`text-[10px] mb-2 ${t.textSecondary}`}>Top 3 categories represent {Math.round((CATEGORY_VALUES.slice(0, 3).reduce((s, c) => s + c.valueRp, 0) / TOTAL_INVENTORY_VALUE) * 100)}% of inventory value (Pareto)</p>
                 <div className="space-y-2">
                   {CATEGORY_VALUES.slice(0, 3).map((cat, i) => {
@@ -2517,10 +2517,10 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                       <div key={cat.category}>
                         <div className="flex items-center justify-between mb-0.5">
                           <span className={`text-[10px] font-medium ${t.textPrimary}`}>{i + 1}. {cat.category}</span>
-                          <span className={`text-[10px] font-semibold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{pct}%</span>
+                          <span className={`text-[10px] font-semibold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{pct}%</span>
                         </div>
                         <div className={`h-1.5 rounded-full ${t.progressTrack}`}>
-                          <div className="h-1.5 rounded-full bg-[#87986a] transition-all" style={{ width: `${pct}%` }} />
+                          <div className="h-1.5 rounded-full bg-[#4bbcbe] transition-all" style={{ width: `${pct}%` }} />
                         </div>
                       </div>
                     );
@@ -2580,10 +2580,10 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             {selected?.agentReasoning && (
               <div className="p-4">
                 <h4 className={`text-[10px] font-semibold mb-2 ${t.sectionLabel}`}>WHY THIS HAPPENED</h4>
-                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#e5e5e0] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
-                  <div className="flex items-start gap-2"><Bot className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} /><p className={`text-[10px] leading-relaxed ${t.textSecondary}`}>{selected.agentReasoning}</p></div>
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#2a2a2a] border-gray-800' : 'bg-white border-[#dddddd] shadow-[0_1px_3px_rgba(0,0,0,0.04)]'}`}>
+                  <div className="flex items-start gap-2"><Bot className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} /><p className={`text-[10px] leading-relaxed ${t.textSecondary}`}>{selected.agentReasoning}</p></div>
                   {selected.confidenceScore && (
-                    <div className={`mt-2 pt-2 border-t ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'}`}>
+                    <div className={`mt-2 pt-2 border-t ${isDark ? 'border-gray-700' : 'border-[#dddddd]'}`}>
                       <div className="flex items-center justify-between"><span className={`text-[9px] ${t.textMuted}`}>Forecast Confidence</span><span className={`text-xs font-bold ${selected.confidenceScore > 85 ? (isDark ? 'text-green-400' : 'text-green-600') : selected.confidenceScore > 70 ? (isDark ? 'text-amber-400' : 'text-amber-600') : isDark ? 'text-red-400' : 'text-red-600'}`}>{selected.confidenceScore}%</span></div>
                       <div className={`mt-1 h-1.5 rounded-full ${t.progressTrack}`}><div className={`h-1.5 rounded-full transition-all ${selected.confidenceScore > 85 ? 'bg-green-500' : selected.confidenceScore > 70 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${selected.confidenceScore}%` }} /></div>
                     </div>
@@ -2616,11 +2616,11 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             {selected && (selected.monthlySaving || selected.hoursEliminated) && (
               <div className="px-4 pb-3">
                 <h4 className={`text-[10px] font-semibold mb-2 ${t.sectionLabel}`}>ROI OF AUTONOMY</h4>
-                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/10 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+                <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                   <p className={`text-[10px] leading-relaxed mb-2 ${t.textSecondary}`}>This week, {selected.hoursEliminated ? `${selected.hoursEliminated}h of manual work eliminated` : 'autonomous reorders ran'}{selected.monthlySaving ? `, saving $${selected.monthlySaving}/mo via volume-locks` : ''}.</p>
                   <div className="grid grid-cols-2 gap-3">
-                    {selected.hoursEliminated && (<div><span className={`text-[9px] ${t.textMuted}`}>Hours Eliminated</span><p className={`text-sm font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>{selected.hoursEliminated}h</p></div>)}
-                    {selected.monthlySaving && (<div><span className={`text-[9px] ${t.textMuted}`}>Cost Saved</span><p className={`text-sm font-bold ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>${selected.monthlySaving}</p></div>)}
+                    {selected.hoursEliminated && (<div><span className={`text-[9px] ${t.textMuted}`}>Hours Eliminated</span><p className={`text-sm font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>{selected.hoursEliminated}h</p></div>)}
+                    {selected.monthlySaving && (<div><span className={`text-[9px] ${t.textMuted}`}>Cost Saved</span><p className={`text-sm font-bold ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>${selected.monthlySaving}</p></div>)}
                   </div>
                 </div>
               </div>
@@ -2647,7 +2647,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
             {chatMessages.length > 0 && (
               <div className="px-4 pb-3 space-y-2">
                 {chatMessages.map((msg, i) => (
-                  <div key={i} className={`p-2.5 rounded-lg text-[10px] leading-relaxed ${msg.role === 'atlas' ? isDark ? 'bg-[#2a2a2a] text-gray-300' : 'bg-gray-50 text-gray-700' : isDark ? 'bg-[#87986a]/15 text-[#a3b085] ml-4' : 'bg-[#f4f6f0] text-[#6b7a54] ml-4'}`}>
+                  <div key={i} className={`p-2.5 rounded-lg text-[10px] leading-relaxed ${msg.role === 'atlas' ? isDark ? 'bg-[#2a2a2a] text-gray-300' : 'bg-gray-50 text-gray-700' : isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] ml-4' : 'bg-[#eafafa] text-[#2c9a9c] ml-4'}`}>
                     {msg.role === 'atlas' && <Bot className="h-3 w-3 inline mr-1" />}{msg.text}
                   </div>
                 ))}
@@ -2658,11 +2658,11 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
       </div>
 
       {/* Chat input */}
-      <div className={`p-3 border-t ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+      <div className={`p-3 border-t ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
         <div className="flex items-center gap-2">
           <Input placeholder="Ask about stock, agents, forecasts..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleChat()}
             className={`flex-1 text-xs h-8 ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500' : ''}`} />
-          <Button size="sm" onClick={handleChat} className="h-8 w-8 p-0 bg-[#87986a] hover:bg-[#6b7a54]"><Send className="h-3 w-3 text-white" /></Button>
+          <Button size="sm" onClick={handleChat} className="h-8 w-8 p-0 bg-[#4bbcbe] hover:bg-[#2c9a9c]"><Send className="h-3 w-3 text-white" /></Button>
         </div>
       </div>
     </div>
@@ -2672,7 +2672,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
   // MAIN LAYOUT — CSS-driven spatial rebalance
   // ══════════════════════════════════════════════════════════════════
   const panelBg = isDark ? 'bg-[#111]' : 'bg-white';
-  const panelBorder = isDark ? 'border-gray-800' : 'border-[#e5e5e0]';
+  const panelBorder = isDark ? 'border-gray-800' : 'border-[#dddddd]';
 
   // ── Adjust Stock Modal (Physical Truth) ────────────────────────
   const adjustModal = (() => {
@@ -2687,7 +2687,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
         <div onClick={e => e.stopPropagation()}
           className={`w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDark ? 'bg-[#1a1a1a] border-amber-500/40' : 'bg-white border-amber-400/50'}`}>
           {/* Header */}
-          <div className={`px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-amber-500/8' : 'border-[#e5e5e0] bg-amber-50/60'}`}>
+          <div className={`px-5 py-4 border-b flex items-start gap-3 ${isDark ? 'border-gray-800 bg-amber-500/8' : 'border-[#dddddd] bg-amber-50/60'}`}>
             <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-amber-500 text-white">
               <ClipboardEdit className="h-4 w-4" />
             </div>
@@ -2702,10 +2702,10 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
           </div>
 
           {/* Atlas hint */}
-          <div className={`px-5 py-3 border-b flex items-start gap-2 ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
-            <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+          <div className={`px-5 py-3 border-b flex items-start gap-2 ${isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'}`}>
+            <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
             <div className="min-w-0">
-              <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>Atlas · Copilot Hint</div>
+              <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>Atlas · Copilot Hint</div>
               <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>
                 I am tracking <strong>{item.onHand} {item.unit}</strong> on the books. Enter the floor count — I will recalculate your burn rate and restock urgency from this new physical baseline.
               </p>
@@ -2722,7 +2722,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setAdjustDraft(d => ({ ...d, count: String(Math.max(0, (Number(d.count) || 0) - 1)) }))}
-                  className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-600 hover:bg-gray-100'}`}>
+                  className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-600 hover:bg-gray-100'}`}>
                   <MinusCircle className="h-4 w-4" />
                 </button>
                 <input
@@ -2735,7 +2735,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 <span className={`text-xs font-medium ${t.textMuted}`}>{item.unit}</span>
                 <button
                   onClick={() => setAdjustDraft(d => ({ ...d, count: String(Math.max(0, (Number(d.count) || 0) + 1)) }))}
-                  className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#e5e5e0] text-gray-600 hover:bg-gray-100'}`}>
+                  className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-[#dddddd] text-gray-600 hover:bg-gray-100'}`}>
                   <PlusCircle className="h-4 w-4" />
                 </button>
               </div>
@@ -2752,13 +2752,13 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 onChange={e => setAdjustDraft(d => ({ ...d, note: e.target.value }))}
                 placeholder="e.g. Found 2kg behind walk-in cooler · weighed at 3:42 PM"
                 rows={3}
-                className={`w-full rounded-lg px-3 py-2 text-xs outline-none border resize-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500 focus:border-amber-500/50' : 'bg-gray-50 border-[#e5e5e0] placeholder:text-gray-400 focus:border-amber-500/50'}`}
+                className={`w-full rounded-lg px-3 py-2 text-xs outline-none border resize-none ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-500 focus:border-amber-500/50' : 'bg-gray-50 border-[#dddddd] placeholder:text-gray-400 focus:border-amber-500/50'}`}
               />
             </div>
           </div>
 
           {/* Footer */}
-          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <button onClick={closeAdjust}
               className={`px-3 py-2 rounded-lg text-xs font-semibold ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}>
               Cancel
@@ -2813,21 +2813,21 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
         <div onClick={e => e.stopPropagation()}
           className={`w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
             isComplete
-              ? isDark ? 'bg-[#1a1a1a] border-[#87986a]/40' : 'bg-white border-[#87986a]/40'
+              ? isDark ? 'bg-[#1a1a1a] border-[#4bbcbe]/40' : 'bg-white border-[#4bbcbe]/40'
               : isDark ? 'bg-[#1a1a1a] border-amber-500/40' : 'bg-white border-amber-400/50'
           }`}>
           {/* Header */}
           <div className={`px-5 py-4 border-b flex items-start gap-3 ${
             isComplete
-              ? isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'
-              : isDark ? 'border-gray-800 bg-amber-500/8' : 'border-[#e5e5e0] bg-amber-50/60'
+              ? isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'
+              : isDark ? 'border-gray-800 bg-amber-500/8' : 'border-[#dddddd] bg-amber-50/60'
           }`}>
-            <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-white font-bold text-sm ${isComplete ? 'bg-[#87986a]' : 'bg-amber-500'}`}>
+            <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-white font-bold text-sm ${isComplete ? 'bg-[#4bbcbe]' : 'bg-amber-500'}`}>
               {isComplete ? <Check className="h-4 w-4" /> : isFailed ? <X className="h-4 w-4" /> : stageIdx + 1}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-[10px] font-bold uppercase tracking-wide ${isComplete ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : (isDark ? 'text-amber-300' : 'text-amber-700')}`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wide ${isComplete ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : (isDark ? 'text-amber-300' : 'text-amber-700')}`}>
                   History &amp; Trace Record
                 </span>
                 <span className={`text-[10px] ${t.textMuted}`}>{phaseLabel} · Stage {stageIdx + 1}/5</span>
@@ -2835,7 +2835,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
                   attribution === 'admin'
                     ? isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700'
-                    : isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                    : isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                 }`}>
                   {attribution === 'admin' ? <User className="h-2.5 w-2.5" /> : <Bot className="h-2.5 w-2.5" />}
                   {attribution === 'admin' ? 'Admin Verified' : `${agentLabel(agent)} Verified`}
@@ -2856,20 +2856,20 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
           {stream && isPhase2 && (
             <div className={`px-5 py-2.5 border-b flex items-center gap-2 flex-wrap ${
               stream.kind === 'active'
-                ? isDark ? 'border-gray-800 bg-blue-500/5' : 'border-[#e5e5e0] bg-blue-50/60'
-                : isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'
+                ? isDark ? 'border-gray-800 bg-blue-500/5' : 'border-[#dddddd] bg-blue-50/60'
+                : isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'
             }`}>
               <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
                 stream.kind === 'active'
                   ? isDark ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'
-                  : isDark ? 'bg-[#87986a]/20 text-[#a3b085]' : 'bg-[#dbe3ce] text-[#6b7a54]'
+                  : isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5]' : 'bg-[#c4eef0] text-[#2c9a9c]'
               }`}>
                 {stream.kind === 'active' ? 'Active Shipment' : 'Future Draft'}
               </span>
               <span className={`text-[10px] font-semibold ${
                 stream.kind === 'active'
                   ? isDark ? 'text-blue-300' : 'text-blue-700'
-                  : isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+                  : isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
               }`}>
                 Window into {stream.id}
               </span>
@@ -2887,7 +2887,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 className={`ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold transition-colors ${
                   stream.kind === 'active'
                     ? isDark ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                    : isDark ? 'bg-[#87986a]/20 text-[#a3b085] hover:bg-[#87986a]/30' : 'bg-[#dbe3ce] text-[#6b7a54] hover:bg-[#cad6b8]'
+                    : isDark ? 'bg-[#4bbcbe]/20 text-[#82d3d5] hover:bg-[#4bbcbe]/30' : 'bg-[#c4eef0] text-[#2c9a9c] hover:bg-[#cad6b8]'
                 }`}>
                 Open in Orders
                 <ExternalLink className="h-2.5 w-2.5" />
@@ -2896,11 +2896,11 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
           )}
 
           {/* Atlas Audit Summary (Logic) */}
-          <div className={`px-5 py-3 border-b ${isDark ? 'border-gray-800 bg-[#87986a]/8' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
+          <div className={`px-5 py-3 border-b ${isDark ? 'border-gray-800 bg-[#4bbcbe]/8' : 'border-[#dddddd] bg-[#eafafa]'}`}>
             <div className="flex items-start gap-2">
-              <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+              <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
               <div className="min-w-0">
-                <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                <div className={`text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                   Atlas · Audit Summary (Logic)
                 </div>
                 <p className={`text-[11px] mt-0.5 leading-relaxed ${t.textPrimary}`}>
@@ -2914,15 +2914,15 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
 
           {/* Read-only banner — only when not in Manual Mode */}
           {skuModeLocal !== 'manual' && (
-            <div className={`px-5 py-2.5 border-b flex items-center gap-2 ${isDark ? 'border-gray-800 bg-[#1f2a1f]' : 'border-[#e5e5e0] bg-[#f0f4e8]'}`}>
-              <Lock className={`h-3 w-3 shrink-0 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+            <div className={`px-5 py-2.5 border-b flex items-center gap-2 ${isDark ? 'border-gray-800 bg-[#1d3535]' : 'border-[#dddddd] bg-[#eafafa]'}`}>
+              <Lock className={`h-3 w-3 shrink-0 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
               <span className={`text-[10px] font-semibold ${t.textPrimary}`}>Immutable record.</span>
               <span className={`text-[10px] ${t.textMuted}`}>Switch to Manual Takeover to override this stage.</span>
             </div>
           )}
 
           {/* Paper Trail */}
-          <div className={`px-5 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`px-5 py-3 border-b ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             <div className={`text-[9px] font-bold uppercase tracking-wide mb-2 ${t.textMuted}`}>Paper Trail</div>
             <div className="space-y-1.5 text-[10px]">
               <div className="flex items-start gap-2">
@@ -2933,7 +2933,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <ShieldCheck className={`h-3 w-3 shrink-0 mt-0.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                <ShieldCheck className={`h-3 w-3 shrink-0 mt-0.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                 <div className="min-w-0">
                   <span className={`font-semibold ${t.textPrimary}`}>Proof:</span>{' '}
                   <span className={t.textSecondary}>{synth.proof}</span>
@@ -2960,8 +2960,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                   {isFile ? (
                     <a href="#" onClick={e => e.preventDefault()} title={`View / download ${v}`}
                       className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors ${
-                        isDark ? 'bg-[#87986a]/10 border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/20'
-                              : 'bg-[#f4f6f0] border-[#87986a]/40 text-[#6b7a54] hover:bg-[#e8eddf]'
+                        isDark ? 'bg-[#4bbcbe]/10 border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/20'
+                              : 'bg-[#eafafa] border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#d6f4f5]'
                       }`}>
                       <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">{v}</span>
@@ -2977,7 +2977,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
           </div>
 
           {/* Footer — Phase 2 is read-only on Inventory; execution lives on Orders */}
-          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#e5e5e0]'}`}>
+          <div className={`shrink-0 px-5 py-3 border-t flex items-center gap-2 ${isDark ? 'border-gray-800' : 'border-[#dddddd]'}`}>
             {isPhase2 && ordersLinkId && (
               <button
                 onClick={() => {
@@ -2996,7 +2996,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               </button>
             )}
             <button onClick={closeStageModal}
-              className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#87986a] text-white hover:bg-[#6b7a54] transition-colors inline-flex items-center gap-1.5 shadow-sm">
+              className="ml-auto px-4 py-2 rounded-lg text-xs font-bold bg-[#4bbcbe] text-white hover:bg-[#2c9a9c] transition-colors inline-flex items-center gap-1.5 shadow-sm">
               <Check className="h-3 w-3" /> Done
             </button>
           </div>
@@ -3017,11 +3017,11 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
       {catalogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setCatalogOpen(false)}>
           <div className={`relative w-full max-w-2xl mx-4 rounded-xl border shadow-xl flex flex-col max-h-[80vh] ${
-            isDark ? 'bg-[#1e1e1e] border-gray-700' : 'bg-white border-[#e5e5e0]'
+            isDark ? 'bg-[#1e1e1e] border-gray-700' : 'bg-white border-[#dddddd]'
           }`} onClick={e => e.stopPropagation()}>
-            <div className={`flex items-center justify-between p-4 border-b shrink-0 ${isDark ? 'border-gray-700' : 'border-[#e5e5e0]'}`}>
+            <div className={`flex items-center justify-between p-4 border-b shrink-0 ${isDark ? 'border-gray-700' : 'border-[#dddddd]'}`}>
               <div className="flex items-center gap-2">
-                <Database className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`} />
+                <Database className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`} />
                 <div>
                   <h3 className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>Master SKU Catalog</h3>
                   <p className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{catalogRows.filter(r => !r.archived).length} active SKUs</p>
@@ -3030,7 +3030,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setCatalogDraftRow({ id: `INV-${String(catalogRows.length + 1).padStart(3, '0')}`, name: '', sku: '', category: '', unitCost: 0, archived: false })}
-                  className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-lg bg-[#87986a] hover:bg-[#6b7a54] text-white font-semibold transition-colors"
+                  className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-lg bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white font-semibold transition-colors"
                 >
                   <Plus className="h-3 w-3" />
                   Add SKU
@@ -3043,11 +3043,11 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
 
             {/* Add new SKU draft row */}
             {catalogDraftRow && (
-              <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${isDark ? 'border-gray-700 bg-[#87986a]/5' : 'border-[#e5e5e0] bg-[#f4f6f0]'}`}>
+              <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${isDark ? 'border-gray-700 bg-[#4bbcbe]/5' : 'border-[#dddddd] bg-[#eafafa]'}`}>
                 {(['name', 'sku', 'category'] as const).map(field => (
                   <input key={field} value={catalogDraftRow[field] ?? ''} placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
                     onChange={e => setCatalogDraftRow(prev => prev ? { ...prev, [field]: e.target.value } : prev)}
-                    className={`flex-1 text-[11px] px-2 py-1 rounded border ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border-[#e5e5e0] text-gray-900 placeholder:text-gray-400'} focus:outline-none focus:border-[#87986a]`}
+                    className={`flex-1 text-[11px] px-2 py-1 rounded border ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border-[#dddddd] text-gray-900 placeholder:text-gray-400'} focus:outline-none focus:border-[#4bbcbe]`}
                   />
                 ))}
                 <button onClick={() => {
@@ -3061,15 +3061,15 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                     });
                     setCatalogDraftRow(null);
                   }
-                }} className="text-[10px] px-2 py-1 rounded bg-[#87986a] text-white font-semibold hover:bg-[#6b7a54]">Save</button>
-                <button onClick={() => setCatalogDraftRow(null)} className={`text-[10px] px-2 py-1 rounded border ${isDark ? 'border-gray-700 text-gray-400' : 'border-[#e5e5e0] text-gray-500'}`}>Cancel</button>
+                }} className="text-[10px] px-2 py-1 rounded bg-[#4bbcbe] text-white font-semibold hover:bg-[#2c9a9c]">Save</button>
+                <button onClick={() => setCatalogDraftRow(null)} className={`text-[10px] px-2 py-1 rounded border ${isDark ? 'border-gray-700 text-gray-400' : 'border-[#dddddd] text-gray-500'}`}>Cancel</button>
               </div>
             )}
 
             <div className="overflow-y-auto flex-1">
               <table className="w-full text-[11px]">
                 <thead>
-                  <tr className={`border-b ${isDark ? 'border-gray-700 text-gray-500' : 'border-[#e5e5e0] text-gray-500'}`}>
+                  <tr className={`border-b ${isDark ? 'border-gray-700 text-gray-500' : 'border-[#dddddd] text-gray-500'}`}>
                     {['Name', 'SKU', 'Category', 'Actions'].map(h => (
                       <th key={h} className={`text-left px-4 py-2 font-semibold tracking-wider text-[9px] uppercase ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{h}</th>
                     ))}
@@ -3081,7 +3081,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                       <td className={`px-4 py-2.5 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                         {catalogEditId === row.id
                           ? <input value={row.name} onChange={e => setCatalogRows(prev => prev.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                              className={`w-full text-[11px] px-1.5 py-0.5 rounded border ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white' : 'bg-white border-[#e5e5e0] text-gray-900'} focus:outline-none focus:border-[#87986a]`} />
+                              className={`w-full text-[11px] px-1.5 py-0.5 rounded border ${isDark ? 'bg-[#2a2a2a] border-gray-700 text-white' : 'bg-white border-[#dddddd] text-gray-900'} focus:outline-none focus:border-[#4bbcbe]`} />
                           : row.name}
                       </td>
                       <td className={`px-4 py-2.5 font-mono ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{row.sku}</td>
@@ -3089,7 +3089,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-1.5">
                           <button onClick={() => setCatalogEditId(prev => prev === row.id ? null : row.id)}
-                            className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${isDark ? 'border-gray-700 text-gray-400 hover:text-[#a3b085] hover:border-[#87986a]/50' : 'border-[#e5e5e0] text-gray-500 hover:text-[#6b7a54]'}`}>
+                            className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${isDark ? 'border-gray-700 text-gray-400 hover:text-[#82d3d5] hover:border-[#4bbcbe]/50' : 'border-[#dddddd] text-gray-500 hover:text-[#2c9a9c]'}`}>
                             {catalogEditId === row.id ? 'Done' : 'Edit'}
                           </button>
                           <button onClick={() => {
@@ -3104,8 +3104,8 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
                             }}
                             className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${
                               row.archived
-                                ? isDark ? 'border-[#87986a]/50 text-[#a3b085]' : 'border-[#6b7a54]/50 text-[#6b7a54]'
-                                : isDark ? 'border-gray-700 text-gray-500 hover:text-amber-400 hover:border-amber-500/40' : 'border-[#e5e5e0] text-gray-500 hover:text-amber-600'
+                                ? isDark ? 'border-[#4bbcbe]/50 text-[#82d3d5]' : 'border-[#2c9a9c]/50 text-[#2c9a9c]'
+                                : isDark ? 'border-gray-700 text-gray-500 hover:text-amber-400 hover:border-amber-500/40' : 'border-[#dddddd] text-gray-500 hover:text-amber-600'
                             }`}>
                             {row.archived ? 'Restore' : 'Archive'}
                           </button>
@@ -3124,7 +3124,7 @@ export function NewInventoryPage({ theme, onNavigate }: InventoryPageProps) {
       {cmdkOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" onClick={() => setCmdkOpen(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className={`relative w-full max-w-lg rounded-xl border shadow-2xl ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-[#e5e5e0]'}`} onClick={e => e.stopPropagation()}>
+          <div className={`relative w-full max-w-lg rounded-xl border shadow-2xl ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-[#dddddd]'}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 p-4 border-b" style={{ borderColor: isDark ? '#333' : '#e5e7eb' }}>
               <Search className={`h-4 w-4 ${t.textMuted}`} />
               <input ref={cmdkRef} value={cmdkSearch} onChange={(e) => setCmdkSearch(e.target.value)} placeholder="Search by name, SKU, category..."

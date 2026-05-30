@@ -164,7 +164,7 @@ function getWorkflowInsights(workflowId: string | null | undefined, isDark: bool
   const defs = workflowId ? WORKFLOW_DYNAMIC_INSIGHTS[workflowId] : undefined;
   if (!defs) return INSIGHTS['workflows'](isDark);
   const badgeColors: Record<BadgeType, string> = {
-    roi:     isDark ? 'bg-[#87986a]/15 text-[#a3b085] border-[#87986a]/20'     : 'bg-[#f4f6f0] text-[#6b7a54] border-[#dbe3ce]',
+    roi:     isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] border-[#4bbcbe]/20'     : 'bg-[#eafafa] text-[#2c9a9c] border-[#c4eef0]',
     alert:   isDark ? 'bg-red-500/10 text-red-400 border-red-500/20'           : 'bg-red-50 text-red-700 border-red-200',
     latency: isDark ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'  : 'bg-orange-50 text-orange-700 border-orange-200',
     info:    isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'        : 'bg-blue-50 text-blue-700 border-blue-200',
@@ -224,7 +224,7 @@ interface QuickAction {
 
 const QUICK_ACTIONS: Record<IntelligenceContext, (isDark: boolean) => QuickAction[]> = {
   'workflows': (isDark) => [
-    { icon: ScrollText,    label: 'Standard',  description: 'WF-STD playbook',  color: isDark ? 'text-[#a3b085]'  : 'text-[#87986a]'  },
+    { icon: ScrollText,    label: 'Standard',  description: 'WF-STD playbook',  color: isDark ? 'text-[#82d3d5]'  : 'text-[#4bbcbe]'  },
     { icon: Zap,           label: 'Rush',      description: 'WF-RSH playbook',  color: isDark ? 'text-amber-400'  : 'text-amber-600'  },
     { icon: FileText,      label: 'Recurring', description: 'WF-REC playbook',  color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
     { icon: TrendingUp,    label: 'ROI',       description: 'Savings by playbook', color: isDark ? 'text-purple-400' : 'text-purple-600' },
@@ -239,13 +239,13 @@ const QUICK_ACTIONS: Record<IntelligenceContext, (isDark: boolean) => QuickActio
     { icon: BarChart3,  label: 'Price Analysis', description: 'Compare pricing',   color: isDark ? 'text-purple-400' : 'text-purple-600' },
     { icon: TrendingUp, label: 'Trends',         description: 'Market insights',   color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
     { icon: Users,      label: 'Vendor Match',   description: 'Find suppliers',    color: isDark ? 'text-green-400'  : 'text-green-600'  },
-    { icon: DollarSign, label: 'Budget Tools',   description: 'Optimize spending', color: isDark ? 'text-[#a3b085]'  : 'text-[#87986a]' },
+    { icon: DollarSign, label: 'Budget Tools',   description: 'Optimize spending', color: isDark ? 'text-[#82d3d5]'  : 'text-[#4bbcbe]' },
   ],
   'overview': (isDark) => [
     { icon: Zap,        label: 'Triage Now',   description: 'Clear pending items',   color: isDark ? 'text-green-400'  : 'text-green-600'  },
     { icon: Target,     label: 'Simulate',     description: 'Make vs Buy analysis',  color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
     { icon: Bot,        label: 'AI Reasoning', description: 'Why this decision?',    color: isDark ? 'text-purple-400' : 'text-purple-600' },
-    { icon: TrendingUp, label: 'Autonomy',     description: 'Level 3 → 4 path',     color: isDark ? 'text-[#a3b085]'  : 'text-[#87986a]' },
+    { icon: TrendingUp, label: 'Autonomy',     description: 'Level 3 → 4 path',     color: isDark ? 'text-[#82d3d5]'  : 'text-[#4bbcbe]' },
   ],
   'orders': (isDark) => [
     { icon: Search,        label: 'Track Order', description: 'Find by PO #',    color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
@@ -263,7 +263,7 @@ const QUICK_ACTIONS: Record<IntelligenceContext, (isDark: boolean) => QuickActio
     { icon: DollarSign, label: 'Savings',  description: 'Where we saved', color: isDark ? 'text-green-400'  : 'text-green-600'  },
     { icon: BarChart3,  label: 'Compare',  description: 'YoY analysis',   color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
     { icon: TrendingUp, label: 'Forecast', description: 'Next month',     color: isDark ? 'text-purple-400' : 'text-purple-600' },
-    { icon: Target,     label: 'Budget',   description: 'Utilization %',  color: isDark ? 'text-[#a3b085]'  : 'text-[#87986a]' },
+    { icon: Target,     label: 'Budget',   description: 'Utilization %',  color: isDark ? 'text-[#82d3d5]'  : 'text-[#4bbcbe]' },
   ],
   'suppliers': (isDark) => [
     { icon: Users,         label: 'Top Rated', description: 'Best performers',     color: isDark ? 'text-green-400'  : 'text-green-600'  },
@@ -275,7 +275,7 @@ const QUICK_ACTIONS: Record<IntelligenceContext, (isDark: boolean) => QuickActio
     { icon: Bot,        label: 'Explain',  description: 'Why this action?', color: isDark ? 'text-blue-400'   : 'text-blue-600'   },
     { icon: Settings,   label: 'Autonomy', description: 'Adjust level',     color: isDark ? 'text-purple-400' : 'text-purple-600' },
     { icon: Eye,        label: 'Audit',    description: 'Verify decisions', color: isDark ? 'text-green-400'  : 'text-green-600'  },
-    { icon: TrendingUp, label: 'Stats',    description: 'Performance',      color: isDark ? 'text-[#a3b085]'  : 'text-[#87986a]' },
+    { icon: TrendingUp, label: 'Stats',    description: 'Performance',      color: isDark ? 'text-[#82d3d5]'  : 'text-[#4bbcbe]' },
   ],
 };
 
@@ -308,7 +308,7 @@ interface Insight {
 
 const INSIGHTS: Record<IntelligenceContext, (isDark: boolean) => Insight[]> = {
   'workflows': (isDark) => [
-    { icon: TrendingUp,    title: 'Standard 94% — Blanket PO leaking 5%', description: 'Blanket PO is leaking ~5% in un-captured discounts at Stage 5. Re-wiring Price Optimization recovers est. $2.1K/month.',                badge: 'ROI Switch', badgeColor: isDark ? 'bg-[#87986a]/15 text-[#a3b085] border-[#87986a]/20' : 'bg-[#f4f6f0] text-[#6b7a54] border-[#dbe3ce]', recommendedAction: '⚡ Re-wire S5 Now'       },
+    { icon: TrendingUp,    title: 'Standard 94% — Blanket PO leaking 5%', description: 'Blanket PO is leaking ~5% in un-captured discounts at Stage 5. Re-wiring Price Optimization recovers est. $2.1K/month.',                badge: 'ROI Switch', badgeColor: isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] border-[#4bbcbe]/20' : 'bg-[#eafafa] text-[#2c9a9c] border-[#c4eef0]', recommendedAction: '⚡ Re-wire S5 Now'       },
     { icon: AlertTriangle, title: 'Emergency Spike — 3× Baseline',        description: 'Emergency triggered 3× this week vs. 1× baseline. Shifting Inventory Threshold signal 2 days earlier catches stockouts pre-escalation.',  badge: 'Action',    badgeColor: isDark ? 'bg-red-500/10 text-red-400 border-red-500/20'           : 'bg-red-50 text-red-700 border-red-200',         recommendedAction: '📅 Adjust DS-02 Timing'  },
     { icon: Clock,         title: 'Rush Latency +9h at Stage 5',          description: 'Rush orders avg 38h. Stage 5 adds 9h. Set bypass for Rush orders <$5K with pre-approved vendors to hit the 24h SLA.',                     badge: 'Latency',   badgeColor: isDark ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'  : 'bg-orange-50 text-orange-700 border-orange-200', recommendedAction: '⚡ Set Bypass Rule'       },
   ],
@@ -324,7 +324,7 @@ const INSIGHTS: Record<IntelligenceContext, (isDark: boolean) => Insight[]> = {
   ],
   'overview': (isDark) => [
     { icon: Target,    title: 'Make vs Buy: PO-2847',  description: 'Approving saves $1,120 vs sourcing locally. 92% confidence.',                                       badge: 'Simulation', badgeColor: isDark ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-purple-50 text-purple-700 border-purple-200' },
-    { icon: Activity,  title: 'Autonomy: Level 3 → 4', description: '72% complete. Need 3 more criteria: trust score, volume threshold, approval latency.',              badge: 'Progress',   badgeColor: isDark ? 'bg-[#87986a]/15 text-[#a3b085] border-[#87986a]/20'   : 'bg-[#f4f6f0] text-[#6b7a54] border-[#dbe3ce]' },
+    { icon: Activity,  title: 'Autonomy: Level 3 → 4', description: '72% complete. Need 3 more criteria: trust score, volume threshold, approval latency.',              badge: 'Progress',   badgeColor: isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5] border-[#4bbcbe]/20'   : 'bg-[#eafafa] text-[#2c9a9c] border-[#c4eef0]' },
     { icon: TrendingUp,title: 'Proactive Insight',    description: 'Ramadan demand spike in 3 weeks — pre-order protein now to lock prices.',                           badge: 'Forecast',   badgeColor: isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'     : 'bg-blue-50 text-blue-700 border-blue-200'     },
   ],
   'orders': (isDark) => [
@@ -551,21 +551,21 @@ export function IntelligencePanel({
         id={context === 'governance' ? 'gov-intel-header' : context === 'workflows' ? 'wf-intel-header' : undefined}
         className={`shrink-0 p-4 border-b transition-colors ${
           simMode
-            ? isDark ? 'border-[#87986a]/30 bg-[#87986a]/5' : 'border-[#dbe3ce] bg-[#f4f6f0]/60'
+            ? isDark ? 'border-[#4bbcbe]/30 bg-[#4bbcbe]/5' : 'border-[#c4eef0] bg-[#eafafa]/60'
             : isDark ? 'border-gray-800' : 'border-gray-200'
         }`}
       >
         <div className="flex items-center gap-2 mb-1">
-          <Sparkles className={`h-5 w-5 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+          <Sparkles className={`h-5 w-5 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
           <h2 className={`text-base font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>Intelligence</h2>
           {simMode && (
             <div className="ml-auto flex items-center gap-1.5">
-              <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isDark ? 'bg-[#a3b085]' : 'bg-[#87986a]'}`} />
-              <span className={`text-[10px] font-bold tracking-wider ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>SIM ACTIVE</span>
+              <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isDark ? 'bg-[#82d3d5]' : 'bg-[#4bbcbe]'}`} />
+              <span className={`text-[10px] font-bold tracking-wider ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>SIM ACTIVE</span>
             </div>
           )}
         </div>
-        <p className={`text-xs ${simMode ? (isDark ? 'text-[#a3b085]/70' : 'text-[#6b7a54]/70') : isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+        <p className={`text-xs ${simMode ? (isDark ? 'text-[#82d3d5]/70' : 'text-[#2c9a9c]/70') : isDark ? 'text-gray-400' : 'text-gray-600'}`}>
           {simMode ? 'Scenario results reflect live in DAG →' : SUBTITLES[context]}
         </p>
 
@@ -589,8 +589,8 @@ export function IntelligencePanel({
                 onClick={exitSim}
                 className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs font-semibold transition-colors ${
                   isDark
-                    ? 'border-[#87986a]/50 bg-[#87986a]/10 text-[#a3b085] hover:bg-[#87986a]/15'
-                    : 'border-[#dbe3ce] bg-[#f4f6f0] text-[#6b7a54] hover:bg-[#e8edd8]'
+                    ? 'border-[#4bbcbe]/50 bg-[#4bbcbe]/10 text-[#82d3d5] hover:bg-[#4bbcbe]/15'
+                    : 'border-[#c4eef0] bg-[#eafafa] text-[#2c9a9c] hover:bg-[#e8edd8]'
                 }`}
               >
                 <X className="h-3.5 w-3.5" />
@@ -601,8 +601,8 @@ export function IntelligencePanel({
                 onClick={() => { setSimMode(true); setActiveScenario(null); setApplyFix(false); }}
                 className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs font-semibold transition-colors ${
                   isDark
-                    ? 'border-[#87986a]/30 bg-[#2a2a2a] text-[#a3b085] hover:bg-[#87986a]/10 hover:border-[#87986a]/50'
-                    : 'border-[#dbe3ce] bg-white text-[#6b7a54] hover:bg-[#f4f6f0] hover:border-[#87986a]/40'
+                    ? 'border-[#4bbcbe]/30 bg-[#2a2a2a] text-[#82d3d5] hover:bg-[#4bbcbe]/10 hover:border-[#4bbcbe]/50'
+                    : 'border-[#c4eef0] bg-white text-[#2c9a9c] hover:bg-[#eafafa] hover:border-[#4bbcbe]/40'
                 }`}
               >
                 <FlaskConical className="h-3.5 w-3.5" />
@@ -619,11 +619,11 @@ export function IntelligencePanel({
         {/* Quick Access */}
         <div className={`p-4 border-b transition-colors ${
           simMode
-            ? isDark ? 'border-[#87986a]/25 bg-[#87986a]/5' : 'border-[#dbe3ce] bg-[#f4f6f0]/40'
+            ? isDark ? 'border-[#4bbcbe]/25 bg-[#4bbcbe]/5' : 'border-[#c4eef0] bg-[#eafafa]/40'
             : isDark ? 'border-gray-800' : 'border-gray-200'
         }`}>
           <h3 className={`text-[10px] font-semibold tracking-wider mb-3 ${
-            simMode ? (isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]') : isDark ? 'text-gray-500' : 'text-gray-400'
+            simMode ? (isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]') : isDark ? 'text-gray-500' : 'text-gray-400'
           }`}>{simMode ? '🧪 SIMULATION WORKSPACE' : context === 'governance' ? 'GOVERNANCE WORKSPACE' : 'QUICK ACCESS'}</h3>
 
           {context === 'workflows' ? (
@@ -638,8 +638,8 @@ export function IntelligencePanel({
                       onClick={() => { setActiveScenario(prev => prev?.id === sc.id ? null : sc); setApplyFix(false); }}
                       className={`w-full text-left p-2.5 rounded-lg border text-[10px] transition-all ${
                         activeScenario?.id === sc.id
-                          ? isDark ? 'bg-[#87986a]/20 border-[#87986a]/50 text-[#c8d4a8]' : 'bg-[#f4f6f0] border-[#87986a]/60 text-[#3a4a2a]'
-                          : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300 hover:border-[#87986a]/30 hover:bg-[#87986a]/5' : 'bg-white border-gray-200 text-gray-700 hover:border-[#87986a]/40 hover:bg-[#f4f6f0]/50'
+                          ? isDark ? 'bg-[#4bbcbe]/20 border-[#4bbcbe]/50 text-[#c8d4a8]' : 'bg-[#eafafa] border-[#4bbcbe]/60 text-[#3a4a2a]'
+                          : isDark ? 'bg-[#2a2a2a] border-gray-700 text-gray-300 hover:border-[#4bbcbe]/30 hover:bg-[#4bbcbe]/5' : 'bg-white border-gray-200 text-gray-700 hover:border-[#4bbcbe]/40 hover:bg-[#eafafa]/50'
                       }`}
                     >
                       <div className="font-semibold mb-0.5">🧪 {sc.label}</div>
@@ -649,8 +649,8 @@ export function IntelligencePanel({
                 </div>
 
                 {activeScenario ? (
-                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-                    <div className={`text-[10px] font-semibold tracking-wider mb-1.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>PREDICTED IMPACT</div>
+                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
+                    <div className={`text-[10px] font-semibold tracking-wider mb-1.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>PREDICTED IMPACT</div>
                     <div className={`text-[10px] mb-1 font-medium ${isDark ? 'text-red-400' : 'text-red-700'}`}>
                       ⚠ Bottleneck: {activeScenario.predictedBottlenecks.map(s => `S${s}`).join(' · ')}
                     </div>
@@ -662,14 +662,14 @@ export function IntelligencePanel({
                     ) : (
                       <button
                         onClick={handleApplyFix}
-                        className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white"
+                        className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white"
                       >
                         ⚡ Apply Pre-emptive Fix — {activeScenario.applyFix}
                       </button>
                     )}
                   </div>
                 ) : (
-                  <p className={`text-[10px] text-center py-3 ${isDark ? 'text-[#a3b085]/50' : 'text-[#6b7a54]/60'}`}>
+                  <p className={`text-[10px] text-center py-3 ${isDark ? 'text-[#82d3d5]/50' : 'text-[#2c9a9c]/60'}`}>
                     ↑ Select a scenario to see predicted impact
                   </p>
                 )}
@@ -677,9 +677,9 @@ export function IntelligencePanel({
 
             ) : stageMeta ? (
               /* ── Stage Reasoning Card (triggered by clicking Tune Logic) ── */
-              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/25' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
+              <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/25' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className={`text-[10px] font-semibold tracking-wider ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                  <span className={`text-[10px] font-semibold tracking-wider ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                     STAGE {activeStageId} REASONING
                   </span>
                   <button
@@ -691,7 +691,7 @@ export function IntelligencePanel({
                 </div>
                 <div className={`text-xs font-semibold mb-1.5 ${isDark ? 'text-white' : 'text-gray-900'}`}>{stageMeta.headline}</div>
                 <p className={`text-[10px] mb-3 leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{stageMeta.body}</p>
-                <button className="w-full py-1.5 rounded text-[11px] font-semibold bg-[#87986a] hover:bg-[#6b7a54] text-white transition-colors">
+                <button className="w-full py-1.5 rounded text-[11px] font-semibold bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white transition-colors">
                   {stageMeta.action}
                 </button>
               </div>
@@ -756,9 +756,9 @@ export function IntelligencePanel({
               {/* New Rule Confirmation — appears after Harden Policy */}
               {precedentData && !ruleApplied && (
                 <div className={`p-3 rounded-lg border ${
-                  isDark ? 'bg-[#87986a]/8 border-[#87986a]/30' : 'bg-[#f4f6f0] border-[#dbe3ce]'
+                  isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/30' : 'bg-[#eafafa] border-[#c4eef0]'
                 }`}>
-                  <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>
+                  <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>
                     🔖 NEW RULE CREATED FROM DISPUTE
                   </div>
                   <p className={`text-[10px] mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -769,7 +769,7 @@ export function IntelligencePanel({
                   </p>
                   <button
                     onClick={() => setRuleApplied(true)}
-                    className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white"
+                    className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white"
                   >
                     🛡️ Apply to Global Policy
                   </button>
@@ -777,7 +777,7 @@ export function IntelligencePanel({
               )}
               {ruleApplied && (
                 <div className={`px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center gap-2 ${
-                  isDark ? 'bg-[#87986a]/15 text-[#a3b085]' : 'bg-[#f4f6f0] text-[#6b7a54]'
+                  isDark ? 'bg-[#4bbcbe]/15 text-[#82d3d5]' : 'bg-[#eafafa] text-[#2c9a9c]'
                 }`}>
                   <CheckCircle className="h-3.5 w-3.5 shrink-0" />
                   Rule added to Global Policy — AI will apply this exception automatically
@@ -797,7 +797,7 @@ export function IntelligencePanel({
                         const r = 30, cx = 38, cy = 38;
                         const circ = 2 * Math.PI * r;
                         const dash = circ * POLICY_INTEGRITY.pct / 100;
-                        const ringColor = POLICY_INTEGRITY.pct >= 90 ? '#87986a' : POLICY_INTEGRITY.pct >= 70 ? '#f59e0b' : '#ef4444';
+                        const ringColor = POLICY_INTEGRITY.pct >= 90 ? '#4bbcbe' : POLICY_INTEGRITY.pct >= 70 ? '#f59e0b' : '#ef4444';
                         return (
                           <svg width="76" height="76" className="shrink-0">
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke={isDark ? '#333' : '#e5e7eb'} strokeWidth="7" />
@@ -860,13 +860,13 @@ export function IntelligencePanel({
                     </div>
                   </div>
                   {/* Atlas: Policy Engine */}
-                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-                    <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>✨ ATLAS SUGGESTS</div>
+                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
+                    <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>✨ ATLAS SUGGESTS</div>
                     <p className={`text-[10px] mb-2.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                       I've noticed you frequently override the "Budget Cap" rule for PT Maju. Should I update <span className="font-semibold">Rule #14</span> to allow a 10% variance for this vendor automatically?
                     </p>
                     <button
-                      className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white"
+                      className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white"
                       onClick={() => window.dispatchEvent(new CustomEvent('buyamia-governance-update-rule'))}
                     >
                       ✅ Update Rule #14 — Allow 10% Variance
@@ -927,20 +927,20 @@ export function IntelligencePanel({
                             <span className={`font-semibold tabular-nums ${over ? (isDark ? 'text-red-400' : 'text-red-600') : (isDark ? 'text-gray-300' : 'text-gray-700')}`}>{pct}%</span>
                           </div>
                           <div className={`h-1.5 rounded-full ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                            <div className={`h-1.5 rounded-full ${over ? 'bg-red-500' : 'bg-[#87986a]'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                            <div className={`h-1.5 rounded-full ${over ? 'bg-red-500' : 'bg-[#4bbcbe]'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
                   {/* Atlas: Economic Guard */}
-                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-                    <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>✨ ATLAS SUGGESTS</div>
+                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
+                    <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>✨ ATLAS SUGGESTS</div>
                     <p className={`text-[10px] mb-2.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                       Kitchen dept has exceeded its budget cap 3× this month — this is a recurring high-season pattern. Should I propose a formal <span className="font-semibold">+15% seasonal variance</span> exception for Q3?
                     </p>
                     <button
-                      className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white"
+                      className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white"
                       onClick={() => window.dispatchEvent(new CustomEvent('buyamia-governance-update-rule'))}
                     >
                       📋 Propose Seasonal Budget Exception
@@ -963,7 +963,7 @@ export function IntelligencePanel({
                         return (
                           <svg width="76" height="76" className="shrink-0">
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke={isDark ? '#333' : '#e5e7eb'} strokeWidth="7" />
-                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#87986a" strokeWidth="7"
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#4bbcbe" strokeWidth="7"
                               strokeDasharray={`${dash} ${circ - dash}`}
                               strokeDashoffset={circ * 0.25}
                               strokeLinecap="round"
@@ -1001,12 +1001,12 @@ export function IntelligencePanel({
                     </div>
                   </div>
                   {/* Atlas: Trust Layer */}
-                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-                    <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>✨ ATLAS SUGGESTS</div>
+                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
+                    <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>✨ ATLAS SUGGESTS</div>
                     <p className={`text-[10px] mb-2.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                       Indo Seafood dropped 6 points below your 80-point threshold. I recommend placing them on a <span className="font-semibold">30-day watchlist</span> and routing their orders to backup suppliers until their score recovers.
                     </p>
-                    <button className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white">
+                    <button className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white">
                       🔍 Place Indo Seafood on Watchlist
                     </button>
                   </div>
@@ -1021,7 +1021,7 @@ export function IntelligencePanel({
                     </div>
                     <div className="flex items-center gap-2 mb-3">
                       {([
-                        { label: 'run',     value: 3, bg: isDark ? 'bg-[#87986a]/10' : 'bg-[#f4f6f0]',   color: isDark ? 'text-white' : 'text-gray-900' },
+                        { label: 'run',     value: 3, bg: isDark ? 'bg-[#4bbcbe]/10' : 'bg-[#eafafa]',   color: isDark ? 'text-white' : 'text-gray-900' },
                         { label: 'passed',  value: 2, bg: isDark ? 'bg-green-500/10' : 'bg-green-50',     color: isDark ? 'text-green-400' : 'text-green-600' },
                         { label: 'flagged', value: 1, bg: isDark ? 'bg-amber-500/10' : 'bg-amber-50',     color: isDark ? 'text-amber-400' : 'text-amber-600' },
                       ] as { label: string; value: number; bg: string; color: string }[]).map(({ label, value, bg, color }) => (
@@ -1042,12 +1042,12 @@ export function IntelligencePanel({
                     </div>
                   </div>
                   {/* Atlas: Simulation Sandbox */}
-                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#87986a]/8 border-[#87986a]/20' : 'bg-[#f4f6f0] border-[#dbe3ce]'}`}>
-                    <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'}`}>✨ ATLAS SUGGESTS</div>
+                  <div className={`p-3 rounded-lg border ${isDark ? 'bg-[#4bbcbe]/8 border-[#4bbcbe]/20' : 'bg-[#eafafa] border-[#c4eef0]'}`}>
+                    <div className={`text-[10px] font-bold tracking-wider mb-1.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'}`}>✨ ATLAS SUGGESTS</div>
                     <p className={`text-[10px] mb-2.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                       PT Maju proposed new contract terms last week and no simulation has been run yet. I can model how their new pricing affects your Stage 4–5 pipeline before you commit.
                     </p>
-                    <button className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#87986a] hover:bg-[#6b7a54] text-white">
+                    <button className="w-full py-1.5 rounded text-[11px] font-semibold transition-colors bg-[#4bbcbe] hover:bg-[#2c9a9c] text-white">
                       🧪 Run PT Maju Contract Simulation
                     </button>
                   </div>
@@ -1084,7 +1084,7 @@ export function IntelligencePanel({
         <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
           <h3 className={`text-[10px] font-semibold tracking-wider mb-3 ${
             context === 'governance' && activeGovernanceFilter
-              ? isDark ? 'text-[#a3b085]' : 'text-[#6b7a54]'
+              ? isDark ? 'text-[#82d3d5]' : 'text-[#2c9a9c]'
               : isDark ? 'text-gray-500' : 'text-gray-400'
           }`}>{insightsLabel}</h3>
           <div className="space-y-3">
@@ -1094,7 +1094,7 @@ export function IntelligencePanel({
                 <div key={index} className={`p-3 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-gray-50'}`}>
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <Icon className={`h-4 w-4 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+                      <Icon className={`h-4 w-4 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
                       <span className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>{insight.title}</span>
                     </div>
                     <Badge variant="outline" className={insight.badgeColor}>{insight.badge}</Badge>
@@ -1105,8 +1105,8 @@ export function IntelligencePanel({
                       onClick={() => insight.actionEvent && window.dispatchEvent(new CustomEvent(insight.actionEvent))}
                       className={`mt-2 text-[11px] font-semibold px-2.5 py-1 rounded border transition-colors ${
                         isDark
-                          ? 'border-[#87986a]/40 text-[#a3b085] hover:bg-[#87986a]/10'
-                          : 'border-[#87986a]/40 text-[#6b7a54] hover:bg-[#f4f6f0]'
+                          ? 'border-[#4bbcbe]/40 text-[#82d3d5] hover:bg-[#4bbcbe]/10'
+                          : 'border-[#4bbcbe]/40 text-[#2c9a9c] hover:bg-[#eafafa]'
                       }`}
                     >
                       {insight.recommendedAction}
@@ -1148,12 +1148,12 @@ export function IntelligencePanel({
               <div key={index} className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[90%] px-3 py-2 rounded-xl text-[10px] leading-snug ${
                   message.type === 'user'
-                    ? isDark ? 'bg-[#87986a] text-white' : 'bg-[#6b7a54] text-white'
+                    ? isDark ? 'bg-[#4bbcbe] text-white' : 'bg-[#2c9a9c] text-white'
                     : isDark ? 'bg-[#2a2a2a] text-gray-300 border border-gray-800' : 'bg-gray-100 text-gray-700'
                 }`}>
                   {message.type === 'assistant' && (
                     <div className="flex items-center gap-1.5 mb-1">
-                      <Sparkles className={`h-2.5 w-2.5 ${isDark ? 'text-[#a3b085]' : 'text-[#87986a]'}`} />
+                      <Sparkles className={`h-2.5 w-2.5 ${isDark ? 'text-[#82d3d5]' : 'text-[#4bbcbe]'}`} />
                       <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{chatLabel}</span>
                     </div>
                   )}
@@ -1179,7 +1179,7 @@ export function IntelligencePanel({
           <Button
             size="sm"
             onClick={handleSendMessage}
-            className="h-8 w-8 p-0 bg-[#87986a] hover:bg-[#6b7a54]"
+            className="h-8 w-8 p-0 bg-[#4bbcbe] hover:bg-[#2c9a9c]"
           >
             <Send className="h-3.5 w-3.5" />
           </Button>
